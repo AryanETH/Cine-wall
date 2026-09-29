@@ -32,7 +32,7 @@ let state = {
   playing: false,
   position: 0,
   anchorTime: Date.now(),
-  mode: 'crop',
+  mode: 'stretch',
   screenCount: 3,
   audioScreen: 2,
   movie: null,
