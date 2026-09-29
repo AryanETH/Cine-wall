@@ -1,0 +1,15 @@
+# Cache directory with temporary movie files
+.cinema-cache/
+
+# Node modules
+node_modules/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo

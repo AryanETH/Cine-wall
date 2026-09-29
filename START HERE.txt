@@ -1,0 +1,13 @@
+CINEWALL - START HERE
+
+1. Extract this ZIP completely. Do not run it from inside the ZIP preview.
+2. Double-click the file named: START CINEMA.cmd
+3. Keep the black window open.
+4. Open the Admin address printed in that window.
+5. On the admin page, choose 2 or 3 screens and select the movie ONCE.
+6. Open the exact Screen address on every screen laptop.
+7. Choose each laptop's position and make it ready.
+8. Press Play on the admin page. Every screen follows automatically.
+
+If Windows hides file extensions, the launcher may appear simply as START CINEMA.
+

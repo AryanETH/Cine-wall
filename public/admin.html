@@ -1,0 +1,148 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>CineWall · Cinema Control Room</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body class="admin-body" data-theme="dark">
+  <main class="app-shell">
+    <header class="app-nav">
+      <a class="brand-lockup" href="/admin.html" aria-label="CineWall home">
+        <span class="brand-icon fi" aria-hidden="true">&#xE714;</span>
+        <span><strong>CINEWALL</strong><small>Multi-screen cinema</small></span>
+      </a>
+      <nav class="nav-pills" aria-label="Dashboard sections">
+        <a class="active" href="#overview"><span class="fi">&#xE80F;</span>Overview</a>
+        <a href="#player"><span class="fi">&#xE768;</span>Player</a>
+        <a href="#screens"><span class="fi">&#xE7F4;</span>Screens</a>
+        <a href="#settings"><span class="fi">&#xE713;</span>Setup</a>
+      </nav>
+      <div class="nav-actions">
+        <button id="themeToggle" class="icon-button" title="Change theme" aria-label="Change theme"><span class="fi">&#xE706;</span></button>
+        <div id="connection" class="connection-chip"><span class="status-dot"></span><span>Connecting</span></div>
+      </div>
+    </header>
+
+    <section id="overview" class="page-heading">
+      <div>
+        <span class="section-kicker">LIVE SESSION</span>
+        <h1>Cinema control room</h1>
+        <p>One movie, one timeline, every laptop perfectly in step.</p>
+      </div>
+      <div class="heading-actions">
+        <button id="identify" class="button subtle"><span class="fi">&#xE8B0;</span>Identify screens</button>
+        <button id="openAdminScreen" class="button accent"><span class="fi">&#xE7F4;</span>Open Screen 1</button>
+      </div>
+    </section>
+
+    <section class="metric-grid" aria-label="Session summary">
+      <article class="metric-card">
+        <div class="metric-head"><span>Wall layout</span><span class="metric-icon fi">&#xE8A9;</span></div>
+        <strong id="layoutMetric">3 screens</strong>
+        <small>Admin + connected displays</small>
+      </article>
+      <article class="metric-card">
+        <div class="metric-head"><span>Ready now</span><span class="metric-icon fi">&#xE73E;</span></div>
+        <strong id="readyMetric">0 / 3</strong>
+        <div id="readySegments" class="ready-segments" aria-hidden="true"></div>
+      </article>
+      <article class="metric-card">
+        <div class="metric-head"><span>Playback</span><span class="metric-icon fi">&#xE768;</span></div>
+        <strong id="playbackMetric">Idle</strong>
+        <small id="playbackSub">Waiting for a movie</small>
+      </article>
+      <article class="metric-card featured-metric">
+        <div class="metric-head"><span>Now playing</span><span class="metric-icon fi">&#xE8B2;</span></div>
+        <strong id="movieMetric">No movie selected</strong>
+        <small id="movieSizeMetric">Choose a file from this admin laptop</small>
+      </article>
+    </section>
+
+    <section class="overview-grid">
+      <article class="panel wall-panel">
+        <div class="panel-heading">
+          <div><span class="section-kicker">VIDEO WALL</span><h2>Live screen map</h2></div>
+          <span id="readyCount" class="count-chip">0/3 ready</span>
+        </div>
+        <div id="screenGrid" class="wall-map" aria-label="Connected screens"></div>
+        <div id="fileWarning" class="warning" role="alert"></div>
+      </article>
+
+      <article class="panel source-panel">
+        <div class="panel-heading">
+          <div><span class="section-kicker">ADMIN SOURCE</span><h2>Movie file</h2></div>
+          <span class="fi panel-heading-icon">&#xE8B7;</span>
+        </div>
+        <div class="source-state">
+          <span class="source-icon fi">&#xE714;</span>
+          <div><strong id="movieTitle">Choose your movie</strong><p id="movieStatus">The movie is selected once here and streamed to every screen.</p></div>
+        </div>
+        <label class="file-button">
+          <input id="adminMovieFile" type="file" accept="video/*,.mkv">
+          <span class="fi">&#xE898;</span><span id="adminFileLabel">Choose movie</span>
+        </label>
+        <div id="uploadProgressWrap" class="upload-progress-wrap" hidden>
+          <div class="upload-copy"><span>Preparing movie</span><strong id="uploadProgressText">0%</strong></div>
+          <div class="upload-progress"><span id="uploadProgressBar"></span></div>
+        </div>
+      </article>
+    </section>
+
+    <section id="player" class="player-console">
+      <div class="preview-stage">
+        <video id="adminPreview" muted playsinline preload="metadata"></video>
+        <div id="previewEmpty" class="preview-empty"><span class="fi">&#xE768;</span><strong>Preview monitor</strong><small>Your movie appears here after preparation.</small></div>
+        <div class="preview-badge"><span class="status-dot"></span>LIVE PREVIEW</div>
+      </div>
+      <div class="player-deck">
+        <div class="now-playing-row">
+          <div class="track-art fi">&#xE8B2;</div>
+          <div class="track-copy"><span>NOW PLAYING</span><strong id="trackTitle">No movie loaded</strong></div>
+          <span id="playerState" class="state-pill">IDLE</span>
+        </div>
+        <div class="timeline-row">
+          <span id="currentTime">00:00</span>
+          <input id="timeline" type="range" min="0" max="100" value="0" step="0.1" aria-label="Movie position" disabled>
+          <span id="duration">--:--</span>
+        </div>
+        <div class="transport" aria-label="Playback controls">
+          <button id="restart" class="control-button" title="Restart" aria-label="Restart" disabled><span class="fi">&#xE72C;</span></button>
+          <button id="back" class="control-button" title="Back 10 seconds" aria-label="Back 10 seconds" disabled><span class="fi">&#xE892;</span><small>10</small></button>
+          <button id="play" class="play-button" title="Play" aria-label="Play" disabled><span class="fi">&#xE768;</span></button>
+          <button id="pause" class="play-button" title="Pause" aria-label="Pause" hidden><span class="fi">&#xE769;</span></button>
+          <button id="forward" class="control-button" title="Forward 10 seconds" aria-label="Forward 10 seconds" disabled><span class="fi">&#xE893;</span><small>10</small></button>
+          <button id="openScreenControl" class="control-button" title="Open Screen 1" aria-label="Open Screen 1"><span class="fi">&#xE740;</span></button>
+        </div>
+        <div class="shortcut-hint"><span><kbd>Space</kbd> Play / pause</span><span><kbd>←</kbd><kbd>→</kbd> Seek 10s</span><span><kbd>F</kbd> Fullscreen on Screen 1</span></div>
+      </div>
+    </section>
+
+    <section id="screens" class="workspace-panel">
+      <div class="workspace-header">
+        <div><span class="section-kicker">DISPLAY LINKS</span><h2>Three screens, pre-assigned</h2><p>Open each link on the matching laptop. Screen 1 is this admin laptop.</p></div>
+        <span class="secure-chip"><span class="fi">&#xE72E;</span>Local network only</span>
+      </div>
+      <div id="screenLinks" class="screen-links"></div>
+      <p id="alternateLinks" class="alternate-links"></p>
+    </section>
+
+    <section id="settings" class="settings-grid">
+      <article class="workspace-panel compact-panel">
+        <div class="setting-title"><span class="setting-icon fi">&#xE8A9;</span><div><h3>Number of screens</h3><p>Admin laptop always takes Screen 1.</p></div></div>
+        <div id="layoutControls" class="segmented"><button data-layout="2">2 screens</button><button data-layout="3">3 screens</button></div>
+      </article>
+      <article class="workspace-panel compact-panel">
+        <div class="setting-title"><span class="setting-icon fi">&#xE8B0;</span><div><h3>Wall framing</h3><p>Control how the film fills the combined canvas.</p></div></div>
+        <div id="modeControls" class="segmented"><button data-mode="fit">Fit</button><button data-mode="crop">Cinema crop</button><button data-mode="stretch">Stretch</button></div>
+      </article>
+      <article class="workspace-panel compact-panel audio-panel">
+        <div class="setting-title"><span class="setting-icon fi">&#xE767;</span><div><h3>Audio output</h3><p>Choose one laptop or play through all speakers.</p></div></div>
+        <div id="audioControls" class="segmented"></div>
+      </article>
+    </section>
+  </main>
+  <script src="admin.js"></script>
+</body>
+</html>

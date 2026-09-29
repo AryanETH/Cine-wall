@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>CineWall · Display</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body class="screen-body">
+  <div class="wall-viewport">
+    <div id="wallStage" class="wall-stage mode-crop">
+      <video id="video" playsinline preload="auto"></video>
+    </div>
+  </div>
+
+  <header id="screenHud" class="screen-hud">
+    <div class="screen-brand"><span class="fi">&#xE714;</span><strong>CINEWALL</strong></div>
+    <div class="screen-status-group">
+      <span id="screenLabel" class="screen-pill">Screen not ready</span>
+      <span id="networkLabel" class="screen-pill network-pill"><span class="status-dot"></span>Connecting</span>
+    </div>
+  </header>
+
+  <div id="waitingMovie" class="waiting-movie">
+    <span class="fi">&#xE8B2;</span>
+    <strong>Waiting for the admin</strong>
+    <small>The movie will appear here automatically.</small>
+  </div>
+
+  <section id="screenControls" class="screen-controls" aria-label="Screen 1 controls">
+    <div class="screen-control-track">
+      <span id="screenCurrentTime">00:00</span>
+      <input id="screenTimeline" type="range" min="0" max="100" value="0" step="0.1" aria-label="Movie position">
+      <span id="screenDuration">--:--</span>
+    </div>
+    <div class="screen-transport">
+      <a href="/admin.html" class="screen-control-button" title="Dashboard" aria-label="Dashboard"><span class="fi">&#xE80F;</span></a>
+      <button id="screenBack" class="screen-control-button" title="Back 10 seconds" aria-label="Back 10 seconds"><span class="fi">&#xE892;</span></button>
+      <button id="screenPlay" class="screen-play-button" title="Play or pause" aria-label="Play or pause"><span class="fi">&#xE768;</span></button>
+      <button id="screenForward" class="screen-control-button" title="Forward 10 seconds" aria-label="Forward 10 seconds"><span class="fi">&#xE893;</span></button>
+      <button id="screenFullscreen" class="screen-control-button" title="Fullscreen" aria-label="Fullscreen"><span class="fi">&#xE740;</span></button>
+    </div>
+    <span class="screen-shortcuts">Space · Play/Pause &nbsp; ← → · Seek &nbsp; F · Fullscreen</span>
+  </section>
+
+  <div id="identify" class="identify"></div>
+  <div id="connectionLost" class="connection-lost"><span class="fi">&#xEB55;</span><strong>Connection lost</strong><small>Reopen the current screen link shown on the admin laptop.</small></div>
+  <button id="playBlocked" class="play-blocked"><span class="fi">&#xE768;</span>Click once to allow playback</button>
+
+  <section id="setup" class="setup-overlay">
+    <div class="setup-window">
+      <div class="setup-brand"><span class="brand-icon fi">&#xE714;</span><div><strong>CINEWALL</strong><small>Display setup</small></div></div>
+      <div class="setup-copy">
+        <span class="section-kicker">JOIN THE VIDEO WALL</span>
+        <h1>Choose this<br><em>screen position</em></h1>
+        <p>The link may already have selected a position. Confirm it below, then enter fullscreen. The admin sends the movie automatically.</p>
+      </div>
+      <div id="screenPicker" class="screen-picker"></div>
+      <div class="setup-checks">
+        <span><i class="fi">&#xE73E;</i>Same Wi-Fi</span>
+        <span><i class="fi">&#xE73E;</i>Movie from admin</span>
+        <span><i class="fi">&#xE73E;</i>Automatic sync</span>
+      </div>
+      <button id="readyButton" class="ready-button" disabled><span class="fi">&#xE740;</span>Enter fullscreen &amp; join wall</button>
+      <p class="setup-hint">Screen 1 is the admin laptop. It also gets playback controls and keyboard shortcuts.</p>
+    </div>
+  </section>
+  <script src="screen.js"></script>
+</body>
+</html>
