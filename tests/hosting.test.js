@@ -66,7 +66,12 @@ test('hosted server separates sessions, signals only within a room, and stores n
   assert.ok(viewerB.some((event) => event.type === 'peer-signal' && event.data.from === peerA));
   assert.ok(!viewerA.some((event) => event.type === 'peer-signal'));
   assert.equal((await api('/api/peer-signal', roomB, { from: peerA, to: peerB, candidate: {} })).status, 403);
-  const metadata = { peerId: peerA, name: '12gb-original.mkv', size: 12 * 1024 ** 3, type: 'video/x-matroska', fingerprint: 'a'.repeat(64), duration: 7200 };
+  const metadata = { peerId: peerA, name: '12gb-original.mp4', size: 12 * 1024 ** 3, type: 'video/mp4', fingerprint: 'a'.repeat(64), duration: 7200 };
+  assert.equal((await api('/api/local-source', roomA, { ...metadata, name: 'unsupported.mkv', type: 'video/x-matroska' })).status, 415);
+  assert.equal((await api('/api/local-source', roomA, { ...metadata, name: 'unsupported.mkv', type: 'video/x-matroska', codecs: ['V_MPEGH/ISO/HEVC', 'A_EAC3'] })).status, 415);
+  assert.equal((await api('/api/status', roomA)).data.state.asset, null);
+  const mkv = await api('/api/local-source', roomA, { ...metadata, name: 'compatible.mkv', type: 'video/x-matroska', codecs: ['V_MPEG4/ISO/AVC', 'A_AAC'] });
+  assert.equal(mkv.status, 200); assert.equal(mkv.data.state.asset.type, 'video/x-matroska');
   const published = await api('/api/local-source', roomA, metadata);
   assert.equal(published.status, 200); assert.equal(published.data.state.asset.source, 'peer'); assert.equal(published.data.state.asset.size, metadata.size);
   const listing = fs.readdirSync(path.join(temporary, 'rooms', roomA));

@@ -12,25 +12,25 @@ const validModes = ['video', 'audio', 'presentation', 'youtube'];
 const modeConfig = {
   video: {
     label: 'Video', icon: '&#xE714;', kicker: 'VIDEO SESSION', title: 'Video control room',
-    subtitle: 'One movie, one timeline, every laptop perfectly in step.', source: 'Video file',
-    choose: 'Choose your video', button: 'Choose video', accept: 'video/*,.mkv', min: 2, max: 3,
+    source: 'Video file',
+    choose: 'Choose your video', button: 'Choose video', accept: '.mp4,.m4v,.webm,.mkv', min: 2, max: 3,
     map: 'Video wall map', assetLabel: 'Now playing', statusLabel: 'Playback', preview: 'VIDEO PREVIEW',
   },
   audio: {
     label: 'Audio', icon: '&#xE8D6;', kicker: 'AUDIO SESSION', title: 'Multi-speaker control room',
-    subtitle: 'One track, up to five laptops, synchronized sound with individual volume.', source: 'Audio file',
-    choose: 'Choose your audio', button: 'Choose audio', accept: 'audio/*,.flac,.m4a,.aac,.ogg', min: 1, max: 5,
+    source: 'Audio file',
+    choose: 'Choose your audio', button: 'Choose audio', accept: '.mp3,.wav,.flac,.m4a,.aac,.ogg,.oga,.webm', min: 1, max: 5,
     map: 'Speaker room map', assetLabel: 'Now playing', statusLabel: 'Playback', preview: 'AUDIO PREVIEW',
   },
   presentation: {
     label: 'Presentation', icon: '&#xE7F4;', kicker: 'PRESENTATION SESSION', title: 'Presenter control room',
-    subtitle: 'One document, up to three audience displays, every page change in sync.', source: 'Presentation file',
+    source: 'Presentation file',
     choose: 'Choose your presentation', button: 'Choose document', accept: '.pdf,.ppt,.pptx,.pps,.ppsx,.odp,.doc,.docx,.rtf,.png,.jpg,.jpeg,.webp,.gif', min: 1, max: 3,
     map: 'Audience display map', assetLabel: 'Now presenting', statusLabel: 'Current page', preview: 'PRESENTER PREVIEW',
   },
   youtube: {
     label: 'YouTube', icon: '&#xE768;', kicker: 'YOUTUBE SESSION', title: 'YouTube wall control room',
-    subtitle: 'One YouTube link, one authoritative timeline, split across every display.', source: 'YouTube source',
+    source: 'YouTube source',
     choose: 'Paste a YouTube link', button: 'Load YouTube', accept: '', min: 2, max: 3,
     map: 'YouTube wall map', assetLabel: 'Now playing', statusLabel: 'Playback', preview: 'YOUTUBE PREVIEW',
   },
@@ -58,6 +58,9 @@ let uploadHideTimer = null;
 let cancelBusy = false;
 let mixerKey = '';
 let trailerKey = '';
+let previewRecoveryAttempts = 0;
+let previewRecoveryVersion = '';
+let previewRecoveryInFlight = '';
 const volumeTimers = new Map();
 let controlsQueue = Promise.resolve();
 let controlSequence = 0;
@@ -78,7 +81,7 @@ function acceptState(next) {
 }
 
 function isPreparing() {
-  return ['uploading', 'checking', 'remuxing', 'converting'].includes(status.state.preparation?.phase);
+  return ['uploading', 'checking'].includes(status.state.preparation?.phase);
 }
 
 function renderPreparation() {
@@ -95,11 +98,11 @@ function renderPreparation() {
   clearTimeout(uploadHideTimer);
   $('#uploadProgressWrap').hidden = false;
   $('#uploadProgressWrap').classList.toggle('preparing', job.phase === 'checking');
-  $('#uploadCopy').textContent = job.phase === 'uploading' ? `Uploading ${job.name}` : job.phase === 'checking' ? `Checking ${job.name}` : job.phase === 'remuxing' ? `Repackaging ${job.name} · original quality preserved` : `Converting ${job.name} with your permission`;
-  $('#uploadProgressText').textContent = job.phase === 'checking' ? 'Checking…' : `${Math.min(['converting', 'remuxing'].includes(job.phase) ? 99 : 100, Math.round(job.progress || 0))}%`;
+  $('#uploadCopy').textContent = job.phase === 'uploading' ? `Sending ${job.name}` : `Checking ${job.name}`;
+  $('#uploadProgressText').textContent = job.phase === 'checking' ? 'Checking…' : `${Math.round(job.progress || 0)}%`;
   $('#uploadProgressBar').style.width = `${job.progress || 0}%`;
   $('#assetTitle').textContent = job.name;
-  $('#assetStatus').textContent = `${formatBytes(job.size)} · ${job.phase === 'uploading' ? 'Uploading' : 'Preparing for all laptops; no need to upload again'}`;
+  $('#assetStatus').textContent = formatBytes(job.size);
 }
 
 function releaseLocalPreview() {
@@ -112,7 +115,11 @@ function releaseLocalPreview() {
 function previewLocalFile(file, kind) {
   releaseLocalPreview();
   if (kind !== 'video') return;
-  localPreview = { file, kind, url: URL.createObjectURL(file), pending: true, assetVersion: '', failed: false };
+  const blob = window.CineWallFilePeer?.mediaBlob(file) || file;
+  localPreview = { file, kind, url: URL.createObjectURL(blob), pending: true, assetVersion: '', failed: false };
+  previewRecoveryAttempts = 0;
+  previewRecoveryVersion = '';
+  previewRecoveryInFlight = '';
   loadedMediaVersion = `local:${localPreview.url}`;
   duration = 0;
   media.pause();
@@ -242,7 +249,6 @@ function renderModeShell() {
   $('#navPlayerIcon').innerHTML = config.icon;
   $('#sessionKicker').textContent = config.kicker;
   $('#pageTitle').textContent = config.title;
-  $('#pageSubtitle').textContent = config.subtitle;
   $('#sourceHeading').textContent = config.source;
   $('#sourceHeadingIcon').innerHTML = config.icon;
   $('#sourceIcon').innerHTML = config.icon;
@@ -256,12 +262,12 @@ function renderModeShell() {
   $('#mediaControls').hidden = state.sessionMode === 'presentation';
   $('#presentationControls').hidden = state.sessionMode !== 'presentation';
   $('#previewGesture').hidden = state.sessionMode !== 'video' || !state.asset;
-  $('#playlistButton').hidden = state.sessionMode !== 'audio';
-  $('#sharingChoice').hidden = !['video', 'audio'].includes(state.sessionMode);
-  $('#sharingHint').hidden = !['video', 'audio'].includes(state.sessionMode);
-  $('#conversionChoice').hidden = $('#sharingChoice').hidden || $('#sharingMethod').value !== 'server';
+  const localMediaMode = ['video', 'audio'].includes(state.sessionMode);
+  if (!localMediaMode) $('#youtubeDownloadPanel').hidden = true;
+  const downloadingYouTube = localMediaMode && !$('#youtubeDownloadPanel').hidden;
+  $('#playlistButton').hidden = state.sessionMode !== 'audio' || downloadingYouTube;
   $('#loopButton').hidden = state.sessionMode === 'presentation';
-  $('#dropZone').hidden = state.sessionMode === 'youtube' || state.sessionMode === 'presentation' || (state.sessionMode === 'video' && !$('#youtubeDownloadPanel').hidden);
+  $('#dropZone').hidden = !localMediaMode || downloadingYouTube;
 
   // Update drop zone icon based on mode
   if (!$('#dropZone').hidden) {
@@ -273,16 +279,16 @@ function renderModeShell() {
 
   // Show/hide source inputs based on session mode
   const isYouTube = state.sessionMode === 'youtube';
-  if (state.sessionMode !== 'video') $('#youtubeDownloadPanel').hidden = true;
-  const downloadingYouTube = state.sessionMode === 'video' && !$('#youtubeDownloadPanel').hidden;
   $('#fileSourceButton').hidden = isYouTube || downloadingYouTube;
+  $('#localVideoSource').textContent = state.sessionMode === 'audio' ? 'Local audio' : 'Local video';
   $('#localVideoSource').classList.toggle('active', !downloadingYouTube);
   $('#localVideoSource').setAttribute('aria-pressed', String(!downloadingYouTube));
   $('#downloadYoutubeToggle').classList.toggle('active', downloadingYouTube);
   $('#downloadYoutubeToggle').setAttribute('aria-pressed', String(downloadingYouTube));
   $('#downloadYoutubeToggle').setAttribute('aria-expanded', String(downloadingYouTube));
   $('#youtubeSourceForm').hidden = !isYouTube;
-  $('#videoSourceSelector').hidden = state.sessionMode !== 'video';
+  $('#videoSourceSelector').hidden = !localMediaMode;
+  window.CineWallDownloadPanel?.syncMode(state.sessionMode);
   $('#removeAsset').hidden = !state.asset;
   $('#removeAsset').disabled = uploadBusy || isPreparing() || removeBusy;
   $('#removeAsset').title = `Remove ${config.label.toLowerCase()}`;
@@ -293,7 +299,6 @@ function renderModeShell() {
   });
 
   $('#framingHeading').textContent = state.sessionMode === 'presentation' ? 'Document framing' : state.sessionMode === 'youtube' ? 'YouTube wall framing' : 'Wall framing';
-  $('#framingCopy').textContent = state.sessionMode === 'presentation' ? 'Choose how each page fills the combined display wall.' : state.sessionMode === 'youtube' ? 'Fit the full 16:9 frame or crop it across the combined wall.' : 'Control how the movie fills the combined canvas.';
   const framingLabels = state.sessionMode === 'presentation'
     ? { fit: 'Fit page', crop: 'Fill width', stretch: 'Stretch' }
     : { fit: 'Fit', crop: 'Cinema crop', stretch: 'Stretch' };
@@ -323,7 +328,7 @@ function renderScreens() {
     const waitingLabel = state.sessionMode === 'youtube' ? 'Waiting for link' : 'Waiting for file';
     const loadingLabel = state.sessionMode === 'youtube' ? (screen.buffering ? 'Buffering' : 'Loading YouTube') : 'Loading file';
     const stateLabel = !screen.ready ? 'Not joined' : screen.error ? 'Needs attention' : !state.asset ? waitingLabel : !screen.mediaReady ? loadingLabel : screen.buffering ? 'Buffering' : state.playing && !screen.paused ? 'Playing' : screen.autoplayMuted ? 'Click for sound' : 'Ready';
-    const outdated = screen.build && screen.build !== '2026.10.02-direct-10';
+    const outdated = screen.build && screen.build !== '2026.10.02-formats-15';
     const detail = screen.error || (outdated ? 'Reopen this laptop’s numbered link to update its player.' : state.asset?.name) || (screen.screen === 1 ? 'Open Display 1 on the admin laptop' : 'Open the assigned link on this laptop');
     const footer = state.sessionMode === 'presentation' && screen.ready ? `Page ${screen.page || state.page}` : fullyReady && state.sessionMode !== 'presentation' ? formatTime(screen.playbackTime) : '—';
     return `<article class="display-tile ${fullyReady ? 'ready' : ''}">
@@ -343,11 +348,8 @@ function renderLinks() {
   const config = modeConfig[state.sessionMode];
   const hosted = window.CineWallSession?.hosted || connectionInfo.hosted;
   const baseRemote = hosted ? location.origin : `http://${primaryAddress()}:${connectionInfo.port}`;
-  $('#linkScope').textContent = hosted ? 'Private session link' : 'Local network only';
   const noun = state.sessionMode === 'audio' ? 'speaker' : 'display';
   $('#linksHeading').textContent = state.sessionMode === 'audio' ? 'Speaker links' : 'Displays, pre-assigned';
-  $('#linksCopy').textContent = state.sessionMode === 'audio' ? 'Open one link on every laptop you add. Speaker 1 is this admin laptop.' : 'Open each link on its matching laptop. Display 1 is this admin laptop.';
-  $('#displayCountBadge').textContent = `${state.screenCount} / ${config.max} ${state.screenCount === 1 ? noun : `${noun}s`}`;
   $('#addDisplayLabel').textContent = `Add ${noun}`;
   $('#addDisplay').disabled = state.screenCount >= config.max;
   $('#addDisplay').title = state.screenCount >= config.max ? `Maximum ${config.max} ${noun}s reached` : `Add another ${noun}`;
@@ -364,8 +366,6 @@ function renderLinks() {
       <div class="link-actions"><a href="${escapeHtml(url)}" target="_blank" rel="noopener"><span class="fi">&#xE8A7;</span>${number === 1 ? 'Open here' : 'Open link'}</a><button data-copy-link="${escapeHtml(url)}" title="Copy link" aria-label="Copy ${noun} ${number} link"><span class="fi">&#xE8C8;</span></button></div>
     </article>`;
   }).join('');
-  const hotspot = connectionInfo.networks?.find((network) => network.isHotspot)?.address;
-  $('#alternateLinks').textContent = hosted ? 'Share these private links only with your laptops. Keep the source admin tab open for direct local-file playback.' : hotspot && hotspot !== primaryAddress() ? `Using the admin laptop’s Mobile Hotspot? Replace ${primaryAddress()} with ${hotspot} in remote display links.` : 'All files and controls stay inside this local network.';
 }
 
 function renderMixer() {
@@ -436,8 +436,8 @@ function setPreviewKind() {
     $('#sourceIcon').hidden = false;
     $('#previewEmpty').hidden = !localPreview.failed;
     if (localPreview.failed) {
-      $('#previewEmptyTitle').textContent = $('#sharingMethod').value === 'direct' ? 'Browser cannot decode the original file' : 'Preparing a compatible preview';
-      $('#previewEmptyCopy').textContent = $('#sharingMethod').value === 'direct' ? 'Try a compatible MP4, or choose Server compatibility copy. Re-encoding requires your permission and changes quality.' : 'The preview will appear when preparation finishes.';
+      $('#previewEmptyTitle').textContent = 'Video cannot play here';
+      $('#previewEmptyCopy').textContent = 'Use MP4 with H.264 video and AAC audio.';
     }
     return;
   }
@@ -450,7 +450,7 @@ function setPreviewKind() {
   $('#previewEmpty').hidden = hasAsset;
   $('#previewEmptyIcon').innerHTML = config.icon;
   $('#previewEmptyTitle').textContent = `${config.label} preview`;
-  $('#previewEmptyCopy').textContent = isPresentation ? 'Your document appears here after local preparation.' : `Your ${state.sessionMode} appears here after preparation.`;
+  $('#previewEmptyCopy').textContent = '';
 
   if (!hasAsset) {
     duration = 0;
@@ -490,6 +490,7 @@ function setPreviewKind() {
 
   if (!isPresentation && !isYouTube && state.asset.version !== loadedMediaVersion) {
     loadedMediaVersion = state.asset.version;
+    if (previewRecoveryVersion !== state.asset.version) { previewRecoveryVersion = state.asset.version; previewRecoveryAttempts = 0; previewRecoveryInFlight = ''; }
     duration = 0;
     if (state.asset.source === 'peer' && filePeer) {
       const version = state.asset.version;
@@ -518,16 +519,17 @@ function renderPlayer() {
     if (hasAsset && titledScreen?.fileName) state.asset.name = titledScreen.fileName;
   }
   setPreviewKind();
+  if (hasAsset && ['video', 'audio'].includes(state.sessionMode) && !Number.isFinite(media.duration)) {
+    duration = Math.max(duration || 0, ...status.screens.filter((screen) => screen.mediaReady && screen.screen <= state.screenCount).map((screen) => Number(screen.duration) || 0));
+  }
   $('#replayPreview').hidden = state.sessionMode !== 'video' || !(hasAsset || localPreview);
   if (hasAsset && state.asset.source === 'peer' && state.asset.duration && !duration) duration = state.asset.duration;
   $('#trackArt').innerHTML = config.icon;
   $('#trackKicker').textContent = state.sessionMode === 'presentation' ? 'NOW PRESENTING' : 'NOW PLAYING';
   $('#trackTitle').textContent = localPreview?.file.name || state.asset?.name || 'No file loaded';
   $('#assetTitle').textContent = localPreview?.file.name || state.asset?.name || config.choose;
-  const preparedLabel = isYouTube ? 'Streaming from YouTube to every joined display' : state.asset?.converted === 'simplified' ? 'Simplified Office preview ready' : state.asset?.lossless ? 'Original-quality playback · no re-encoding' : state.asset?.converted ? (state.sessionMode === 'video' ? 'Compatibility conversion ready' : 'Converted to PDF and ready to present') : 'Streaming to every joined laptop';
-  $('#assetStatus').textContent = state.asset ? (isYouTube ? `${preparedLabel}` : `${formatBytes(state.asset.size)} · ${preparedLabel}`) : state.sessionMode === 'presentation' ? 'PDF, PowerPoint, Word, and image files are prepared locally for the audience.' : state.sessionMode === 'youtube' ? 'Paste any YouTube URL above to load a video.' : `Choose the ${state.sessionMode} once here. CineWall streams it to every joined laptop.`;
-  if (localPreview?.pending) $('#assetStatus').textContent = `${formatBytes(localPreview.file.size)} · Local file selected; preparing playback for connected screens`;
-  if (state.asset?.source === 'peer') $('#assetStatus').textContent = `${formatBytes(state.asset.size)} · Original file, direct from this laptop · no server upload`;
+  $('#assetStatus').textContent = state.asset ? (isYouTube ? 'Ready' : formatBytes(state.asset.size)) : '';
+  if (localPreview?.pending) $('#assetStatus').textContent = formatBytes(localPreview.file.size);
 
   if (state.sessionMode === 'presentation') {
     $('#playerState').textContent = hasAsset ? `PAGE ${state.page}` : 'IDLE';
@@ -763,15 +765,23 @@ $('#cancelPreparation').addEventListener('click', async () => {
   finally { cancelBusy = false; render(); }
 });
 
-$('#sharingMethod').addEventListener('change', renderModeShell);
+const VIDEO_FORMAT_HELP = window.CineWallVideoFile?.help || 'This video is not supported by your browser. Try an MP4 with H.264 video and AAC audio.';
+
 async function shareLocalFile(file) {
   uploadBusy = true;
+  warning.classList.remove('show');
   previewLocalFile(file, status.state.sessionMode);
   render();
   try {
     const state = await filePeer.publish(file, Number.isFinite(media.duration) ? media.duration : 0);
     status.state = state;
-    if (localPreview) { localPreview.pending = false; localPreview.assetVersion = state.asset.version; }
+    if (localPreview) {
+      localPreview.pending = false;
+      localPreview.assetVersion = state.asset.version;
+      // A preview that failed during the metadata handshake must enter the
+      // same native retries as Display 1, not remain behind an old error card.
+      if (localPreview.failed) releaseLocalPreview();
+    }
     updateServerTime(state);
     $('#adminAssetFile').value = '';
   } catch (error) {
@@ -780,11 +790,28 @@ async function shareLocalFile(file) {
 }
 
 // Shared upload function
-function uploadFile(file) {
+async function uploadFile(file) {
   if (!file || uploadBusy || removeBusy) return;
   if (isPreparing()) { renderPreparation(); return; }
-  if (['video', 'audio'].includes(status.state.sessionMode) && $('#sharingMethod').value === 'direct' && filePeer) { shareLocalFile(file); return; }
   const kind = status.state.sessionMode;
+  if (['video', 'audio'].includes(kind)) {
+    uploadBusy = true;
+    $('#adminAssetFile').disabled = true;
+    warning.classList.remove('show');
+    try {
+      if (!window.CineWallVideoFile) throw new Error('Reload CineWall and choose the file again.');
+      await window.CineWallVideoFile[kind === 'video' ? 'validate' : 'validateAudio'](file);
+    }
+    catch (error) {
+      warning.textContent = error.message || VIDEO_FORMAT_HELP;
+      warning.classList.add('show');
+      $('#adminAssetFile').value = '';
+      return;
+    } finally { uploadBusy = false; $('#adminAssetFile').disabled = false; }
+    if (status.state.sessionMode !== kind) return;
+  }
+  const needsNetworkCopy = location.protocol === 'http:' && !window.CineWallSession?.hosted;
+  if (['video', 'audio'].includes(kind) && filePeer && !needsNetworkCopy) { shareLocalFile(file); return; }
   uploadBusy = true;
   clearTimeout(uploadHideTimer);
   previewLocalFile(file, kind);
@@ -793,11 +820,11 @@ function uploadFile(file) {
   $('#uploadProgressWrap').classList.remove('preparing');
   $('#uploadProgressBar').style.width = '0%';
   $('#uploadProgressText').textContent = '0%';
-  $('#uploadCopy').textContent = `Uploading ${kind}`;
+  $('#uploadCopy').textContent = kind === 'presentation' ? 'Opening document' : 'Sending file to screens';
   warning.classList.remove('show');
 
   const request = new XMLHttpRequest();
-  request.open('POST', `/api/media?kind=${encodeURIComponent(kind)}&name=${encodeURIComponent(file.name)}&reencode=${$('#allowReencode').checked ? '1' : '0'}`);
+  request.open('POST', `/api/media?kind=${encodeURIComponent(kind)}&name=${encodeURIComponent(file.name)}`);
   request.setRequestHeader('Content-Type', file.type || 'application/octet-stream');
   request.upload.addEventListener('progress', (event) => {
     if (!event.lengthComputable) return;
@@ -807,9 +834,9 @@ function uploadFile(file) {
   });
   request.upload.addEventListener('load', () => {
     $('#uploadProgressWrap').classList.add('preparing');
-    $('#uploadCopy').textContent = kind === 'presentation' ? 'Preparing document locally' : 'Preparing playback for connected screens';
+    $('#uploadCopy').textContent = kind === 'presentation' ? 'Opening document' : 'Checking file';
     $('#uploadProgressText').textContent = 'Preparing…';
-    if (localPreview?.pending) $('#assetStatus').textContent = `${formatBytes(file.size)} · Uploaded; checking/converting for connected screens`;
+    if (localPreview?.pending) $('#assetStatus').textContent = formatBytes(file.size);
   });
   const failUpload = (message) => {
     uploadBusy = false;
@@ -824,7 +851,7 @@ function uploadFile(file) {
   request.addEventListener('load', () => {
     let result;
     try { result = JSON.parse(request.responseText); } catch { failUpload('The server returned an invalid upload response. Try again.'); return; }
-    if (request.status === 409 && ['uploading', 'checking', 'remuxing', 'converting'].includes(result.preparation?.phase)) {
+    if (request.status === 409 && ['uploading', 'checking'].includes(result.preparation?.phase)) {
       uploadBusy = false;
       status.state.preparation = result.preparation;
       const sameFile = result.preparation.name === file.name && result.preparation.size === file.size && result.preparation.kind === kind;
@@ -867,20 +894,21 @@ const dropZone = $('#dropZone');
 function handleFileDrop(file) {
   if (!file) return;
   const sessionMode = status.state.sessionMode;
+  const extension = file.name.toLowerCase().split('.').pop();
 
   // Validate file type
   let validType = false;
   if (sessionMode === 'video') {
-    validType = file.type.startsWith('video/') || file.name.endsWith('.mkv');
+    validType = ['mp4', 'webm', 'm4v', 'mkv'].includes(extension);
   } else if (sessionMode === 'audio') {
-    validType = file.type.startsWith('audio/') || ['.flac', '.m4a', '.aac', '.ogg'].some(ext => file.name.endsWith(ext));
+    validType = ['mp3', 'wav', 'flac', 'm4a', 'aac', 'ogg', 'oga', 'webm'].includes(extension);
   } else if (sessionMode === 'presentation') {
     const allowedExts = ['.pdf', '.ppt', '.pptx', '.pps', '.ppsx', '.odp', '.doc', '.docx', '.rtf', '.png', '.jpg', '.jpeg', '.webp', '.gif'];
     validType = allowedExts.some(ext => file.name.toLowerCase().endsWith(ext));
   }
 
   if (!validType) {
-    warning.textContent = `Invalid file type. Please select a valid ${sessionMode} file.`;
+    warning.textContent = sessionMode === 'video' ? VIDEO_FORMAT_HELP : sessionMode === 'audio' ? 'This audio format is not supported by your browser. Try MP3, WAV or AAC audio.' : 'Choose a supported document.';
     warning.classList.add('show');
     return;
   }
@@ -924,7 +952,18 @@ sourcePanel.addEventListener('drop', (e) => {
 
   const files = e.dataTransfer.files;
   if (files.length > 0) {
+    window.CineWallDownloadPanel?.chooseSource(false);
     handleFileDrop(files[0]);
+  } else if (['video', 'audio'].includes(status.state.sessionMode)) {
+    const link = (e.dataTransfer.getData('text/uri-list') || e.dataTransfer.getData('text/plain')).trim();
+    try {
+      const url = new URL(link);
+      if (['https:', 'http:'].includes(url.protocol) && /^(www\.|m\.|music\.)?(youtube\.com|youtu\.be)$/.test(url.hostname)) {
+        window.CineWallDownloadPanel?.chooseSource(true);
+        $('#downloadYoutubeUrl').value = url.href;
+        $('#youtubeDownloadStatus').textContent = 'YouTube link added. Choose Find qualities to continue.';
+      }
+    } catch { /* Ignore non-file/non-YouTube drops. */ }
   }
 });
 
@@ -962,15 +1001,42 @@ media.addEventListener('timeupdate', () => {
     $('#currentTime').textContent = formatTime(media.currentTime || 0);
   }
 });
-media.addEventListener('error', () => {
+media.addEventListener('error', async () => {
   if (localPreview?.pending) {
     localPreview.failed = true;
     setPreviewKind();
     return;
   }
+  const asset = status.state.asset;
+  if (asset?.source === 'peer' && filePeer && [3, 4].includes(media.error?.code)) {
+    if (previewRecoveryInFlight === asset.version) return;
+    if (previewRecoveryVersion !== asset.version) { previewRecoveryVersion = asset.version; previewRecoveryAttempts = 0; }
+    if (previewRecoveryAttempts < 2) {
+      const attempt = ++previewRecoveryAttempts;
+      previewRecoveryInFlight = asset.version;
+      if (localPreview) releaseLocalPreview();
+      loadedMediaVersion = asset.version;
+      try {
+        const options = { ranged: true, retry: attempt };
+        if (attempt === 2) options.type = '';
+        const url = await filePeer.open(asset, options);
+        if (status.state.asset?.version !== asset.version) return;
+        media.src = url;
+        media.load();
+        return;
+      } catch (error) {
+        if (status.state.asset?.version !== asset.version) return;
+        warning.textContent = error.message;
+        warning.classList.add('show');
+        return;
+      } finally {
+        if (previewRecoveryInFlight === asset.version) previewRecoveryInFlight = '';
+      }
+    }
+  }
   if (localPreview) { releaseLocalPreview(); setPreviewKind(); return; }
   if (!loadedMediaVersion) return;
-  warning.textContent = 'This browser cannot play the selected media format. MP4/H.264 video and MP3 audio work best.';
+  warning.textContent = window.CineWallFilePeer?.playbackHelp?.(asset) || VIDEO_FORMAT_HELP;
   warning.classList.add('show');
 });
 

@@ -18,7 +18,7 @@ self.addEventListener('fetch', (event) => {
       if (!client) throw new Error('Display tab is unavailable');
       const version = url.pathname.split('/').pop();
       const info = await ask(client, { type: 'media-meta', version });
-      if (!Number.isSafeInteger(info.size) || info.size <= 0 || !/^(video|audio)\/[a-z0-9.+-]+$/i.test(info.type)) throw new Error('Invalid source metadata');
+      if (!Number.isSafeInteger(info.size) || info.size <= 0 || typeof info.type !== 'string' || (info.type && !/^(video|audio)\/[a-z0-9.+-]+$/i.test(info.type))) throw new Error('Invalid source metadata');
       const range = event.request.headers.get('range');
       let start = 0, end = info.size - 1;
       if (range) {
@@ -28,7 +28,10 @@ self.addEventListener('fetch', (event) => {
         end = match[1] && match[2] ? Math.min(end, Number(match[2])) : end;
       }
       if (!Number.isSafeInteger(start) || !Number.isSafeInteger(end) || start > end || start >= info.size || (range && /-0$/.test(range) && range.startsWith('bytes=-'))) return new Response(null, { status: 416, headers: { 'Content-Range': `bytes */${info.size}` } });
-      const headers = { 'Content-Type': info.type, 'Content-Length': String(end - start + 1), 'Accept-Ranges': 'bytes', 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' };
+      const headers = { 'Content-Length': String(end - start + 1), 'Accept-Ranges': 'bytes', 'Cache-Control': 'no-store' };
+      // The final native retry omits only the MIME hint so the browser can sniff
+      // the unchanged container. It does not turn MKV into MP4 or add a decoder.
+      if (info.type) { headers['Content-Type'] = info.type; headers['X-Content-Type-Options'] = 'nosniff'; }
       if (range) headers['Content-Range'] = `bytes ${start}-${end}/${info.size}`;
       if (event.request.method === 'HEAD') return new Response(null, { status: range ? 206 : 200, headers });
       let position = start, cancelled = false;

@@ -6,7 +6,7 @@
   <title>CineWall Studio · Display</title>
   <script src="theme.js"></script>
   <script src="session.js"></script>
-  <script src="media-peer.js"></script>
+  <script src="media-peer.js?v=20261002-mkv-17"></script>
   <link rel="stylesheet" href="styles.css">
 </head>
 <body class="screen-body" data-session-mode="video">
@@ -44,6 +44,7 @@
     <span id="waitingIcon" class="fi">&#xE8B2;</span>
     <strong id="waitingTitle">Waiting for the admin</strong>
     <small id="waitingCopy">The shared file will appear here automatically.</small>
+    <a id="decoderHelpLink" href="https://apps.microsoft.com/detail/9nmzlz57r3t7" target="_blank" rel="noopener" hidden>Windows HEVC extension</a>
   </div>
 
   <section id="screenControls" class="screen-controls" aria-label="Admin display controls">
@@ -75,7 +76,7 @@
   </section>
 
   <div id="identify" class="identify"></div>
-  <div id="connectionLost" class="connection-lost"><span class="fi">&#xEB55;</span><strong>Trying to reconnect</strong><small>This display resumes automatically. If this message remains, keep the CineWall server open and confirm both laptops are on the same Wi-Fi or hotspot.</small></div>
+  <div id="connectionLost" class="connection-lost"><span class="fi">&#xEB55;</span><strong>Trying to reconnect</strong><small>Keep the admin tab open.</small></div>
   <button id="playBlocked" class="play-blocked"><span class="fi">&#xE768;</span>Click once to allow sound and playback</button>
 
   <section id="setup" class="setup-overlay">
@@ -97,7 +98,6 @@
     </div>
   </section>
   <script src="youtube-provider.js?v=20261001-playback-5"></script>
-  <label id="localPeerFileChoice" class="local-peer-choice" hidden>Select the same local movie/audio on this laptop<input id="localPeerFile" type="file" accept="video/*,audio/*,.mkv,.flac"></label>
-  <script src="screen.js?v=20261002-direct-10"></script>
+  <script src="screen.js?v=20261002-source-14"></script>
 </body>
 </html>

@@ -40,7 +40,7 @@ function createSession(room = '') {
 const CACHE_DIR = room ? path.join(CACHE_ROOT, 'rooms', room) : CACHE_ROOT;
 const SESSION_FILE = path.join(CACHE_DIR, 'session.json');
 const validExtensions = {
-  video: new Set(['.mp4', '.webm', '.mkv', '.mov', '.m4v']),
+  video: new Set(['.mp4', '.webm', '.m4v', '.mkv']),
   audio: new Set(['.mp3', '.wav', '.m4a', '.aac', '.ogg', '.oga', '.flac', '.webm']),
   presentation: new Set(['.pdf', '.ppt', '.pptx', '.pps', '.ppsx', '.odp', '.doc', '.docx', '.rtf', '.png', '.jpg', '.jpeg', '.webp', '.gif']),
 };
@@ -481,8 +481,8 @@ function renderOfficeFallback(inputPath, outputPath, extension, name) {
 }
 
 function mimeForAsset(kind, extension, requestType) {
-  if (kind === 'video') return requestType.startsWith('video/') ? requestType : 'video/mp4';
-  if (kind === 'audio') return requestType.startsWith('audio/') ? requestType : 'audio/mpeg';
+  if (kind === 'video') return extension === '.mkv' ? 'video/x-matroska' : extension === '.webm' ? 'video/webm' : 'video/mp4';
+  if (kind === 'audio') return ({ '.mp3': 'audio/mpeg', '.wav': 'audio/wav', '.m4a': 'audio/mp4', '.aac': 'audio/aac', '.ogg': 'audio/ogg', '.oga': 'audio/ogg', '.flac': 'audio/flac', '.webm': 'audio/webm' })[extension] || (requestType.startsWith('audio/') ? requestType : 'audio/mpeg');
   if (extension === '.pdf') return 'application/pdf';
   if (imageExtensions.has(extension)) return contentTypes[extension] || requestType || 'image/jpeg';
   return requestType || 'application/octet-stream';
@@ -514,7 +514,7 @@ async function receiveAsset(req, res, url) {
   try { name = decodeURIComponent(url.searchParams.get('name') || name).slice(0, 220); } catch {}
   const extension = path.extname(name).toLowerCase().replace(/[^a-z0-9.]/g, '').slice(0, 12);
   if (!validExtensions[kind].has(extension)) {
-    json(res, 415, { error: `This ${kind} file type is not supported` });
+    json(res, 415, { error: kind === 'video' ? 'This video cannot play in a browser. Use MP4 with H.264 video and AAC audio, or a supported WebM file.' : `This ${kind} file type is not supported` });
     return;
   }
 
@@ -560,19 +560,7 @@ async function receiveAsset(req, res, url) {
     let converted = false;
     let lossless = false;
     let pageCount = 0;
-
-    if (kind === 'video') {
-      const mp4Path = path.join(CACHE_DIR, `asset-${version}-wall.mp4`);
-      const prepared = await downloads.prepareWallVideo(rawPath, mp4Path, { signal, allowTranscode: url.searchParams.get('reencode') === '1', onProgress(progress, method) {
-        preparation.phase = method === 'remux' ? 'remuxing' : method === 'unchanged' ? 'checking' : 'converting';
-        preparation.progress = Math.round(progress);
-      } });
-      finalPath = prepared.path;
-      finalType = 'video/mp4';
-      converted = prepared.converted;
-      lossless = prepared.lossless;
-      if (finalPath !== rawPath) await fs.promises.unlink(rawPath).catch(() => {});
-    }
+    if (kind === 'video') await downloads.inspectBrowserVideo(rawPath, extension, { signal });
 
     if (kind === 'presentation' && officeExtensions.has(extension)) {
       const pdfPath = path.join(CACHE_DIR, `asset-${version}.pdf`);
@@ -622,11 +610,10 @@ async function receiveAsset(req, res, url) {
   } catch (error) {
     await fs.promises.unlink(temporaryPath).catch(() => {});
     await fs.promises.unlink(rawPath).catch(() => {});
-    await fs.promises.unlink(path.join(CACHE_DIR, `asset-${version}-wall.mp4`)).catch(() => {});
     preparation.phase = signal.aborted ? 'cancelled' : 'error';
     preparation.error = signal.aborted ? 'Preparation cancelled. You can choose another file.' : error.message || 'The file could not be prepared';
     broadcast('state', snapshot());
-    if (!res.headersSent && !res.destroyed) json(res, signal.aborted ? 409 : 500, { error: preparation.error, preparation });
+    if (!res.headersSent && !res.destroyed) json(res, signal.aborted ? 409 : kind === 'video' && /MP4|WebM|video track|audio track|browser/i.test(preparation.error) ? 415 : 500, { error: preparation.error, preparation });
   } finally {
     uploadInProgress = false;
     preparationController = null;
@@ -736,12 +723,18 @@ async function handle(req, res, url) {
       const body = await readJson(req);
       if (!['video', 'audio'].includes(state.sessionMode)) throw new Error('Choose Video or Audio mode first');
       if (body.type && !/^(video|audio)\/[a-z0-9.+-]+$/i.test(body.type)) throw new Error('Choose a video or audio file, not a document');
+      const extension = path.extname(String(body.name || '')).toLowerCase();
+      const mkvCodecs = Array.isArray(body.codecs) ? body.codecs : [];
+      const supportedMkv = mkvCodecs.includes('V_MPEG4/ISO/AVC') && mkvCodecs.every((codec) => codec === 'V_MPEG4/ISO/AVC' || typeof codec === 'string' && /^A_AAC(?:\/MPEG[24]\/(?:MAIN|LC|LC\/SBR|SSR))?$/.test(codec));
+      if (state.sessionMode === 'video' && (!validExtensions.video.has(extension) || body.type !== mimeForAsset('video', extension, '') || extension === '.mkv' && !supportedMkv)) {
+        json(res, 415, { error: 'This format is not supported. Convert it to MP4 with H.264 video and AAC audio first.' }); return;
+      }
       if (!/^[a-f0-9-]{36}$/.test(body.peerId || '') || !/^[a-f0-9]{64}$/.test(body.fingerprint || '') || !Number.isSafeInteger(body.size) || body.size <= 0 || body.size > MAX_ASSET_SIZE) throw new Error('Invalid local file metadata');
       removeCurrentAsset();
       state = { ...state, playing: false, position: 0, anchorTime: Date.now(), commandId: ++commandSequence,
         asset: { name: String(body.name || 'Local movie').slice(0, 220), size: body.size, originalSize: body.size, duration: Number(body.duration) || 0,
           type: String(body.type || 'video/mp4').slice(0, 100), kind: state.sessionMode, renderType: 'media', source: 'peer', peerId: body.peerId,
-          fingerprint: body.fingerprint, version: require('node:crypto').randomUUID() } };
+          fingerprint: body.fingerprint, codecs: Array.isArray(body.codecs) ? body.codecs.filter((codec) => typeof codec === 'string' && /^(V|A)_[A-Z0-9/_-]{1,60}$/.test(codec)).slice(0, 8) : [], version: require('node:crypto').randomUUID() } };
       for (const screen of screens.values()) Object.assign(screen, { mediaReady: false, duration: 0, playbackTime: 0, error: '' });
       saveSession(); broadcast('state', snapshot()); json(res, 200, { state: snapshot() }); return;
     }
@@ -766,10 +759,6 @@ async function handle(req, res, url) {
       json(res, 200, await downloads.capabilities());
       return;
     }
-    if (req.method === 'GET' && url.pathname === '/api/youtube/saved-videos') {
-      json(res, 200, { videos: downloads.savedVideos().filter((job) => (downloads.get(job.id).room || '') === room) });
-      return;
-    }
     if (req.method === 'POST' && url.pathname === '/api/youtube/formats') {
       const body = await readJson(req);
       json(res, 200, await downloads.inspect(extractYouTubeId(body.url)));
@@ -780,38 +769,36 @@ async function handle(req, res, url) {
       json(res, 202, downloads.start(String(body.inspectionId), String(body.optionId), room));
       return;
     }
-    const downloadRoute = /^\/api\/youtube\/downloads\/([a-f0-9-]{36})(?:\/(file|cancel|load|audio))?$/.exec(url.pathname);
+    const downloadRoute = /^\/api\/youtube\/downloads\/([a-f0-9-]{36})(?:\/(file|cancel|load))?$/.exec(url.pathname);
     if (downloadRoute) {
       const job = downloads.get(downloadRoute[1]);
       if ((job.room || '') !== room) throw new Error('Download not found in this session');
       const action = downloadRoute[2];
       if (req.method === 'GET' && !action) { json(res, 200, downloads.publicJob(job)); return; }
       if (req.method === 'POST' && action === 'cancel') { json(res, 200, downloads.cancel(job.id)); return; }
-      if (req.method === 'POST' && action === 'audio') {
-        const body = await readJson(req);
-        json(res, 202, downloads.convertSavedVideo(job.id, body.bitrate || 320));
-        return;
-      }
       if (['GET', 'HEAD'].includes(req.method) && action === 'file') {
         if (job.state !== 'ready' || !job.path) { json(res, 409, { error: 'This download is not ready yet.' }); return; }
-        res.writeHead(200, { 'Content-Type': job.option.kind === 'video' ? `video/${job.option.container}` : job.option.container === 'mp3' ? 'audio/mpeg' : job.option.container === 'm4a' ? 'audio/mp4' : 'audio/wav',
+        res.writeHead(200, { 'Content-Type': job.option.kind === 'video' ? `video/${job.option.container}` : job.option.container === 'mp3' ? 'audio/mpeg' : job.option.container === 'm4a' ? 'audio/mp4' : job.option.container === 'aac' ? 'audio/aac' : 'audio/wav',
           'Content-Length': fs.statSync(job.path).size, 'Content-Disposition': `attachment; filename*=UTF-8''${safeDownloadName(job.fileName)}`, 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' });
         if (req.method === 'HEAD') res.end();
         else { const stream = fs.createReadStream(job.path); stream.on('error', () => res.destroy()); stream.pipe(res); res.on('close', () => stream.destroy()); }
         return;
       }
       if (req.method === 'POST' && action === 'load') {
-        if (state.sessionMode !== 'video' || uploadInProgress) { json(res, 409, { error: 'Open the video dashboard and finish any current upload first.' }); return; }
+        const targetMode = state.sessionMode;
+        const validDownload = targetMode === 'audio' ? job.option.kind === 'audio' && ['mp3', 'm4a', 'aac', 'wav'].includes(job.option.container) : targetMode === 'video' && job.option.kind === 'video' && job.option.container === 'mp4';
+        if (!validDownload || uploadInProgress) { json(res, 409, { error: 'Open the matching video/audio dashboard and finish any current upload first.' }); return; }
         uploadInProgress = true;
         const version = `download-${Date.now()}-${job.id}`;
-        const destination = path.join(CACHE_DIR, `asset-${version}.mp4`);
+        const destination = path.join(CACHE_DIR, `asset-${version}.${job.option.container}`);
         try {
-          const file = await downloads.copyForWall(job.id, destination);
-          if (state.sessionMode !== 'video') throw new Error('The mode changed during preparation. Return to Video and try again.');
+          const file = targetMode === 'audio' ? await downloads.copyForSpeakers(job.id, destination) : await downloads.copyForWall(job.id, destination);
+          if (state.sessionMode !== targetMode) throw new Error('The mode changed during preparation. Return to the matching dashboard and try again.');
           const previousPath = assetFile?.path;
-          assetFile = { path: destination, ...file, originalSize: file.size, type: 'video/mp4', version, kind: 'video', renderType: 'media', pageCount: 0, converted: false };
+          assetFile = { path: destination, ...file, originalSize: file.size, type: file.type || 'video/mp4', version, kind: targetMode, renderType: 'media', pageCount: 0, converted: false };
           const { path: privatePath, ...asset } = assetFile;
           state = { ...state, playing: false, position: 0, anchorTime: Date.now(), notBefore: 0, asset, commandId: ++commandSequence };
+          for (const screen of screens.values()) { screen.mediaReady = false; screen.duration = 0; screen.error = ''; }
           if (previousPath && previousPath !== destination) fs.unlink(previousPath, () => {});
           saveSession();
           broadcast('state', snapshot());

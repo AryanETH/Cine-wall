@@ -1,6 +1,6 @@
 'use strict';
 
-const CLIENT_BUILD = '2026.10.02-direct-10';
+const CLIENT_BUILD = '2026.10.02-formats-15';
 const filePeer = window.CineWallFilePeer ? new window.CineWallFilePeer.FilePeer() : null;
 const $ = (selector) => document.querySelector(selector);
 const video = $('#video');
@@ -38,6 +38,9 @@ let pdfAssetVersion = '';
 let pdfRenderTask = null;
 let pdfRenderToken = 0;
 let mediaLoadAttempts = 0;
+let mediaRecoveryAttempts = 0;
+let mediaRecoveryInFlight = '';
+let videoFrameObservation = null;
 let mediaLoadTimer = null;
 let controlsTimer = null;
 let lastError = '';
@@ -341,10 +344,44 @@ function loadPresentation(asset, page, mode = 'fit') {
   postStatus();
 }
 
+async function recoverDirectMedia(asset, code) {
+  if (!asset || asset.source !== 'peer' || !filePeer || ![3, 4].includes(code)) return false;
+  if (mediaRecoveryInFlight === asset.version) return true;
+  if (mediaRecoveryAttempts >= 2) return false;
+  const attempt = ++mediaRecoveryAttempts;
+  mediaRecoveryInFlight = asset.version;
+  lastError = 'Retrying the original file locally. No upload or conversion…';
+  $('#waitingTitle').textContent = 'Checking playback on this laptop';
+  $('#waitingCopy').textContent = lastError;
+  waitingAsset.classList.add('show');
+  postStatus();
+  try {
+    // First match the remote displays' range transport; then let the native
+    // decoder sniff the same bytes without a possibly misleading MIME hint.
+    const options = { ranged: true, retry: attempt };
+    if (attempt === 2) options.type = '';
+    const url = await filePeer.open(asset, options);
+    if (currentAssetVersion !== asset.version || currentState?.asset?.version !== asset.version) return true;
+    video.src = url;
+    video.load();
+    return true;
+  } catch (error) {
+    if (currentAssetVersion !== asset.version || currentState?.asset?.version !== asset.version) return true;
+    lastError = error.message;
+    return false;
+  } finally {
+    if (mediaRecoveryInFlight === asset.version) mediaRecoveryInFlight = '';
+  }
+}
+
 function loadMedia(asset, force = false) {
   if (!asset) {
     if (!currentAssetVersion && !video.getAttribute('src')) return;
     currentAssetVersion = '';
+    mediaRecoveryAttempts = 0;
+    mediaRecoveryInFlight = '';
+    videoFrameObservation = null;
+    $('#decoderHelpLink').hidden = true;
     clearTimeout(mediaLoadTimer);
     video.pause();
     video.removeAttribute('src');
@@ -352,18 +389,16 @@ function loadMedia(asset, force = false) {
     return;
   }
   if (asset.version === currentAssetVersion && !force) return;
-  if (asset.version !== currentAssetVersion) mediaLoadAttempts = 0;
+  if (asset.version !== currentAssetVersion) { mediaLoadAttempts = 0; mediaRecoveryAttempts = 0; mediaRecoveryInFlight = ''; videoFrameObservation = null; }
   currentAssetVersion = asset.version;
   mediaLoadAttempts += 1;
   lastError = '';
   video.pause();
   if (asset.source === 'peer' && filePeer) {
     const version = asset.version;
-    $('#localPeerFileChoice').hidden = true;
-    filePeer.open(asset).then((url) => { if (currentAssetVersion === version) { video.src = url; video.load(); } }).catch((error) => { if (currentAssetVersion !== version) return; lastError = error.message; $('#localPeerFileChoice').hidden = false; $('#waitingTitle').textContent = 'Select the same movie or reconnect'; $('#waitingCopy').textContent = error.message; waitingAsset.classList.add('show'); postStatus(); });
+    filePeer.open(asset).then((url) => { if (currentAssetVersion === version) { video.src = url; video.load(); } }).catch((error) => { if (currentAssetVersion !== version) return; lastError = error.message; $('#decoderHelpLink').hidden = true; $('#waitingTitle').textContent = 'Connection to the admin source failed'; $('#waitingCopy').textContent = error.message; waitingAsset.classList.add('show'); postStatus(); });
     return;
   }
-  $('#localPeerFileChoice').hidden = true;
   video.src = window.CineWallSession?.link(`/api/media/stream?v=${encodeURIComponent(asset.version)}&screen=${screenNumber}&attempt=${mediaLoadAttempts}`) || `/api/media/stream?v=${encodeURIComponent(asset.version)}&screen=${screenNumber}&attempt=${mediaLoadAttempts}`;
   video.load();
   postStatus();
@@ -514,7 +549,6 @@ function applyStateAppearance(nextState) {
 
   if (!hasAsset) {
     filePeer?.clear();
-    $('#localPeerFileChoice').hidden = true;
     lastError = '';
     localAutoplayMuted = false;
     playBlocked.classList.remove('show');
@@ -824,7 +858,44 @@ function mediaIsReady() {
   if (!currentState?.asset) return false;
   if (sessionMode === 'presentation') return documentReady;
   if (sessionMode === 'youtube') return youtubeReady && !youtubePlayer?.lastError;
-  return Boolean(currentAssetVersion && Number.isFinite(video.duration) && video.readyState >= 1);
+  return Boolean(currentAssetVersion && !lastError && !video.error && !mediaRecoveryInFlight && Number.isFinite(video.duration) && video.readyState >= 1);
+}
+
+function checkVideoFrames(now = Date.now()) {
+  const asset = currentState?.asset;
+  if (sessionMode !== 'video' || !ready || !asset || currentAssetVersion !== asset.version || !currentState.playing
+      || video.paused || video.seeking || video.error || document.visibilityState === 'hidden') {
+    videoFrameObservation = null;
+    return false;
+  }
+  const frames = Number(video.getVideoPlaybackQuality?.()?.totalVideoFrames ?? video.webkitDecodedFrameCount);
+  if (!Number.isFinite(frames)) return false;
+  if (frames > 0) {
+    if (videoFrameObservation?.failed) {
+      lastError = '';
+      $('#decoderHelpLink').hidden = true;
+      waitingAsset.classList.remove('show');
+      postStatus();
+    }
+    videoFrameObservation = { version: asset.version, decoded: true };
+    return false;
+  }
+  if (!videoFrameObservation || videoFrameObservation.version !== asset.version) {
+    videoFrameObservation = { version: asset.version, since: now, position: video.currentTime || 0 };
+    return false;
+  }
+  if (videoFrameObservation.failed || videoFrameObservation.decoded) return Boolean(videoFrameObservation.failed);
+  if (now - videoFrameObservation.since < 4500 || (video.currentTime || 0) - videoFrameObservation.position < 2) return false;
+  videoFrameObservation.failed = true;
+  lastError = asset.codecs?.includes('V_MPEGH/ISO/HEVC')
+    ? 'The movie reached this laptop and its audio is playing, but Edge decoded no HEVC video frames. This laptop needs HEVC video support; the file stays on the admin laptop.'
+    : 'The movie reached this laptop and its audio is playing, but the browser decoded no video frames. Check this laptop’s video codec support.';
+  $('#waitingTitle').textContent = 'Video cannot be displayed on this laptop';
+  $('#waitingCopy').textContent = lastError;
+  $('#decoderHelpLink').hidden = !asset.codecs?.includes('V_MPEGH/ISO/HEVC');
+  waitingAsset.classList.add('show');
+  postStatus();
+  return true;
 }
 
 async function postStatus() {
@@ -954,7 +1025,8 @@ playBlocked.addEventListener('click', async () => {
 
 video.addEventListener('loadedmetadata', () => {
   clearTimeout(mediaLoadTimer);
-  $('#localPeerFileChoice').hidden = true;
+  videoFrameObservation = null;
+  $('#decoderHelpLink').hidden = true;
   lastError = '';
   waitingAsset.classList.remove('show');
   postStatus();
@@ -963,6 +1035,8 @@ video.addEventListener('loadedmetadata', () => {
 });
 video.addEventListener('canplay', postStatus);
 video.addEventListener('playing', () => {
+  videoFrameObservation = null;
+  $('#decoderHelpLink').hidden = true;
   lastError = '';
   waitingAsset.classList.remove('show');
   postStatus();
@@ -971,26 +1045,26 @@ video.addEventListener('ended', () => {
   if (screenNumber === 1 && currentState?.playing && sessionMode !== 'youtube') command(currentState.loop ? { type: 'play', position: 0 } : { type: 'pause' });
   postStatus();
 });
-video.addEventListener('timeupdate', updateController);
-$('#localPeerFile').addEventListener('change', async () => {
-  const file = $('#localPeerFile').files[0];
-  if (!file || currentState?.asset?.source !== 'peer' || !filePeer) return;
-  const asset = currentState.asset;
-  try { const url = await filePeer.selectSameFile(file, asset); if (currentState?.asset?.version !== asset.version) return; video.src = url; currentAssetVersion = asset.version; lastError = ''; video.load(); }
-  catch (error) { lastError = error.message; $('#waitingCopy').textContent = error.message; postStatus(); }
-});
+video.addEventListener('timeupdate', () => { updateController(); checkVideoFrames(); });
 window.addEventListener('cinewall-peer-error', (event) => {
   if (currentState?.asset?.source !== 'peer') return;
-  lastError = event.detail; $('#waitingCopy').textContent = event.detail; $('#localPeerFileChoice').hidden = false; waitingAsset.classList.add('show'); postStatus();
+  lastError = event.detail; $('#decoderHelpLink').hidden = true; $('#waitingTitle').textContent = 'Connection to the admin source failed'; $('#waitingCopy').textContent = event.detail; waitingAsset.classList.add('show'); postStatus();
 });
-video.addEventListener('error', () => {
+video.addEventListener('error', async () => {
   if (!currentAssetVersion) return;
   const code = video.error?.code;
-  if (currentState?.asset?.source === 'peer') $('#localPeerFileChoice').hidden = false;
-  lastError = code === 2 ? 'Video transfer failed. Reconnecting to the admin laptop…' : code === 3 || code === 4 ? 'This laptop cannot decode this video. Use an H.264/AAC MP4 file.' : 'Video playback was interrupted.';
-  if (code === 2 && mediaLoadAttempts < 5 && currentState?.asset) setTimeout(() => loadMedia(currentState.asset, true), 1500);
+  const asset = currentState?.asset;
+  if (await recoverDirectMedia(asset, code)) return;
+  if (!asset || currentAssetVersion !== asset.version) return;
+  const decodeHelp = window.CineWallFilePeer?.playbackHelp?.(asset) || 'This browser cannot play this video. Use MP4 with H.264 video and AAC audio.';
+  lastError = code === 2 ? 'Video transfer failed. Reconnecting to the admin laptop…' : code === 3 || code === 4 ? decodeHelp : 'Video playback was interrupted.';
+  if (code === 2 && mediaLoadAttempts < 5) {
+    clearTimeout(mediaLoadTimer);
+    mediaLoadTimer = setTimeout(() => { if (currentState?.asset?.version === asset.version) loadMedia(asset, true); }, 1500);
+  }
   $('#waitingTitle').textContent = 'Playback needs attention';
   $('#waitingCopy').textContent = lastError;
+  $('#decoderHelpLink').hidden = !(asset.codecs?.includes('V_MPEGH/ISO/HEVC') && [3, 4].includes(code));
   waitingAsset.classList.add('show');
   postStatus();
 });

@@ -7,7 +7,7 @@ const path = require('node:path');
 const vm = require('node:vm');
 const { downloadChoices, downloadError, common } = require('../youtube-downloads');
 
-function player(screen, mode = 'video') {
+function player(screen, mode = 'video', peer = null) {
   const nodes = new Map();
   const node = (selector) => {
     if (nodes.has(selector)) return nodes.get(selector);
@@ -18,21 +18,21 @@ function player(screen, mode = 'video') {
       addEventListener(name, callback) { this.handlers[name] = callback; },
       querySelector: (name) => node(`${selector} ${name}`), querySelectorAll: () => [],
       getAttribute(name) { return this[name]; }, removeAttribute(name) { delete this[name]; },
-      load() {}, pause() { this.paused = true; }, async play() { if (!this.muted) throw Object.assign(new Error('User gesture required'), { name: 'NotAllowedError' }); this.paused = false; },
+      load() { delete this.error; }, pause() { this.paused = true; }, async play() { if (!this.muted) throw Object.assign(new Error('User gesture required'), { name: 'NotAllowedError' }); this.paused = false; },
     };
     nodes.set(selector, item);
     return item;
   };
   const state = { serverId: 'server-1', sessionMode: mode, screenCount: 3, playing: true, position: 12, anchorTime: Date.now(), serverTime: Date.now(), notBefore: 0, commandId: 7, mode: 'stretch',
     audioSettings: { 1: { volume: 1, muted: false }, 2: { volume: 1, muted: false }, 3: { volume: 1, muted: false } },
-    asset: mode === 'youtube' ? { videoId: 'YE7VzlLtp-4', version: 'yt-test' } : { name: 'test.mp4', version: 'movie-test' } };
+    asset: mode === 'youtube' ? { videoId: 'YE7VzlLtp-4', version: 'yt-test' } : { name: peer ? 'test.mkv' : 'test.mp4', version: 'movie-test', source: peer ? 'peer' : undefined } };
   const statuses = [];
   const storage = () => ({ getItem: () => null, setItem() {}, removeItem() {} });
   const context = vm.createContext({ console, URLSearchParams, Math, Number, String, Boolean, Date, JSON, Promise, performance,
     location: { search: `?screen=${screen}`, origin: 'http://192.168.137.1:4173', href: `http://192.168.137.1:4173/screen.html?screen=${screen}` },
     innerWidth: 1280, innerHeight: 720, localStorage: storage(), sessionStorage: storage(),
     document: { querySelector: node, addEventListener() {}, body: { dataset: {} }, documentElement: { requestFullscreen: async () => {} } },
-    window: { addEventListener() {} },
+    window: { addEventListener() {}, CineWallFilePeer: peer ? { FilePeer: class { constructor() { return peer; } } } : undefined },
     EventSource: class { addEventListener() {} },
     setTimeout: () => 1, clearTimeout() {}, setInterval() {},
     fetch: async (url, init) => {
@@ -92,6 +92,58 @@ test('old commands cannot undo newer playback; a new server can recover', async 
   assert.equal(client.evaluate('currentState.serverId'), 'server-2');
 });
 
+test('admin MKV retries ranges then native sniffing, stops after two retries and does not request another identical file', async () => {
+  const opens = [], client = player(1, 'video', { async open(asset, options) { opens.push({ asset, options }); return `blob:attempt-${opens.length}`; } });
+  await new Promise(setImmediate);
+  const video = client.nodes.get('#video');
+  for (const code of [4, 3, 4]) { video.error = { code }; await video.handlers.error(); }
+  assert.equal(opens.length, 3, 'one normal load and exactly two recovery loads');
+  assert.equal(opens[1].options.ranged, true);
+  assert.equal(opens[1].options.retry, 1);
+  assert.equal(opens[2].options.type, '');
+  assert.doesNotMatch(fs.readFileSync(path.join(__dirname, '../public/screen.html'), 'utf8'), /localPeerFile|Select the same local/);
+  assert.match(client.evaluate('lastError'), /MP4 with H\.264 video and AAC audio/);
+  assert.equal(client.evaluate('mediaIsReady()'), false);
+  await client.evaluate('postStatus()');
+  assert.equal(client.statuses.at(-1).mediaReady, false);
+});
+
+test('audio progressing without decoded video frames reports a picture failure, then clears when video decodes', async () => {
+  const client = player(2);
+  await new Promise(setImmediate);
+  const video = client.nodes.get('#video');
+  video.getVideoPlaybackQuality = () => ({ totalVideoFrames: 0 });
+  video.paused = false;
+  video.currentTime = 12;
+  client.evaluate("currentState.asset.codecs = ['V_MPEGH/ISO/HEVC']");
+  assert.equal(client.evaluate('checkVideoFrames(1000)'), false);
+  video.currentTime = 15;
+  assert.equal(client.evaluate('checkVideoFrames(6000)'), true);
+  assert.match(client.evaluate('lastError'), /decoded no HEVC video frames/);
+  assert.equal(client.evaluate('mediaIsReady()'), false);
+  assert.equal(client.statuses.at(-1).mediaReady, false);
+  assert.match(client.statuses.at(-1).error, /file stays on the admin laptop/);
+  assert.equal(client.nodes.get('#decoderHelpLink').hidden, false);
+  video.getVideoPlaybackQuality = () => ({ totalVideoFrames: 1 });
+  assert.equal(client.evaluate('checkVideoFrames(6500)'), false);
+  assert.equal(client.evaluate('lastError'), '');
+  assert.equal(client.nodes.get('#decoderHelpLink').hidden, true);
+  assert.equal(client.evaluate('mediaIsReady()'), true);
+});
+
+test('recovery cannot replace a new movie after its asynchronous local-source lookup', async () => {
+  let resolveRecovery;
+  const client = player(1, 'video', { clear() {}, open(asset, options) { return options ? new Promise((resolve) => { resolveRecovery = resolve; }) : Promise.resolve('blob:original'); } });
+  await new Promise(setImmediate);
+  const video = client.nodes.get('#video');
+  video.error = { code: 4 };
+  const pending = video.handlers.error();
+  client.evaluate("applyStateAppearance({ ...currentState, asset: null, playing: false, commandId: 8 })");
+  resolveRecovery('blob:stale-retry'); await pending;
+  assert.equal(video.getAttribute('src'), undefined);
+  assert.equal(client.evaluate('mediaRecoveryInFlight'), '');
+});
+
 test('YouTube readiness and status reflect the actual player error, not a synthetic clock', async () => {
   const client = player(2, 'youtube');
   await new Promise(setImmediate);
@@ -125,12 +177,12 @@ test('quality choices include audio, separate streams, and high resolution witho
   assert.ok(!choices.some((option) => option.height === 4320));
 });
 
-test('yt-dlp uses a project cache and IPv4 instead of the protected home cache', () => {
+test('yt-dlp uses a writable project cache and allows the system to select a network family', () => {
   const args = common();
   const cache = args[args.indexOf('--cache-dir') + 1];
   assert.equal(cache, path.join(__dirname, '..', '.cinema-cache', 'yt-dlp-cache'));
   assert.ok(fs.existsSync(cache));
-  assert.ok(args.includes('--force-ipv4'));
+  assert.ok(!args.includes('--force-ipv4'));
 });
 
 test('403 messages are readable even when preceded by a cache traceback', () => {
@@ -250,7 +302,7 @@ test('YouTube source tab opens downloads without navigating to stream mode', asy
 function uploadDashboard() {
   const code = fs.readFileSync(path.join(__dirname, '../public/admin.js'), 'utf8');
   const helpers = code.slice(code.indexOf('function isPreparing()'), code.indexOf('function escapeHtml('));
-  const upload = code.slice(code.indexOf('function uploadFile('), code.indexOf('// Drag and Drop functionality'));
+  const upload = code.slice(code.indexOf('async function uploadFile('), code.indexOf('// Drag and Drop functionality'));
   const preview = code.slice(code.indexOf('function setPreviewKind()'), code.indexOf('function renderPlayer()'));
   const nodes = new Map();
   const revoked = [];
@@ -267,7 +319,8 @@ function uploadDashboard() {
     return nodes.get(selector);
   };
   const context = vm.createContext({ console: { log() {} }, Number, String, Boolean, Math, JSON, encodeURIComponent,
-    $: node, media: node('#mediaPreview'), timeline: node('#timeline'), warning: node('#fileWarning'), filePeer: null,
+    $: node, window: { CineWallVideoFile: { validate: async () => {} } }, location: { protocol: 'http:' }, media: node('#mediaPreview'), timeline: node('#timeline'), warning: node('#fileWarning'), filePeer: null,
+    VIDEO_FORMAT_HELP: 'This format is not supported. Use MP4 with H.264 video and AAC audio.',
     URL: { createObjectURL: () => 'blob:selected-file', revokeObjectURL: (url) => revoked.push(url) },
     setTimeout: () => 1, clearTimeout() {},
     render() { vm.runInContext('setPreviewKind()', context); },
@@ -282,14 +335,51 @@ function uploadDashboard() {
       send(file) { actions.push('upload-send'); this.file = file; }
     },
   });
-  vm.runInContext("let localPreview = null, uploadHideTimer = null, loadedMediaVersion = '', duration = 0, uploadBusy = false, removeBusy = false, scrubbing = false, presentationKey = '', cancelBusy = false; let status = {state:{sessionMode:'video',asset:null}}; const modeConfig = {video:{icon:'video',label:'Video'}};", context);
+  vm.runInContext("let localPreview = null, uploadHideTimer = null, loadedMediaVersion = '', duration = 0, uploadBusy = false, removeBusy = false, scrubbing = false, presentationKey = '', cancelBusy = false, previewRecoveryAttempts = 0, previewRecoveryVersion = '', previewRecoveryInFlight = ''; let status = {state:{sessionMode:'video',asset:null}}; const modeConfig = {video:{icon:'video',label:'Video'}};", context);
   vm.runInContext(helpers + preview + upload, context);
   return { context, requests, revoked, actions, nodes, evaluate: (input) => vm.runInContext(input, context) };
 }
 
-test('selecting a video loads a silent local preview before its upload, surviving state refreshes', () => {
+test('a local preview that failed before direct publishing completes is released for native recovery', async () => {
   const dashboard = uploadDashboard();
-  dashboard.evaluate("uploadFile({name:'movie.mp4',size:1000,type:'video/mp4'})");
+  dashboard.context.filePeer = {
+    async publish(file) {
+      dashboard.evaluate('localPreview.failed = true');
+      this.asset = { name: file.name, version: 'direct-ready', source: 'peer' };
+      return { sessionMode: 'video', asset: this.asset };
+    },
+    async open() { return 'blob:direct-ready'; },
+  };
+  const code = fs.readFileSync(path.join(__dirname, '../public/admin.js'), 'utf8');
+  vm.runInContext(code.slice(code.indexOf('async function shareLocalFile('), code.indexOf('// Shared upload function')), dashboard.context);
+  await dashboard.evaluate("shareLocalFile({name:'movie.mkv',size:1000,type:'video/mkv'})");
+  assert.equal(dashboard.evaluate('localPreview'), null);
+  assert.equal(dashboard.evaluate('loadedMediaVersion'), 'direct-ready');
+  assert.equal(dashboard.nodes.get('#mediaPreview').src, 'blob:direct-ready');
+  assert.equal(dashboard.requests.length, 0);
+});
+
+test('dashboard MKV retries preserve the direct asset and are bounded just like Display 1', async () => {
+  const code = fs.readFileSync(path.join(__dirname, '../public/admin.js'), 'utf8'), nodes = new Map(), opens = [], handlers = {};
+  const node = (selector) => { if (!nodes.has(selector)) nodes.set(selector, { classList: { add() {} } }); return nodes.get(selector); };
+  const media = { error: { code: 4 }, addEventListener(name, handler) { handlers[name] = handler; }, load() { this.error = null; } };
+  const context = vm.createContext({ media, window: {}, $: node, warning: node('#warning'), status: { state: { asset: { source: 'peer', version: 'original-mkv' } } },
+    filePeer: { async open(asset, options) { opens.push(options); return `blob:preview-${opens.length}`; } },
+    localPreview: null, loadedMediaVersion: 'original-mkv', previewRecoveryVersion: '', previewRecoveryAttempts: 0, previewRecoveryInFlight: '',
+    VIDEO_FORMAT_HELP: 'This format is not supported. Use MP4 with H.264 video and AAC audio.',
+  });
+  vm.runInContext(code.slice(code.indexOf("media.addEventListener('error'"), code.indexOf("window.addEventListener('pagehide'")), context);
+  for (let attempt = 0; attempt < 3; attempt++) { media.error = { code: 4 }; await handlers.error(); }
+  assert.equal(opens.length, 2);
+  assert.equal(opens[0].ranged, true);
+  assert.equal(opens[1].type, '');
+  assert.equal(context.status.state.asset.version, 'original-mkv');
+  assert.match(node('#warning').textContent, /MP4 with H\.264 video and AAC audio/);
+});
+
+test('a validated video loads a silent local preview before its LAN transfer, surviving state refreshes', async () => {
+  const dashboard = uploadDashboard();
+  await dashboard.evaluate("uploadFile({name:'movie.mp4',size:1000,type:'video/mp4'})");
   assert.deepEqual(dashboard.actions, ['preview-load', 'upload-send']);
   assert.equal(dashboard.nodes.get('#mediaPreview').src, 'blob:selected-file');
   assert.equal(dashboard.nodes.get('#mediaPreview').muted, true);
@@ -300,9 +390,25 @@ test('selecting a video loads a silent local preview before its upload, survivin
   assert.equal(dashboard.revoked.length, 0);
 });
 
-test('upload 100 percent becomes preparation, and response state becomes ready without an extra fetch', () => {
+test('rejected files never upload or replace the existing movie, and the chooser works again afterward', async () => {
   const dashboard = uploadDashboard();
-  dashboard.evaluate("uploadFile({name:'movie.mp4',size:1000,type:'video/mp4'})");
+  dashboard.evaluate("status.state.asset = {version:'existing',name:'existing.mp4'}");
+  dashboard.context.window.CineWallVideoFile.validate = async () => { throw new Error('This format is not supported. Convert it to .mp4 first.'); };
+  await dashboard.evaluate("uploadFile({name:'movie.mkv',size:12000000000,type:'video/x-matroska'})");
+  assert.equal(dashboard.requests.length, 0);
+  assert.equal(dashboard.evaluate('status.state.asset.version'), 'existing');
+  assert.equal(dashboard.evaluate('localPreview'), null);
+  assert.equal(dashboard.evaluate('uploadBusy'), false);
+  assert.equal(dashboard.nodes.get('#adminAssetFile').disabled, false);
+  assert.match(dashboard.nodes.get('#fileWarning').textContent, /Convert it to \.mp4 first/);
+  dashboard.context.window.CineWallVideoFile.validate = async () => {};
+  await dashboard.evaluate("uploadFile({name:'movie.mp4',size:1000,type:'video/mp4'})");
+  assert.equal(dashboard.requests.length, 1);
+});
+
+test('upload 100 percent becomes checking, and response state becomes ready without an extra fetch', async () => {
+  const dashboard = uploadDashboard();
+  await dashboard.evaluate("uploadFile({name:'movie.mp4',size:1000,type:'video/mp4'})");
   const request = dashboard.requests[0];
   request.upload.handlers.progress({ lengthComputable: true, loaded: 1000, total: 1000 });
   request.upload.handlers.load();
@@ -320,13 +426,13 @@ test('upload 100 percent becomes preparation, and response state becomes ready w
   assert.deepEqual(dashboard.revoked, ['blob:selected-file']);
 });
 
-test('upload failures clear the stalled progress and release local preview resources', () => {
+test('upload failures clear the stalled progress and release local preview resources', async () => {
   for (const event of ['error', 'abort', 'load']) {
     const dashboard = uploadDashboard();
-    dashboard.evaluate("uploadFile({name:'movie.mp4',size:1000,type:'video/mp4'})");
+    await dashboard.evaluate("uploadFile({name:'movie.mp4',size:1000,type:'video/mp4'})");
     const request = dashboard.requests[0];
     request.status = 500;
-    request.responseText = JSON.stringify({ error: 'Conversion failed' });
+    request.responseText = JSON.stringify({ error: 'File transfer failed' });
     request.handlers[event]();
     assert.equal(dashboard.evaluate('uploadBusy'), false);
     assert.equal(dashboard.evaluate('localPreview'), null);
@@ -336,21 +442,21 @@ test('upload failures clear the stalled progress and release local preview resou
   }
 });
 
-test('refresh recovers preparation progress and blocks duplicate uploads', () => {
+test('refresh recovers transfer progress and blocks duplicate uploads', async () => {
   const dashboard = uploadDashboard();
-  dashboard.evaluate("status.state.preparation = {phase:'converting',kind:'video',name:'movie.mp4',size:1000,progress:42}; renderPreparation(); uploadFile({name:'movie.mp4',size:1000,type:'video/mp4'})");
+  await dashboard.evaluate("status.state.preparation = {phase:'uploading',kind:'video',name:'movie.mp4',size:1000,progress:42}; renderPreparation(); uploadFile({name:'movie.mp4',size:1000,type:'video/mp4'})");
   assert.equal(dashboard.requests.length, 0);
   assert.equal(dashboard.nodes.get('#uploadProgressText').textContent, '42%');
   assert.equal(dashboard.nodes.get('#cancelPreparation').hidden, false);
   assert.equal(dashboard.nodes.get('#adminAssetFile').disabled, true);
 });
 
-test('409 preserves the same-file local preview and recovers the already running conversion', () => {
+test('409 preserves the same-file local preview and recovers the already running transfer', async () => {
   const dashboard = uploadDashboard();
-  dashboard.evaluate("uploadFile({name:'movie.mp4',size:1000,type:'video/mp4'})");
+  await dashboard.evaluate("uploadFile({name:'movie.mp4',size:1000,type:'video/mp4'})");
   const request = dashboard.requests[0];
   request.status = 409;
-  request.responseText = JSON.stringify({ preparation: { phase: 'converting', kind: 'video', name: 'movie.mp4', size: 1000, progress: 50 } });
+  request.responseText = JSON.stringify({ preparation: { phase: 'uploading', kind: 'video', name: 'movie.mp4', size: 1000, progress: 50 } });
   request.handlers.load();
   assert.equal(dashboard.evaluate('uploadBusy'), false);
   assert.equal(dashboard.evaluate('localPreview.pending'), true);

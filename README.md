@@ -7,7 +7,7 @@ CineWall connects Windows laptops on the same local network for four synchronize
 - **Presentation wall:** 1 to 3 displays for PDF, PowerPoint, Word, RTF, and image files.
 - **YouTube wall:** 2 or 3 displays showing complementary slices of one synchronized YouTube player.
 
-Run on a local network or deploy on Railway at `https://watch.aitoyz.in`. Video/audio default to **Direct local file**: the original stays in the admin browser and only requested byte ranges are shared with displays. No whole-movie upload or media database is needed for this mode. See [HOSTING.md](HOSTING.md) for private session links, browser/network requirements, and deployment.
+Run on a local network or deploy on Railway at `https://watch.aitoyz.in`. On HTTPS, the original video/audio stays in the admin browser and only requested byte ranges are shared with displays. On HTTP/LAN, CineWall transfers the single selected file to the local server for all displays. See [HOSTING.md](HOSTING.md) for private session links and deployment.
 
 ## Start CineWall
 
@@ -25,13 +25,13 @@ If port 4173 is busy, CineWall automatically chooses the next free port. Always 
 
 1. Start with the two preset links; add the third only when needed.
 2. Choose the movie once on the dashboard.
-   Direct mode opens a silent local preview immediately when the browser supports the file. It plays only the opening ten seconds and stops; **Replay 10s preview** replays that excerpt. The preview never follows the full wall timeline. Keep the source dashboard open. On an HTTP/LAN remote display, select the same file when prompted; HTTPS supports direct peer sharing.
-   **Server compatibility copy** is optional. It transfers the file to the running server and checks its tracks. Compatible MKV tracks are repackaged losslessly, with a distinct progress label. Unsupported codecs are rejected unless you explicitly check **Allow lossy conversion**. Cancel and shared preparation progress remain available; a 12 GB copy/remux can still take time.
+   CineWall checks the container, tracks and browser playback before accepting it. MP4/M4V supports H.264, VP9 and AV1 video with AAC audio; WebM supports VP8/VP9 with Opus audio. MKV supports H.264 video with AAC audio (including HE-AAC and multiple language tracks). The current browser must also decode a frame before sharing starts. Unsupported tracks, including HEVC/Dolby MKV, are rejected with an H.264/AAC MP4 suggestion; CineWall does not convert movies.
+   The silent preview plays the opening ten seconds and stops. **Replay 10s preview** replays that excerpt. Keep the source dashboard open. Only the admin selects the file; HTTP/LAN transfers it to the local server without conversion, while HTTPS shares bytes directly as screens play.
 3. **Stretch** is the default wall framing. Fit and Cinema crop remain available.
 4. Pressing Play opens Display 1 in its own browser tab. Join that screen once; the dashboard stays silent and does not act as a playback screen.
 5. Play, pause, seek, double-click ±10 seconds, and per-laptop audio changes synchronize across the wall.
 
-Direct mode preserves the original bytes; it does not make unsupported codecs playable. MKV is a container, not a codec, and browser support varies. A lossless remux changes the container without changing compressed tracks; an explicitly allowed compatibility conversion may change resolution/quality. The optional copy/remux tools must be installed on the server. DRM streaming services such as Netflix and Prime Video are not supported.
+Sharing preserves the original bytes. Every laptop still needs a browser that supports the selected tracks. DRM streaming services such as Netflix and Prime Video are not supported.
 
 ## YouTube downloads
 
@@ -39,16 +39,16 @@ On the **Video** dashboard, choose the **YouTube** tab beside **Local video** in
 
 Use the X beside a loaded video or audio file to remove it from the session and stop playback on joined laptops. Original files and separately saved downloads are not deleted. Return to **Local video** to upload a file again.
 
-Choose **Prepare download** and wait for downloading and conversion to finish. **Save file** saves it to the browser's Downloads folder. **Use on video wall** loads a prepared MP4 directly into CineWall. The original downloaded file remains available while a compatible wall copy is prepared. Progress and Cancel are available during preparation. Downloads are limited to 10 GB and one active download at a time.
+Choose **Download** and wait for it to finish. **Save file** saves it to the browser's Downloads folder. **Use on video wall** loads a supported MP4 into CineWall without conversion. Progress and Cancel are available. Downloads are limited to 10 GB and one active download at a time.
 
-After saving a video, **MP3 from saved video** lets you convert its audio locally at 96–320 kbps, without contacting YouTube again. Saved downloads remain available after restarting CineWall. MP3 downloads prefer the AAC audio source and retry other available streams if YouTube refuses that source.
+MP3 downloads prefer the AAC audio source and retry other available streams if YouTube refuses that source. Connection errors try an alternate official API route and IPv6, with bounded retries at the selected quality.
 
-The tools are installed in this copy's `tools` folder. For another admin laptop, double-click **SETUP DOWNLOADS.cmd** once; run it again to update yt-dlp. The script downloads yt-dlp and FFmpeg from their official GitHub releases, verifies their SHA-256 checksums, and does not change system PATH. For recent YouTube compatibility fixes, use `powershell -NoProfile -ExecutionPolicy Bypass -File setup-download-tools.ps1 -Update -Channel nightly`. The downloader writes its cache inside `.cinema-cache/yt-dlp-cache`, not your Windows home folder. Only download videos you own or have permission to save; unavailable or restricted videos return an error. YouTube rate limits or sign-in checks cannot be fixed by changing cache permissions; try later or convert a video already saved locally.
+The tools are installed in this copy's `tools` folder. For another admin laptop, double-click **SETUP DOWNLOADS.cmd** once; run it again to update yt-dlp. The script downloads yt-dlp and FFmpeg from their official GitHub releases, verifies their SHA-256 checksums, and does not change system PATH. For recent YouTube compatibility fixes, use `powershell -NoProfile -ExecutionPolicy Bypass -File setup-download-tools.ps1 -Update -Channel nightly`. The downloader writes its cache inside `.cinema-cache/yt-dlp-cache`. Windows `10013` means the connection was blocked; check firewall/network access if all routes fail. Only download videos you own or have permission to save; restricted videos, sign-in gates and rate limits can still prevent downloads.
 
 ## Speaker room
 
 1. Start with Speaker 1 on the admin laptop and add up to four more speakers.
-2. Choose an audio file once. Direct file sharing is the default, with the same HTTPS/HTTP fallback rules as video.
+2. Choose an audio file once. It uses the same HTTPS/HTTP sharing rules as video.
 3. Pressing Play opens Speaker 1 in a separate tab. Each laptop must click the join button once so the browser can allow sound.
 4. Use the dashboard mixer to control volume or mute for any laptop.
 
@@ -91,8 +91,8 @@ Use **Support this project** on the start page, enter an amount, and choose **Ge
 
 - **A link times out:** confirm all laptops are on the same non-guest network and Node.js is allowed through Windows Firewall on private networks.
 - **The address changed:** use the exact links shown in the active dashboard. Do not reuse links from an older server window.
-- **A file does not play:** try an MP4/H.264/AAC or MP3/WAV source. For MKV, try a lossless compatibility copy first. Lossy re-encoding is opt-in, never automatic.
-- **Direct sharing cannot connect:** keep the admin dashboard open, use HTTPS, configure TURN for restrictive networks, or select the matching local file on each laptop. Direct file access must be reselected after refreshing the source dashboard.
+- **A file does not play:** use MP4 with H.264/AAC or MP3/WAV audio. Convert unsupported movies outside CineWall first.
+- **Direct sharing cannot connect:** keep the admin dashboard open and configure TURN for restrictive networks. Choose the file again after refreshing the source dashboard.
 - **Sound is blocked:** click the join/allow-sound button once on that laptop.
 - **The admin plays but other laptops do not:** reload their numbered display links in Chrome or Edge. Confirm each appears on the dashboard's live map. For three laptops, add Display 3 first. A joined display follows the admin automatically; if sound is blocked, local video starts muted and shows an enable-sound button.
 - **YouTube stays black or reports an error:** use current Chrome or Edge, confirm internet access on that laptop, and try a public video that permits embedding.

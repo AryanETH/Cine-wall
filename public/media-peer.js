@@ -1,6 +1,60 @@
 'use strict';
 (() => {
   const uuid = () => crypto.randomUUID?.() || '10000000-1000-4000-8000-100000000000'.replace(/[018]/g, (c) => (c ^ crypto.getRandomValues(new Uint8Array(1))[0] & 15 >> c / 4).toString(16));
+  const mediaTypes = { mkv: 'video/x-matroska', mp4: 'video/mp4', mov: 'video/quicktime', m4v: 'video/mp4', webm: 'video/webm', mp3: 'audio/mpeg', wav: 'audio/wav', m4a: 'audio/mp4', aac: 'audio/aac', ogg: 'audio/ogg', oga: 'audio/ogg', flac: 'audio/flac' };
+  function mediaType(file) {
+    // Windows file associations can label MKV as video/mkv or application/octet-stream.
+    const known = mediaTypes[String(file.name || '').split('.').pop().toLowerCase()];
+    const supplied = String(file.type || '').split(';')[0].trim().toLowerCase();
+    return known || (/^(video|audio)\/[a-z0-9.+-]+$/.test(supplied) ? supplied : 'video/mp4');
+  }
+  // A typed slice references the original file; it does not read/copy the whole movie.
+  const mediaBlob = (file, type = mediaType(file)) => file.slice(0, file.size, type);
+  const codecNames = { 'V_MPEGH/ISO/HEVC': 'HEVC/H.265', 'V_MPEG4/ISO/AVC': 'H.264', V_VP8: 'VP8', V_VP9: 'VP9', V_AV1: 'AV1', 'A_EAC3': 'Dolby Digital Plus', A_AC3: 'Dolby Digital', A_DTS: 'DTS', A_AAC: 'AAC', A_OPUS: 'Opus', A_VORBIS: 'Vorbis', A_FLAC: 'FLAC' };
+  function matroskaCodecs(bytes) {
+    if (bytes.length < 4 || new DataView(bytes.buffer, bytes.byteOffset, 4).getUint32(0) !== 0x1a45dfa3) return [];
+    const codecs = new Set();
+    const vint = (offset, id) => {
+      if (offset >= bytes.length || !bytes[offset]) return null;
+      let length = 1, marker = 128;
+      while (!(bytes[offset] & marker)) { length++; marker >>= 1; }
+      if (length > (id ? 4 : 8) || offset + length > bytes.length) return null;
+      let value = id ? bytes[offset] : bytes[offset] & (marker - 1);
+      let unknown = !id && value === marker - 1;
+      for (let i = 1; i < length; i++) { value = value * 256 + bytes[offset + i]; unknown = unknown && bytes[offset + i] === 255; }
+      return { length, value: unknown ? Infinity : value };
+    };
+    const containers = new Set([0x1a45dfa3, 0x18538067, 0x1654ae6b, 0xae]);
+    function walk(start, limit, inTrack = false, depth = 0) {
+      if (depth > 4) return;
+      for (let offset = start; offset < limit;) {
+        const id = vint(offset, true); if (!id) break;
+        const size = vint(offset + id.length, false); if (!size) break;
+        const payload = offset + id.length + size.length;
+        const end = size.value === Infinity ? limit : Math.min(limit, payload + size.value);
+        if (containers.has(id.value)) walk(payload, end, inTrack || id.value === 0xae, depth + 1);
+        else if (inTrack && id.value === 0x86 && size.value > 0 && size.value <= 64 && payload + size.value <= limit) {
+          const codec = String.fromCharCode(...bytes.subarray(payload, payload + size.value));
+          if (/^[VA]_[A-Z0-9/_-]{1,60}$/.test(codec)) codecs.add(codec);
+        }
+        if (!Number.isSafeInteger(size.value) || payload + size.value > limit) break;
+        offset = payload + size.value;
+      }
+    }
+    walk(0, bytes.length);
+    return [...codecs];
+  }
+  async function inspectCodecs(file) {
+    if (!/\.mkv$/i.test(file.name || '')) return [];
+    if (window.CineWallVideoFile?.inspectMkvCodecs) return window.CineWallVideoFile.inspectMkvCodecs(file);
+    // Tracks normally live near the header. Never scan the entire 12 GB file.
+    return matroskaCodecs(new Uint8Array(await file.slice(0, Math.min(file.size, 256 * 1024)).arrayBuffer()));
+  }
+  function codecSummary(asset) { return (asset?.codecs || []).map((codec) => codecNames[codec]).filter(Boolean).join(' + '); }
+  function playbackHelp(asset) {
+    const codecs = codecSummary(asset);
+    return `This browser cannot play ${codecs ? `this video (${codecs})` : 'this video'}. Use MP4 with H.264 video and AAC audio.`;
+  }
   // SHA-256 fallback keeps file identity identical on HTTPS and an HTTP LAN.
   function sha256(bytes) {
     const primes = [], k = [], initial = [];
@@ -26,6 +80,7 @@
   class FilePeer {
     constructor() {
       this.id = uuid(); this.file = null; this.asset = null; this.connections = new Map(); this.connectionTasks = new Map(); this.waiting = new Map(); this.sequence = 0; this.generation = 0;
+      this.fileUrls = new Map(); this.localSource = ''; this.playbackType = null;
       this.local = new BroadcastChannel(`cinewall-file-${window.CineWallSession?.room || 'lan'}`);
       this.local.onmessage = (event) => this.onLocal(event.data);
       this.events = new EventSource(`/events?peer=${this.id}`);
@@ -39,7 +94,7 @@
         const port = event.ports[0];
         Promise.resolve().then(async () => {
           if (event.data.version !== this.asset?.version) throw new Error('The selected movie changed');
-          if (event.data.type === 'media-meta') return { size: this.asset.size, type: this.asset.type || 'video/mp4' };
+          if (event.data.type === 'media-meta') return { size: this.asset.size, type: this.playbackType ?? mediaType(this.asset) };
           return { buffer: await this.range(event.data.start, event.data.end) };
         }).then((data) => port.postMessage(data, data.buffer ? [data.buffer] : [])).catch((error) => { if (event.data.version === this.asset?.version) this.report(error); port.postMessage({ error: error.message }); });
       });
@@ -47,17 +102,15 @@
     report(error) { window.dispatchEvent(new CustomEvent('cinewall-peer-error', { detail: error.message })); }
     async request(route, body) { const response = await fetch(route, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }); const data = await response.json(); if (!response.ok) throw new Error(data.error); return data; }
     async publish(file, duration = 0) {
-      this.clear(); this.file = file; this.fileUrl = URL.createObjectURL(file);
-      const types = { mkv: 'video/x-matroska', mp4: 'video/mp4', mov: 'video/quicktime', m4v: 'video/mp4', webm: 'video/webm', mp3: 'audio/mpeg', wav: 'audio/wav', m4a: 'audio/mp4', aac: 'audio/aac', ogg: 'audio/ogg', oga: 'audio/ogg', flac: 'audio/flac' };
+      this.clear(); this.file = file; this.fileUrl = this.localUrl();
       this.publishingFingerprint = await fingerprint(file);
-      const result = await this.request('/api/local-source', { peerId: this.id, name: file.name, size: file.size, type: file.type || types[file.name.split('.').pop().toLowerCase()] || 'video/mp4', duration, fingerprint: this.publishingFingerprint });
+      const codecs = await inspectCodecs(file);
+      const result = await this.request('/api/local-source', { peerId: this.id, name: file.name, size: file.size, type: mediaType(file), duration, codecs, fingerprint: this.publishingFingerprint });
       this.asset = result.state.asset; return result.state;
     }
-    async selectSameFile(file, asset) {
-      const generation = this.generation;
-      if (file.size !== asset.size || await fingerprint(file) !== asset.fingerprint) throw new Error('Select the same movie file as the admin, not a different version.');
-      if (generation !== this.generation || this.asset?.version !== asset.version) throw new Error('The selected movie changed. Choose the new file.');
-      this.file = file; this.asset = asset; if (this.fileUrl) URL.revokeObjectURL(this.fileUrl); this.fileUrl = URL.createObjectURL(file); return this.fileUrl;
+    localUrl(type = mediaType(this.file)) {
+      if (!this.fileUrls.has(type)) this.fileUrls.set(type, URL.createObjectURL(mediaBlob(this.file, type)));
+      return this.fileUrls.get(type);
     }
     clear() {
       this.generation++;
@@ -65,43 +118,84 @@
       this.connections.clear(); this.connectionTasks.clear();
       for (const item of this.waiting.values()) { clearTimeout(item.timer); item.reject(new Error('The local source changed')); }
       this.waiting.clear();
-      if (this.fileUrl) URL.revokeObjectURL(this.fileUrl);
+      for (const url of this.fileUrls.values()) URL.revokeObjectURL(url);
+      this.fileUrls.clear(); this.localSource = ''; this.playbackType = null;
       this.fileUrl = ''; this.file = null; this.asset = null; this.publishingFingerprint = '';
     }
-    async open(asset) {
+    async open(asset, { ranged = false, type = mediaType(asset), retry = 0 } = {}) {
       if (this.asset?.version !== asset.version) { this.clear(); this.asset = asset; }
       const generation = this.generation;
-      if (this.file) return this.fileUrl;
-      try { const local = await this.localRequest({ type: 'locate', version: asset.version }, 400); if (generation === this.generation && local.url) return local.url; } catch {}
+      this.playbackType = type;
+      const canUseRanges = navigator.serviceWorker && window.isSecureContext;
+      if (this.file && (!ranged || !canUseRanges)) return this.localUrl(type);
+      if (!this.file) {
+        try {
+          const local = await this.localRequest({ type: 'locate', version: asset.version, mime: type }, 400);
+          if (generation === this.generation && local.url) { this.localSource = local.from; if (!ranged || !canUseRanges) return local.url; }
+        } catch {}
+      }
       if (generation !== this.generation) throw new Error('The selected movie changed');
-      if (!navigator.serviceWorker || !window.isSecureContext) throw new Error('For instant HTTP/LAN playback, select the same movie on this laptop. HTTPS enables direct peer sharing.');
-      await navigator.serviceWorker.register('/media-worker.js'); await navigator.serviceWorker.ready;
+      if (!navigator.serviceWorker || !window.isSecureContext) throw new Error('Reload the dashboard and choose the file again to send it to this screen.');
+      const registration = await navigator.serviceWorker.register('/media-worker.js', { updateViaCache: 'none' });
+      const incoming = registration?.installing || registration?.waiting;
+      if (incoming && incoming.state !== 'activated') await new Promise((resolve, reject) => {
+        const cleanup = () => { clearTimeout(timer); incoming.removeEventListener('statechange', changed); };
+        const changed = () => {
+          if (incoming.state === 'activated') { cleanup(); resolve(); }
+          else if (incoming.state === 'redundant') { cleanup(); reject(new Error('Reload this display to update direct sharing')); }
+        };
+        const timer = setTimeout(() => { cleanup(); reject(new Error('Reload this display to update direct sharing')); }, 5000);
+        incoming.addEventListener('statechange', changed); changed();
+      });
+      await navigator.serviceWorker.ready;
       if (!navigator.serviceWorker.controller) await new Promise((resolve, reject) => {
         const changed = () => { if (navigator.serviceWorker.controller) { clearTimeout(timer); navigator.serviceWorker.removeEventListener('controllerchange', changed); resolve(); } };
         const timer = setTimeout(() => { navigator.serviceWorker.removeEventListener('controllerchange', changed); reject(new Error('Reload this display to enable direct sharing')); }, 5000);
         navigator.serviceWorker.addEventListener('controllerchange', changed); changed();
       });
       if (generation !== this.generation) throw new Error('The selected movie changed');
-      return window.CineWallSession?.link(`/__cinewall_peer__/${asset.version}`) || `/__cinewall_peer__/${asset.version}`;
+      const route = `/__cinewall_peer__/${asset.version}?attempt=${retry}`;
+      return window.CineWallSession?.link(route) || route;
     }
     localRequest(body, timeout = 400) {
       const id = ++this.sequence;
-      return new Promise((resolve, reject) => { const timer = setTimeout(() => { this.waiting.delete(`local-${id}`); reject(new Error('Local source not found')); }, timeout); this.waiting.set(`local-${id}`, { resolve, reject, timer }); this.local.postMessage({ ...body, id, from: this.id }); });
+      return new Promise((resolve, reject) => { const timer = setTimeout(() => { this.waiting.delete(`local-${id}`); reject(new Error('Local source not found')); }, timeout); this.waiting.set(`local-${id}`, { resolve, reject, timer, from: body.to }); this.local.postMessage({ ...body, id, from: this.id }); });
     }
     async onLocal(data) {
-      if (data.to === this.id) { const item = this.waiting.get(`local-${data.id}`); if (item) { clearTimeout(item.timer); this.waiting.delete(`local-${data.id}`); item.resolve(data); } return; }
+      if (data.reply && data.to === this.id) {
+        const item = this.waiting.get(`local-${data.id}`);
+        if (item && (!item.from || item.from === data.from)) { clearTimeout(item.timer); this.waiting.delete(`local-${data.id}`); data.error ? item.reject(new Error(data.error)) : item.resolve(data); }
+        return;
+      }
+      if (data.to && data.to !== this.id) return;
       if (!this.file || data.version !== this.asset?.version) return;
-      if (data.type === 'locate') this.local.postMessage({ to: data.from, id: data.id, url: this.fileUrl });
+      const reply = { reply: true, to: data.from, from: this.id, id: data.id };
+      try {
+        if (data.type === 'locate') {
+          const type = data.mime ?? mediaType(this.file);
+          if (typeof type !== 'string' || (type && !/^(video|audio)\/[a-z0-9.+-]+$/i.test(type))) throw new Error('Invalid playback type');
+          this.local.postMessage({ ...reply, url: this.localUrl(type) });
+        } else if (data.type === 'range' && data.to === this.id) {
+          this.local.postMessage({ ...reply, buffer: await this.range(data.start, data.end) });
+        }
+      } catch (error) { this.local.postMessage({ ...reply, error: error.message }); }
     }
     async range(start, end) {
       const asset = this.asset;
       if (!asset || !Number.isSafeInteger(start) || !Number.isSafeInteger(end) || start < 0 || end > asset.size || end <= start || end - start > 256 * 1024) throw new Error('Invalid movie range');
       if (this.file) return this.file.slice(start, end).arrayBuffer();
+      if (this.localSource) {
+        const generation = this.generation;
+        const data = await this.localRequest({ type: 'range', to: this.localSource, version: asset.version, start, end }, 25000);
+        if (generation !== this.generation) throw new Error('The selected movie changed');
+        if (data.buffer?.byteLength !== end - start) throw new Error('Incomplete local movie range');
+        return data.buffer;
+      }
       const generation = this.generation, peer = await this.connect(asset.peerId);
       if (generation !== this.generation) throw new Error('The selected movie changed');
       const id = ++this.sequence;
       return new Promise((resolve, reject) => {
-        const timer = setTimeout(() => { this.waiting.delete(`rtc-${id}`); reject(new Error('Direct file connection timed out. Configure TURN or select the same file on this laptop.')); }, 20000);
+        const timer = setTimeout(() => { this.waiting.delete(`rtc-${id}`); reject(new Error('The connection to the admin source timed out. Keep the admin tab open and check network access between the laptops.')); }, 20000);
         this.waiting.set(`rtc-${id}`, { resolve, reject, timer, chunks: [], expected: end - start, received: 0 });
         try { peer.channel.send(JSON.stringify({ type: 'range', id, version: asset.version, start, end })); }
         catch (error) { clearTimeout(timer); this.waiting.delete(`rtc-${id}`); reject(error); }
@@ -115,7 +209,7 @@
       const pc = new RTCPeerConnection({ iceServers: info.iceServers || [] });
       const peer = { pc, channel: null, candidates: [], queue: Promise.resolve(), queued: 0, closed: false }; this.connections.set(id, peer);
       pc.onicecandidate = (event) => { if (event.candidate && !peer.closed) this.request('/api/peer-signal', { from: this.id, to: id, candidate: event.candidate }).catch((error) => { if (!peer.closed) this.report(error); }); };
-      pc.onconnectionstatechange = () => { if (!peer.closed && ['failed', 'closed'].includes(pc.connectionState)) { this.connections.delete(id); this.report(new Error('Peer connection lost. Keep the admin tab open, configure TURN, or select the same local file.')); } };
+      pc.onconnectionstatechange = () => { if (!peer.closed && ['failed', 'closed'].includes(pc.connectionState)) { this.connections.delete(id); this.report(new Error('Connection to the admin source was lost. Keep the admin tab open and check network access between the laptops.')); } };
       const bind = (channel) => { peer.channel = channel; channel.binaryType = 'arraybuffer'; channel.bufferedAmountLowThreshold = 128 * 1024; channel.onmessage = (event) => this.onData(peer, event.data); };
       pc.ondatachannel = (event) => bind(event.channel);
       if (offer) { bind(pc.createDataChannel('movie-ranges', { ordered: true })); await pc.setLocalDescription(await pc.createOffer()); await this.request('/api/peer-signal', { from: this.id, to: id, description: pc.localDescription }); }
@@ -132,7 +226,7 @@
     async connect(id) {
       const peer = await this.getPeer(id, true);
       const deadline = Date.now() + 15000;
-      while (peer.channel?.readyState !== 'open') { if (Date.now() > deadline || ['failed', 'closed'].includes(peer.pc.connectionState)) throw new Error('Direct connection unavailable. Configure TURN or select the same file locally.'); await new Promise((resolve) => setTimeout(resolve, 50)); }
+      while (peer.channel?.readyState !== 'open') { if (Date.now() > deadline || ['failed', 'closed'].includes(peer.pc.connectionState)) throw new Error('Direct connection to the admin source is unavailable. Keep the admin tab open and check network access between the laptops.'); await new Promise((resolve) => setTimeout(resolve, 50)); }
       return peer;
     }
     async onSignal(data) {
@@ -188,5 +282,5 @@
       channel.send(JSON.stringify({ type: 'end', id: request.id }));
     }
   }
-  window.CineWallFilePeer = { FilePeer, fingerprint, sha256 };
+  window.CineWallFilePeer = { FilePeer, fingerprint, sha256, mediaType, mediaBlob, matroskaCodecs, inspectCodecs, codecSummary, playbackHelp };
 })();

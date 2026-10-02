@@ -7,7 +7,10 @@
   let polling = null;
   let checking = false;
   let preparing = false;
-  let savedListJob = '';
+  let currentMode = '';
+  const audioOnly = () => currentMode === 'audio';
+  const availableFormats = () => (inspection?.formats || []).filter((option) => !audioOnly() || option.kind === 'audio');
+  const formatName = (container) => container === 'm4a' ? 'M4A (AAC)' : container.toUpperCase();
 
   function message(text, error = false) {
     el('youtubeDownloadStatus').textContent = text;
@@ -21,17 +24,27 @@
     return data;
   }
 
-  function selectedOption() { return inspection?.formats.find((option) => option.id === el('downloadQuality').value); }
+  function selectedOption() { return availableFormats().find((option) => option.id === el('downloadQuality').value); }
+
+  function renderFormats() {
+    const selected = el('downloadContainer').value;
+    const containers = [...new Set(availableFormats().map((option) => option.container))];
+    el('downloadContainer').replaceChildren(...containers.map((container) => new Option(formatName(container), container)));
+    if (containers.includes(selected)) el('downloadContainer').value = selected;
+    el('downloadSelection').hidden = !containers.length;
+    renderQualities();
+    if (!containers.length) message('No audio formats are available for this video.', true);
+  }
 
   function renderQualities() {
-    const formats = inspection.formats.filter((option) => option.container === el('downloadContainer').value);
+    const formats = availableFormats().filter((option) => option.container === el('downloadContainer').value);
     el('downloadQuality').replaceChildren(...formats.map((format) => new Option(format.label, format.id)));
     renderSize();
   }
 
   function renderSize() {
     const option = selectedOption();
-    el('downloadSizeHint').textContent = option?.size ? `Estimated file size · ${(option.size / 1024 / 1024).toFixed(1)} MB` : 'Size is calculated during preparation.';
+    el('downloadSizeHint').textContent = option?.size ? `${(option.size / 1024 / 1024).toFixed(1)} MB` : '';
   }
 
   function renderJob() {
@@ -41,22 +54,20 @@
     el('checkYoutubeFormats').disabled = preparing || checking;
     el('downloadContainer').disabled = preparing;
     el('downloadQuality').disabled = preparing;
-    el('convertSavedAudio').disabled = preparing;
-    el('savedVideoSource').disabled = preparing;
-    el('savedAudioBitrate').disabled = preparing;
     el('cancelYoutubeDownload').hidden = !active;
     el('youtubeDownloadProgress').hidden = !active;
     el('youtubeDownloadProgress').value = job?.progress || 0;
     el('saveYoutubeDownload').hidden = job?.state !== 'ready';
-    el('loadYoutubeDownload').hidden = !(job?.state === 'ready' && job.container === 'mp4' && job.kind === 'video');
+    const loadable = audioOnly() ? job?.kind === 'audio' && ['mp3', 'm4a', 'aac', 'wav'].includes(job.container) : currentMode === 'video' && job?.kind === 'video' && job.container === 'mp4';
+    el('loadYoutubeDownload').hidden = !(job?.state === 'ready' && loadable);
+    el('loadYoutubeDownload').textContent = audioOnly() ? 'Use in speaker room' : 'Use on video wall';
     if (!job) return;
     if (job.state === 'downloading') message(job.message || `Downloading · ${Math.round(job.progress)}%`);
-    else if (job.state === 'converting') message(`Preparing ${job.container.toUpperCase()} · ${job.kind === 'audio' ? 'converting audio' : 'merging video and audio'}`);
+    else if (job.state === 'converting') message(`Preparing ${job.container.toUpperCase()}…`);
     else if (job.state === 'ready') {
       el('saveYoutubeDownload').href = window.CineWallSession?.link(job.downloadUrl) || job.downloadUrl;
       el('saveYoutubeDownload').download = job.fileName;
-      message(job.kind === 'audio' ? 'Your audio file is ready. Choose Save file.' : 'Ready. Save the file, or use this MP4 on the video wall.');
-      if (savedListJob !== job.id) { savedListJob = job.id; refreshSavedVideos(); }
+      message('Ready');
     } else if (job.state === 'error') message(job.error || 'Download failed. Check the link and try again.', true);
     else if (job.state === 'cancelled') message(job.error || 'Download cancelled.');
   }
@@ -72,28 +83,6 @@
     else sessionStorage.removeItem('cinewall-download-job');
   }
 
-  async function refreshSavedVideos() {
-    try {
-      const data = await request('/api/youtube/saved-videos');
-      el('savedVideoAudio').hidden = !data.videos.length;
-      const selected = el('savedVideoSource').value;
-      el('savedVideoSource').replaceChildren(...data.videos.map((video) => new Option(video.title, video.id)));
-      if (data.videos.some((video) => video.id === selected)) el('savedVideoSource').value = selected;
-    } catch { el('savedVideoAudio').hidden = true; }
-  }
-
-  el('convertSavedAudio').addEventListener('click', async () => {
-    if (preparing || !el('savedVideoSource').value) return;
-    el('convertSavedAudio').disabled = true;
-    message('Converting the saved video to MP3…');
-    try {
-      job = await request(`/api/youtube/downloads/${el('savedVideoSource').value}/audio`, { bitrate: Number(el('savedAudioBitrate').value) });
-      sessionStorage.setItem('cinewall-download-job', job.id);
-      renderJob();
-      poll();
-    } catch (error) { message(error.message, true); el('convertSavedAudio').disabled = false; }
-  });
-
   function chooseSource(open) {
     el('youtubeDownloadPanel').hidden = !open;
     el('localVideoSource').classList.toggle('active', !open);
@@ -103,11 +92,24 @@
     el('downloadYoutubeToggle').setAttribute('aria-expanded', String(open));
     el('fileSourceButton').hidden = open;
     el('dropZone').hidden = open;
+    el('playlistButton').hidden = open || !audioOnly();
     if (open) el('downloadYoutubeUrl').focus();
-    if (open) refreshSavedVideos();
   }
   el('downloadYoutubeToggle').addEventListener('click', () => chooseSource(true));
   el('localVideoSource').addEventListener('click', () => chooseSource(false));
+
+  function syncMode(mode) {
+    if (mode === currentMode) return;
+    currentMode = mode;
+    el('localVideoSource').textContent = audioOnly() ? 'Local audio' : 'Local video';
+    el('downloadPanelCopy').textContent = audioOnly() ? 'MP3 · AAC · M4A audio' : 'Video & audio downloads';
+    el('youtubeDownloadPanel').setAttribute('aria-label', audioOnly() ? 'Download YouTube audio' : 'Download a YouTube video');
+    el('downloadYoutubeUrl').placeholder = audioOnly() ? 'Drop or paste a YouTube link…' : 'https://youtube.com/watch?v=…';
+    if (inspection) renderFormats();
+    renderJob();
+  }
+  window.CineWallDownloadPanel = { syncMode, chooseSource };
+  syncMode(document.body?.dataset.sessionMode || 'video');
 
   el('youtubeDownloadForm').addEventListener('submit', async (event) => {
     event.preventDefault();
@@ -120,14 +122,11 @@
     message('Checking available qualities…');
     try {
       const tools = await request('/api/youtube/tools');
-      if (!tools.ready) throw new Error('The download tools need setup. Run setup-download-tools.ps1 on the admin laptop, then try again.');
+      if (!tools.ready) throw new Error('Download tools are unavailable.');
       inspection = await request('/api/youtube/formats', { url: el('downloadYoutubeUrl').value.trim() });
       el('downloadVideoTitle').textContent = inspection.title;
-      const containers = [...new Set(inspection.formats.map((option) => option.container))];
-      el('downloadContainer').replaceChildren(...containers.map((container) => new Option(container.toUpperCase(), container)));
-      renderQualities();
-      el('downloadSelection').hidden = false;
-      message('Choose a format and quality.');
+      renderFormats();
+      if (availableFormats().length) message('Choose a format and quality.');
     } catch (error) { message(error.message, true); }
     finally { checking = false; el('checkYoutubeFormats').disabled = false; }
   });
@@ -159,17 +158,17 @@
   });
 
   el('loadYoutubeDownload').addEventListener('click', async () => {
-    if (!job || job.state !== 'ready') return;
+    if (!job || job.state !== 'ready' || el('loadYoutubeDownload').hidden) return;
     el('loadYoutubeDownload').disabled = true;
-    message('Preparing this video for every display…');
+    const targetMode = currentMode;
+    message(audioOnly() ? 'Loading this audio for every speaker…' : 'Preparing this video for every display…');
     try {
       await request(`/api/youtube/downloads/${job.id}/load`, {});
-      message('Video loaded on the wall. Press Play to start the joined displays.');
+      message(targetMode === 'audio' ? 'Audio loaded' : 'Video loaded');
     } catch (error) { message(error.message, true); }
     finally { el('loadYoutubeDownload').disabled = false; }
   });
 
   const saved = sessionStorage.getItem('cinewall-download-job');
   if (/^[a-f0-9-]{36}$/.test(saved || '')) request(`/api/youtube/downloads/${saved}`).then((data) => { job = data; renderJob(); poll(); }).catch(() => sessionStorage.removeItem('cinewall-download-job'));
-  refreshSavedVideos();
 })();

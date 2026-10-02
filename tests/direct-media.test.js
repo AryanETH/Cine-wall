@@ -62,23 +62,23 @@ test('dashboard renders every hosted display on the domain even when server info
 
 function virtualFile(size = 12 * 1024 ** 3, name = 'movie.mp4', type = 'video/mp4') {
   const reads = [];
-  return { size, name, type, reads, slice(start = 0, end = size) {
+  return { size, name, type, reads, slice(start = 0, end = size, sliceType = '') {
     end = Math.min(end, size);
-    return { async arrayBuffer() {
+    return { size: end - start, type: sliceType, async arrayBuffer() {
       assert.ok(end - start <= 256 * 1024, 'Should never read the complete movie'); reads.push([start, end]);
       return Uint8Array.from({ length: end - start }, (_, index) => (start + index) % 251).buffer;
     } };
   } };
 }
 
-function peerPage({ secure = true } = {}) {
-  const events = [], sent = [], errors = [], broadcasts = [];
+function peerPage({ secure = true, worker = false } = {}) {
+  const events = [], sent = [], errors = [], broadcasts = [], blobs = [], revoked = [], registrations = [], workerHandlers = [];
   class Events { constructor() { this.handlers = {}; events.push(this); } addEventListener(name, handler) { this.handlers[name] = handler; } }
   class Broadcast { constructor() { broadcasts.push(this); } postMessage(data) { queueMicrotask(() => { for (const other of broadcasts) if (other !== this) other.onmessage?.({ data }); }); } }
   const window = { isSecureContext: secure, CineWallSession: { room, link: (value) => `https://watch.aitoyz.in${value}?room=${room}` }, dispatchEvent: (event) => errors.push(event.detail) };
   const context = vm.createContext({ window, crypto: crypto.webcrypto, Uint8Array, Int32Array, DataView, TextEncoder, Map, Promise, Number, Math, JSON, Date,
-    URL: { createObjectURL: () => 'blob:local-movie', revokeObjectURL() {} }, BroadcastChannel: Broadcast, EventSource: Events,
-    navigator: {}, CustomEvent: class { constructor(type, options) { this.detail = options.detail; } }, setTimeout, clearTimeout,
+    URL: { createObjectURL: (blob) => { blobs.push(blob); return 'blob:local-movie'; }, revokeObjectURL: (url) => revoked.push(url) }, BroadcastChannel: Broadcast, EventSource: Events,
+    navigator: worker ? { serviceWorker: { controller: {}, ready: Promise.resolve(), async register(...args) { registrations.push(args); }, addEventListener(name, handler) { workerHandlers.push(handler); } } } : {}, CustomEvent: class { constructor(type, options) { this.detail = options.detail; } }, setTimeout, clearTimeout,
     fetch: async (route, options) => {
       if (options?.body) {
         const body = JSON.parse(options.body); sent.push({ route, body });
@@ -88,7 +88,7 @@ function peerPage({ secure = true } = {}) {
     },
   });
   vm.runInContext(source('media-peer.js'), context);
-  return { api: window.CineWallFilePeer, context, events, sent, errors, window };
+  return { api: window.CineWallFilePeer, context, events, sent, errors, window, blobs, revoked, registrations, workerHandlers };
 }
 
 test('fingerprint is SHA-256 compatible and only reads 128 KiB of a virtual 12 GB movie', async () => {
@@ -109,6 +109,53 @@ test('direct publish sends metadata only, with correct audio MIME fallback and o
   assert.ok(JSON.stringify(client.sent[0].body).length < 1000);
   assert.equal(file.reads.length, 2);
   owner.clear();
+});
+
+test('MKV OS MIME associations are normalized in metadata, preview and local playback without reading 12 GB', async () => {
+  const client = peerPage(), file = virtualFile(12 * 1024 ** 3, 'movie.MKV', 'video/mkv');
+  const owner = new client.api.FilePeer(), state = await owner.publish(file);
+  assert.equal(state.asset.type, 'video/x-matroska');
+  assert.equal(client.blobs[0].type, 'video/x-matroska');
+  assert.equal(client.blobs[0].size, file.size);
+  assert.equal(file.reads.length, 3, 'fingerprint head/tail plus a bounded MKV header, not a complete-file read');
+  const preview = client.api.mediaBlob(file);
+  assert.equal(preview.type, 'video/x-matroska'); assert.equal(file.reads.length, 3);
+  assert.equal(client.api.mediaType({ name: 'movie.mkv', type: 'application/octet-stream' }), 'video/x-matroska');
+  owner.clear(); assert.equal(client.revoked.length, 1);
+});
+
+test('bounded MKV header inspection identifies actual HEVC and Dolby tracks, never guesses from the filename', async () => {
+  const client = peerPage();
+  const element = (id, data) => Buffer.concat([Buffer.from(id, 'hex'), Buffer.from([128 | data.length]), data]);
+  const tracks = element('1654ae6b', Buffer.concat(['V_MPEGH/ISO/HEVC', 'A_EAC3'].map((codec) => element('ae', element('86', Buffer.from(codec))))));
+  const header = Buffer.concat([element('1a45dfa3', Buffer.alloc(0)), Buffer.from('18538067ff', 'hex'), tracks]);
+  assert.deepEqual(Array.from(client.api.matroskaCodecs(header)), ['V_MPEGH/ISO/HEVC', 'A_EAC3']);
+  assert.deepEqual(Array.from(client.api.matroskaCodecs(Buffer.from('movie HEVC x265 A_EAC3'))), []);
+  const reads = [], file = { name: 'movie.mkv', size: 12 * 1024 ** 3, slice(start, end) {
+    reads.push([start, end]); return { async arrayBuffer() { return Uint8Array.from(header).buffer; } };
+  } };
+  const codecs = await client.api.inspectCodecs(file);
+  assert.deepEqual(reads, [[0, 256 * 1024]]);
+  assert.match(client.api.playbackHelp({ codecs }), /MP4 with H\.264 video and AAC audio/);
+  assert.match(client.api.codecSummary({ codecs }), /HEVC\/H.265 \+ Dolby Digital Plus/);
+});
+
+test('admin range recovery reads local bytes through the source tab, never via WebRTC or upload', async () => {
+  const client = peerPage({ worker: true }), owner = new client.api.FilePeer(), admin = new client.api.FilePeer();
+  const file = virtualFile(), asset = (await owner.publish(file)).asset;
+  assert.equal(await admin.open(asset), 'blob:local-movie');
+  const url = await admin.open(asset, { ranged: true, retry: 1 });
+  assert.match(url, /__cinewall_peer__\/movie-version\?attempt=1/);
+  admin.connect = () => { throw new Error('Admin must not open a network peer to itself'); };
+  const bytes = new Uint8Array(await admin.range(5000000000, 5000000123));
+  assert.equal(bytes.length, 123);
+  assert.ok(bytes.every((byte, index) => byte === (5000000000 + index) % 251));
+  assert.equal(client.sent.length, 1, 'metadata only; no movie upload');
+  assert.equal(client.registrations[0][1].updateViaCache, 'none');
+  await admin.open(asset, { ranged: true, type: '', retry: 2 });
+  assert.equal(admin.playbackType, '');
+  assert.ok(client.blobs.some((blob) => blob.type === ''));
+  owner.clear(); admin.clear();
 });
 
 test('byte-exact remote ranges are split into bounded packets and never copy the full movie', async () => {
@@ -132,15 +179,15 @@ test('byte-exact remote ranges are split into bounded packets and never copy the
   owner.clear(); receiver.clear();
 });
 
-test('matching local file bypasses network transfers; wrong or stale files are rejected', async () => {
+test('insecure remote LAN displays never ask for a second copy of the admin movie', async () => {
   const client = peerPage({ secure: false }), owner = new client.api.FilePeer(), file = virtualFile(1000);
   const asset = (await owner.publish(file)).asset;
   const receiver = new client.api.FilePeer(); receiver.asset = asset;
-  assert.equal(await receiver.selectSameFile(file, asset), 'blob:local-movie');
-  assert.equal(await receiver.open(asset), 'blob:local-movie');
-  await assert.rejects(receiver.selectSameFile(virtualFile(1001), asset), /same movie/);
+  receiver.localRequest = async () => { throw new Error('The admin is on another laptop'); };
+  await assert.rejects(receiver.open(asset), /choose the file again/);
+  assert.equal(receiver.file, null);
+  assert.equal(owner.file, file);
   receiver.clear();
-  await assert.rejects(receiver.selectSameFile(file, asset), /changed/);
   owner.clear();
 });
 
@@ -196,6 +243,14 @@ test('cancelled full-file response stops additional reads instead of buffering 1
   const reader = response.body.getReader(); await reader.read(); await reader.cancel(); await turn();
   const count = file.reads.length; await turn(); assert.equal(file.reads.length, count);
   assert.ok(count <= 2); assert.ok(file.reads.every(([start, end]) => end - start <= 256 * 1024));
+});
+
+test('native-sniff retry omits only the MIME hint and still returns byte-exact seekable ranges', async () => {
+  const file = virtualFile(10000, 'movie.mkv', ''), response = await workerPage(file).fetch('bytes=123-246');
+  assert.equal(response.status, 206);
+  assert.equal(response.headers.get('Content-Type'), null);
+  assert.equal(response.headers.get('Content-Range'), 'bytes 123-246/10000');
+  assert.deepEqual(new Uint8Array(await response.arrayBuffer()), Uint8Array.from({ length: 124 }, (_, index) => (123 + index) % 251));
 });
 
 test('admin preview stops at ten seconds, stays muted and never follows full movie playback', () => {
