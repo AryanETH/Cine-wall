@@ -55,7 +55,8 @@ body { margin: 0; }
 button, input, select { font: inherit; }
 button, a, label { -webkit-tap-highlight-color: transparent; }
 button { cursor: pointer; }
-.fi { font-family: "Segoe Fluent Icons", "Segoe MDL2 Assets"; font-style: normal; font-weight: 400; line-height: 1; }
+.fi { display: inline-flex; align-items: center; justify-content: center; font-family: inherit; font-style: normal; font-weight: 400; line-height: 1; vertical-align: middle; }
+.cw-icon { display: block; width: 1em; height: 1em; flex: none; pointer-events: none; }
 
 .admin-body {
   min-height: 100vh;
