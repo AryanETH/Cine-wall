@@ -1,0 +1,6 @@
+.git
+.cinema-cache
+tools
+node_modules
+tests
+*.zip

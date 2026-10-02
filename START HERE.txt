@@ -1,13 +1,27 @@
-CINEWALL - START HERE
+CINEWALL STUDIO - START HERE
 
-1. Extract this ZIP completely. Do not run it from inside the ZIP preview.
-2. Double-click the file named: START CINEMA.cmd
+1. Extract this ZIP completely.
+2. Double-click: START CINEMA.cmd
 3. Keep the black window open.
-4. Open the Admin address printed in that window.
-5. On the admin page, choose 2 or 3 screens and select the movie ONCE.
-6. Open the exact Screen address on every screen laptop.
-7. Choose each laptop's position and make it ready.
-8. Press Play on the admin page. Every screen follows automatically.
+4. Open the Start address printed in that window.
+5. Choose Video, Audio, Presentation, or YouTube.
+6. Add only the displays or speakers you need.
+7. Open each numbered link on its matching laptop. It joins automatically.
+   Click the sound button if audio is blocked; click Join to enter fullscreen.
+8. Choose the media/document on the dashboard.
+
+Video and audio Play opens Display 1 / Speaker 1 in a separate tab. The dashboard stays silent.
+Video/audio now default to Direct local file: no whole-movie upload, no automatic quality reduction. Keep the source dashboard open.
+On remote HTTP/LAN displays, choose the same file when prompted. On HTTPS, direct peer sharing is available; restrictive networks may need TURN.
+The silent dashboard video preview stops after the first 10 seconds. Replay preview does not restart the wall movie.
+Server compatibility copy is optional: MKV repackaging preserves quality, while lossy codec conversion requires explicit permission.
+Railway hosting at watch.aitoyz.in uses private room links on the domain. See HOSTING.md and redeploy the changed project files.
+Presentation pages can be changed from the dashboard or Display 1 and stay synchronized.
+YouTube mode accepts watch, youtu.be, Shorts, Live, and embed links. Every laptop needs internet access.
+Video dashboard: YouTube beside Local video offers available MP4/WebM qualities and MP3/M4A/WAV audio. After preparation, save the file or load its MP4 on the wall.
+Click the X beside a loaded file to remove it from the session and stop all displays; your original file and saved downloads stay intact.
+Download/conversion tools are in the tools folder. On another admin laptop, double-click SETUP DOWNLOADS.cmd once to install them.
+Run SETUP DOWNLOADS.cmd again to update the downloader. Its cache stays in the CineWall folder.
+For MP3, you can also select MP3 from saved video and convert an already downloaded video without another YouTube request.
 
 If Windows hides file extensions, the launcher may appear simply as START CINEMA.
-

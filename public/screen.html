@@ -3,68 +3,101 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>CineWall · Display</title>
+  <title>CineWall Studio · Display</title>
+  <script src="theme.js"></script>
+  <script src="session.js"></script>
+  <script src="media-peer.js"></script>
   <link rel="stylesheet" href="styles.css">
 </head>
-<body class="screen-body">
+<body class="screen-body" data-session-mode="video">
   <div class="wall-viewport">
-    <div id="wallStage" class="wall-stage mode-stretch">
+    <div id="wallStage" class="wall-stage mode-crop">
       <video id="video" playsinline preload="auto"></video>
     </div>
+    <div id="youtubeViewport" class="youtube-viewport" hidden>
+      <div id="youtubeWall" class="youtube-wall"></div>
+    </div>
+    <div id="speakerStage" class="speaker-stage" hidden>
+      <div class="speaker-orbit"><span id="speakerNumber">1</span><i></i><i></i><i></i></div>
+      <div class="speaker-bars" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+      <strong id="speakerTitle">Waiting for audio</strong><small id="speakerSubtitle">The admin controls playback and volume.</small>
+    </div>
+    <div id="documentWall" class="document-wall mode-fit" hidden>
+      <iframe id="documentFrame" class="document-frame" title="Shared presentation" hidden></iframe>
+      <img id="documentImage" class="document-image" alt="Shared presentation" hidden>
+      <canvas id="pdfCanvas" class="pdf-canvas" aria-label="Shared PDF page" hidden></canvas>
+    </div>
+    <div id="screenGesture" class="screen-gesture" hidden aria-label="Double-click left or right to seek"></div>
+    <div id="screenGestureFeedback" class="gesture-feedback" aria-live="polite"></div>
   </div>
 
-  <header id="screenHud" class="screen-hud">
-    <div class="screen-brand"><span class="fi">&#xE714;</span><strong>CINEWALL</strong></div>
+  <header id="screenHud" class="screen-hud" hidden aria-hidden="true">
+    <div class="screen-brand"><span id="screenBrandIcon" class="fi">&#xE714;</span><strong>CINEWALL</strong></div>
     <div class="screen-status-group">
-      <span id="screenLabel" class="screen-pill">Screen not ready</span>
-      <span id="networkLabel" class="screen-pill network-pill"><span class="status-dot"></span>Connecting</span>
+      <button class="theme-toggle screen-theme-toggle" data-theme-toggle type="button"><span class="fi" data-theme-icon>&#xE706;</span><span data-theme-label>Light</span></button>
+      <span id="screenLabel" class="screen-pill">Display not ready</span>
+      <span id="networkLabel" class="screen-pill network-pill"><span class="status-dot"></span><span>Connecting</span></span>
     </div>
   </header>
 
-  <div id="waitingMovie" class="waiting-movie">
-    <span class="fi">&#xE8B2;</span>
-    <strong>Waiting for the admin</strong>
-    <small>The movie will appear here automatically.</small>
+  <div id="waitingAsset" class="waiting-movie">
+    <span id="waitingIcon" class="fi">&#xE8B2;</span>
+    <strong id="waitingTitle">Waiting for the admin</strong>
+    <small id="waitingCopy">The shared file will appear here automatically.</small>
   </div>
 
-  <section id="screenControls" class="screen-controls" aria-label="Screen 1 controls">
-    <div class="screen-control-track">
-      <span id="screenCurrentTime">00:00</span>
-      <input id="screenTimeline" type="range" min="0" max="100" value="0" step="0.1" aria-label="Movie position">
-      <span id="screenDuration">--:--</span>
+  <section id="screenControls" class="screen-controls" aria-label="Admin display controls">
+    <div id="screenMediaControls">
+      <div class="screen-control-track">
+        <span id="screenCurrentTime">0:00</span>
+        <input id="screenTimeline" type="range" min="0" max="100" value="0" step="0.1" aria-label="Playback position">
+        <span id="screenDuration">--:--</span>
+      </div>
+      <div class="screen-transport">
+        <a href="/admin.html" class="screen-control-button" title="Dashboard" aria-label="Dashboard"><span class="fi">&#xE80F;</span></a>
+        <button id="screenBack" class="screen-control-button" title="Back 10 seconds" aria-label="Back 10 seconds"><span class="fi">&#xE892;</span></button>
+        <button id="screenPlay" class="screen-play-button" title="Play or pause" aria-label="Play or pause"><span class="fi">&#xE768;</span></button>
+        <button id="screenForward" class="screen-control-button" title="Forward 10 seconds" aria-label="Forward 10 seconds"><span class="fi">&#xE893;</span></button>
+        <button id="screenFullscreen" class="screen-control-button" title="Fullscreen" aria-label="Fullscreen"><span class="fi">&#xE740;</span></button>
+      </div>
+      <div class="screen-volume-row"><button id="screenMute" aria-label="Mute this laptop"><span class="fi">&#xE767;</span></button><input id="screenVolume" type="range" min="0" max="1" step="0.05" value="1" aria-label="This laptop volume"><output id="screenVolumeValue">100%</output></div>
     </div>
-    <div class="screen-transport">
-      <a href="/admin.html" class="screen-control-button" title="Dashboard" aria-label="Dashboard"><span class="fi">&#xE80F;</span></a>
-      <button id="screenBack" class="screen-control-button" title="Back 10 seconds" aria-label="Back 10 seconds"><span class="fi">&#xE892;</span></button>
-      <button id="screenPlay" class="screen-play-button" title="Play or pause" aria-label="Play or pause"><span class="fi">&#xE768;</span></button>
-      <button id="screenForward" class="screen-control-button" title="Forward 10 seconds" aria-label="Forward 10 seconds"><span class="fi">&#xE893;</span></button>
-      <button id="screenFullscreen" class="screen-control-button" title="Fullscreen" aria-label="Fullscreen"><span class="fi">&#xE740;</span></button>
+    <div id="screenPresentationControls" hidden>
+      <div class="screen-presentation-page"><span>PAGE</span><strong id="screenPage">1</strong><span id="screenPageTotal">/ --</span></div>
+      <div class="screen-transport">
+        <a href="/admin.html" class="screen-control-button" title="Dashboard" aria-label="Dashboard"><span class="fi">&#xE80F;</span></a>
+        <button id="screenPreviousPage" class="screen-control-button" title="Previous page" aria-label="Previous page"><span class="fi">&#xE76B;</span></button>
+        <button id="screenNextPage" class="screen-play-button" title="Next page" aria-label="Next page"><span class="fi">&#xE76C;</span></button>
+        <button id="screenPresentationFullscreen" class="screen-control-button" title="Fullscreen" aria-label="Fullscreen"><span class="fi">&#xE740;</span></button>
+      </div>
     </div>
-    <span class="screen-shortcuts">Space · Play/Pause &nbsp; ← → · Seek &nbsp; F · Fullscreen</span>
+    <span id="screenShortcuts" class="screen-shortcuts">Space · Play/Pause &nbsp; ← → · Seek &nbsp; F · Fullscreen</span>
   </section>
 
   <div id="identify" class="identify"></div>
-  <div id="connectionLost" class="connection-lost"><span class="fi">&#xEB55;</span><strong>Connection lost</strong><small>Reopen the current screen link shown on the admin laptop.</small></div>
-  <button id="playBlocked" class="play-blocked"><span class="fi">&#xE768;</span>Click once to allow playback</button>
+  <div id="connectionLost" class="connection-lost"><span class="fi">&#xEB55;</span><strong>Trying to reconnect</strong><small>This display resumes automatically. If this message remains, keep the CineWall server open and confirm both laptops are on the same Wi-Fi or hotspot.</small></div>
+  <button id="playBlocked" class="play-blocked"><span class="fi">&#xE768;</span>Click once to allow sound and playback</button>
 
   <section id="setup" class="setup-overlay">
     <div class="setup-window">
-      <div class="setup-brand"><span class="brand-icon fi">&#xE714;</span><div><strong>CINEWALL</strong><small>Display setup</small></div></div>
+      <div class="setup-brand"><span class="brand-icon"><img src="/assets/removed_background (24).png" alt="CineWall Logo"></span><div><strong>CINEWALL</strong><small id="setupModeLabel">Display setup</small></div></div>
       <div class="setup-copy">
-        <span class="section-kicker">JOIN THE VIDEO WALL</span>
-        <h1>Choose this<br><em>screen position</em></h1>
-        <p>The link may already have selected a position. Confirm it below, then enter fullscreen. The admin sends the movie automatically.</p>
+        <span id="setupKicker" class="section-kicker">JOIN THE VIDEO WALL</span>
+        <h1 id="setupHeading">Choose this<br><em>display position</em></h1>
+        <p id="setupDescription">The link may already have selected a position. Confirm it below, then enter fullscreen. The admin sends the file automatically.</p>
       </div>
       <div id="screenPicker" class="screen-picker"></div>
       <div class="setup-checks">
         <span><i class="fi">&#xE73E;</i>Same Wi-Fi</span>
-        <span><i class="fi">&#xE73E;</i>Movie from admin</span>
+        <span><i class="fi">&#xE73E;</i>File from admin</span>
         <span><i class="fi">&#xE73E;</i>Automatic sync</span>
       </div>
-      <button id="readyButton" class="ready-button" disabled><span class="fi">&#xE740;</span>Enter fullscreen &amp; join wall</button>
-      <p class="setup-hint">Screen 1 is the admin laptop. It also gets playback controls and keyboard shortcuts.</p>
+      <button id="readyButton" class="ready-button" disabled><span class="fi">&#xE740;</span><span id="readyButtonLabel">Enter fullscreen &amp; join</span></button>
+      <p id="setupHint" class="setup-hint">Display 1 is the admin laptop and includes playback controls.</p>
     </div>
   </section>
-  <script src="screen.js"></script>
+  <script src="youtube-provider.js?v=20261001-playback-5"></script>
+  <label id="localPeerFileChoice" class="local-peer-choice" hidden>Select the same local movie/audio on this laptop<input id="localPeerFile" type="file" accept="video/*,audio/*,.mkv,.flac"></label>
+  <script src="screen.js?v=20261002-direct-10"></script>
 </body>
 </html>

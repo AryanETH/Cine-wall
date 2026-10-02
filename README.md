@@ -1,63 +1,109 @@
-# CineWall
+# CineWall Studio
 
-CineWall turns two or three Windows laptops on the same local network into one synchronized video wall. Choose the movie once on the admin laptop; every screen receives it and follows the admin controls automatically.
+CineWall connects Windows laptops on the same local network for four synchronized modes:
 
-## What you need
+- **Video wall:** 2 or 3 displays, with the admin laptop as Display 1.
+- **Speaker room:** 1 to 5 laptops, with individual volume and mute controls.
+- **Presentation wall:** 1 to 3 displays for PDF, PowerPoint, Word, RTF, and image files.
+- **YouTube wall:** 2 or 3 displays showing complementary slices of one synchronized YouTube player.
 
-- Two or three Windows laptops for the movie wall (the admin can be one of them or a separate device)
-- One DRM-free video file on the admin laptop
-- All devices connected to the same Wi-Fi router, preferably 5 GHz
-- Node.js 18 or newer on the laptop that will run the server
-- Chrome or Microsoft Edge on all screens
+Run on a local network or deploy on Railway at `https://watch.aitoyz.in`. Video/audio default to **Direct local file**: the original stays in the admin browser and only requested byte ranges are shared with displays. No whole-movie upload or media database is needed for this mode. See [HOSTING.md](HOSTING.md) for private session links, browser/network requirements, and deployment.
 
-Streaming services such as Netflix, Prime Video, and Disney+ are not supported because their protected video cannot be loaded as a local file or divided this way.
+## Start CineWall
 
-## Start the cinema
+1. Extract the ZIP completely.
+2. Double-click **START CINEMA.cmd** and keep the black window open.
+3. If Windows Firewall asks, allow Node.js on **Private networks**.
+4. Open the **Start** address printed in the black window, normally `http://localhost:4173/`.
+5. Choose Video, Audio, Presentation, or YouTube.
+6. Add only the laptops you need with **Add display** or **Add speaker**. Use the X on the last-added link to remove it.
+7. Open every generated link on its matching laptop. Numbered links join automatically. Click the sound button if the browser blocks audio; use Join for fullscreen. Display 1 is always the admin laptop.
 
-1. Extract the ZIP completely. Open the extracted folder and double-click **START CINEMA.cmd**. Keep the black window open.
-2. If Windows Firewall asks, allow Node.js on **Private networks**.
-3. Open the admin address shown in the black window. It is usually `http://localhost:4173/admin.html`. If that port is busy, the app automatically chooses the next available port and prints the correct address.
-4. In the admin page, select **2 screens** or **3 screens**, then click **Choose movie** and select the movie on the admin laptop. Wait for the preparation bar to say **Ready**.
-5. The admin page displays a screen address such as `http://192.168.1.20:4173/screen.html`. Open that exact address in Chrome or Edge on every screen laptop.
-6. In two-screen mode choose **1 Left** and **2 Right**. In three-screen mode choose **1 Left**, **2 Centre**, and **3 Right**. Click **Enter fullscreen & make this screen ready** on each one.
-7. Wait until the admin shows every screen ready, click **Identify all screens** to check the order, and press Play. All screens will play, pause, and seek automatically from the admin controls.
+If port 4173 is busy, CineWall automatically chooses the next free port. Always use the addresses printed by the currently-running server.
 
-The app makes a temporary cached copy of the selected movie inside its `.cinema-cache` folder on the admin laptop. Selecting another movie replaces the previous cached copy.
+## Video wall
 
-### Which screen address should you use?
+1. Start with the two preset links; add the third only when needed.
+2. Choose the movie once on the dashboard.
+   Direct mode opens a silent local preview immediately when the browser supports the file. It plays only the opening ten seconds and stops; **Replay 10s preview** replays that excerpt. The preview never follows the full wall timeline. Keep the source dashboard open. On an HTTP/LAN remote display, select the same file when prompted; HTTPS supports direct peer sharing.
+   **Server compatibility copy** is optional. It transfers the file to the running server and checks its tracks. Compatible MKV tracks are repackaged losslessly, with a distinct progress label. Unsupported codecs are rejected unless you explicitly check **Allow lossy conversion**. Cancel and shared preparation progress remain available; a 12 GB copy/remux can still take time.
+3. **Stretch** is the default wall framing. Fit and Cinema crop remain available.
+4. Pressing Play opens Display 1 in its own browser tab. Join that screen once; the dashboard stays silent and does not act as a playback screen.
+5. Play, pause, seek, double-click ±10 seconds, and per-laptop audio changes synchronize across the wall.
 
-- If every laptop is connected to the same normal Wi-Fi router, use the **recommended Wi-Fi link** shown first.
-- If the screen laptops are connected directly to the admin laptop's Windows Mobile Hotspot, use the separately labelled **Mobile Hotspot link**.
-- The black server window must remain open. Closing it immediately disables every link.
+Direct mode preserves the original bytes; it does not make unsupported codecs playable. MKV is a container, not a codec, and browser support varies. A lossless remux changes the container without changing compressed tracks; an explicitly allowed compatibility conversion may change resolution/quality. The optional copy/remux tools must be installed on the server. DRM streaming services such as Netflix and Prime Video are not supported.
 
-## Framing modes
+## YouTube downloads
 
-- **Fit** keeps the original picture shape. Because three screens are extremely wide, the picture may not use the entire wall.
-- **Cinema crop** fills the whole wall without stretching, but crops a large amount from the top and bottom. This works best with specially prepared ultra-wide video.
-- **Stretch** shows the whole picture across all three screens, but makes people and objects look wider.
+On the **Video** dashboard, choose the **YouTube** tab beside **Local video** in Admin Source. This opens the downloader without switching to live YouTube streaming. Paste a link, choose **Find qualities**, then select a format and quality. The menu lists the qualities available for that video, including MP4 and WebM video, MP3 at 96–320 kbps, original M4A audio, and WAV. MP3 bitrates are output settings and do not improve the source audio quality.
 
-For the best result, prepare video at the combined shape of the displays—for example, 3840×1080 for two 1920×1080 screens or 5760×1080 for three.
+Use the X beside a loaded video or audio file to remove it from the session and stop playback on joined laptops. Original files and separately saved downloads are not deleted. Return to **Local video** to upload a file again.
+
+Choose **Prepare download** and wait for downloading and conversion to finish. **Save file** saves it to the browser's Downloads folder. **Use on video wall** loads a prepared MP4 directly into CineWall. The original downloaded file remains available while a compatible wall copy is prepared. Progress and Cancel are available during preparation. Downloads are limited to 10 GB and one active download at a time.
+
+After saving a video, **MP3 from saved video** lets you convert its audio locally at 96–320 kbps, without contacting YouTube again. Saved downloads remain available after restarting CineWall. MP3 downloads prefer the AAC audio source and retry other available streams if YouTube refuses that source.
+
+The tools are installed in this copy's `tools` folder. For another admin laptop, double-click **SETUP DOWNLOADS.cmd** once; run it again to update yt-dlp. The script downloads yt-dlp and FFmpeg from their official GitHub releases, verifies their SHA-256 checksums, and does not change system PATH. For recent YouTube compatibility fixes, use `powershell -NoProfile -ExecutionPolicy Bypass -File setup-download-tools.ps1 -Update -Channel nightly`. The downloader writes its cache inside `.cinema-cache/yt-dlp-cache`, not your Windows home folder. Only download videos you own or have permission to save; unavailable or restricted videos return an error. YouTube rate limits or sign-in checks cannot be fixed by changing cache permissions; try later or convert a video already saved locally.
+
+## Speaker room
+
+1. Start with Speaker 1 on the admin laptop and add up to four more speakers.
+2. Choose an audio file once. Direct file sharing is the default, with the same HTTPS/HTTP fallback rules as video.
+3. Pressing Play opens Speaker 1 in a separate tab. Each laptop must click the join button once so the browser can allow sound.
+4. Use the dashboard mixer to control volume or mute for any laptop.
+
+MP3, WAV, AAC, M4A, OGG, FLAC, and browser-supported WebM audio are accepted. Closely-spaced laptop speakers may create an echo.
+
+## Presentation wall
+
+1. Start with one display and add up to three.
+2. Choose a PDF, PowerPoint, Word, RTF, or image file.
+3. For a true horizontal split, use **Fill width**. CineWall renders one wide document canvas and gives every laptop a different slice without distorting the page.
+4. **Fit page** preserves the complete page; very tall pages may use only the centre portion of a wide multi-display wall.
+5. Change pages from the dashboard or Display 1. Every joined display changes at the same synchronized moment.
+
+PDF rendering uses the bundled Mozilla PDF.js runtime and works over the local network. Modern Office documents are prepared locally; Microsoft Office is used for the highest-fidelity conversion when it is available, with a simplified local fallback for supported modern formats.
+
+## YouTube wall
+
+1. Start with two display links; add the third only when needed.
+2. Paste a standard YouTube, `youtu.be`, Shorts, Live, or embed link on the dashboard.
+3. Open every numbered display link and click **Enter fullscreen & join** once. Use Chrome or Edge for playback.
+4. Press Play from the dashboard. Display 1 opens separately and all joined displays follow the admin timeline.
+5. Use **Cinema crop** to fill the wall or **Fit** to preserve the complete 16:9 frame. Stretch is intentionally unavailable.
+6. YouTube audio plays on Display 1 by default. Choose **All screens** or adjust individual laptop volume in the mixer.
+
+YouTube playback requires internet access on every laptop. All displays use the official YouTube IFrame Player API with autoplay permission and referrer identification. Dashboard readiness, buffering, errors, and position come from actual player events. Private, removed, age-restricted, or embedding-disabled videos may not play. Because each laptop uses an independent YouTube player and buffer, CineWall corrects visible drift but cannot promise frame-perfect synchronization.
+
+## Support this project
+
+Use **Support this project** on the start page, enter an amount, and choose **Generate payment QR**. The QR opens a UPI payment to `6260976807-3@ybl`; payment is completed in the user's UPI app. CineWall does not collect banking details. QR generation uses the external `api.qrserver.com` image service and therefore needs internet access.
 
 ## Best results
 
-- Use Ethernet if available; otherwise use a strong 5 GHz or 6 GHz Wi-Fi signal. The admin laptop streams the movie to every screen.
-- Plug all laptops into power and turn off sleep, screen savers, and battery-saving mode.
-- Set all displays to the same resolution, scaling, brightness, and color profile.
-- Use only the centre laptop for audio, or connect that laptop to an external sound system.
-- MP4 with H.264 video and AAC audio has the broadest browser support. MKV and HEVC support depends on the browser and installed Windows codecs.
-
-## Stop the cinema
-
-Return to the black server window and press `Ctrl+C`.
+- Connect every laptop to the same normal Wi-Fi or to the admin laptop's Mobile Hotspot.
+- Use Ethernet or strong 5/6 GHz Wi-Fi when possible.
+- Plug laptops into power and disable sleep, screen savers, and battery-saving mode.
+- Match display resolution, Windows scaling, brightness, and colour settings.
+- Keep the server window open for the entire session.
 
 ## Troubleshooting
 
-- **Other laptops cannot open the screen address:** confirm all devices are on the same non-guest Wi-Fi and Node.js is allowed through Windows Firewall on private networks.
-- **The screen shows “Connection lost” or freezes:** close the old page and open the exact current screen link printed by the active cinema-server window. Do not reuse a link from an older run if its port changed.
-- **You cannot see the launcher:** first use Windows **Extract All** on the downloaded ZIP. The extracted folder contains a large, clearly named `START CINEMA.cmd` file.
-- **The app says a port is already in use:** the updated version automatically tries another port. Always use the exact admin and screen addresses printed in the black window.
-- **A screen says the video cannot play:** convert the file to MP4/H.264/AAC.
-- **Playback permission message appears:** click the red permission button once on that laptop.
-- **The screens drift:** use a stronger network, close background downloads, and keep the admin server on power. The app automatically corrects small timing differences every two seconds.
-- **Audio echoes:** select only one audio source in the admin page.
-- **All speakers:** choose **All speakers** in the admin page to play audio from every active laptop. Separate laptop speakers may create an echo because sound takes slightly different paths through the room; switch back to one speaker if that happens.
+- **A link times out:** confirm all laptops are on the same non-guest network and Node.js is allowed through Windows Firewall on private networks.
+- **The address changed:** use the exact links shown in the active dashboard. Do not reuse links from an older server window.
+- **A file does not play:** try an MP4/H.264/AAC or MP3/WAV source. For MKV, try a lossless compatibility copy first. Lossy re-encoding is opt-in, never automatic.
+- **Direct sharing cannot connect:** keep the admin dashboard open, use HTTPS, configure TURN for restrictive networks, or select the matching local file on each laptop. Direct file access must be reselected after refreshing the source dashboard.
+- **Sound is blocked:** click the join/allow-sound button once on that laptop.
+- **The admin plays but other laptops do not:** reload their numbered display links in Chrome or Edge. Confirm each appears on the dashboard's live map. For three laptops, add Display 3 first. A joined display follows the admin automatically; if sound is blocked, local video starts muted and shows an enable-sound button.
+- **YouTube stays black or reports an error:** use current Chrome or Edge, confirm internet access on that laptop, and try a public video that permits embedding.
+- **A display is in the wrong position:** reopen its exact numbered link.
+- **An Office file looks simplified:** export it to PDF first, then present the PDF for the most faithful result.
+
+## Stop CineWall
+
+Return to the black server window and press `Ctrl+C`.
+
+## Third-party component
+
+The local PDF renderer is Mozilla PDF.js, licensed under Apache-2.0. Its license is included at `public/vendor/pdfjs/LICENSE`.
+YouTube downloads use [yt-dlp](https://github.com/yt-dlp/yt-dlp) and [FFmpeg](https://github.com/yt-dlp/FFmpeg-Builds). Their binaries and bundled license files are kept in the local `tools` folder, which is excluded from Git.

@@ -3,146 +3,238 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>CineWall · Cinema Control Room</title>
+  <title>CineWall Studio · Control Room</title>
+  <script src="theme.js"></script>
+  <script src="session.js"></script>
+  <script src="media-peer.js"></script>
   <link rel="stylesheet" href="styles.css">
 </head>
-<body class="admin-body" data-theme="dark">
+<body class="admin-body" data-session-mode="video">
   <main class="app-shell">
     <header class="app-nav">
-      <a class="brand-lockup" href="/admin.html" aria-label="CineWall home">
-        <span class="brand-icon fi" aria-hidden="true">&#xE714;</span>
-        <span><strong>CINEWALL</strong><small>Multi-screen cinema</small></span>
+      <a class="brand-lockup" href="/" aria-label="Choose another CineWall mode">
+        <span class="brand-icon" aria-hidden="true"><img src="/assets/removed_background (24).png" alt="CineWall Logo"></span>
+        <span><strong>CINEWALL</strong><small>Multi-screen studio</small></span>
       </a>
       <nav class="nav-pills" aria-label="Dashboard sections">
         <a class="active" href="#overview"><span class="fi">&#xE80F;</span>Overview</a>
-        <a href="#player"><span class="fi">&#xE768;</span>Player</a>
-        <a href="#screens"><span class="fi">&#xE7F4;</span>Screens</a>
+        <a href="#player"><span id="navPlayerIcon" class="fi">&#xE768;</span>Controls</a>
+        <a href="#screens"><span class="fi">&#xE7F4;</span>Displays</a>
         <a href="#settings"><span class="fi">&#xE713;</span>Setup</a>
       </nav>
       <div class="nav-actions">
-        <button id="themeToggle" class="icon-button" title="Change theme" aria-label="Change theme"><span class="fi">&#xE706;</span></button>
+        <button class="theme-toggle" data-theme-toggle type="button"><span class="fi" data-theme-icon>&#xE706;</span><span data-theme-label>Light</span></button>
+        <a class="mode-switch" href="/" title="Switch mode"><span id="modeSwitchIcon" class="fi">&#xE714;</span><span id="modeSwitchLabel">Video</span></a>
         <div id="connection" class="connection-chip"><span class="status-dot"></span><span>Connecting</span></div>
       </div>
     </header>
 
     <section id="overview" class="page-heading">
       <div>
-        <span class="section-kicker">LIVE SESSION</span>
-        <h1>Cinema control room</h1>
-        <p>One movie, one timeline, every laptop perfectly in step.</p>
+        <span id="sessionKicker" class="section-kicker">VIDEO SESSION</span>
+        <h1 id="pageTitle">Video control room</h1>
+        <p id="pageSubtitle">One movie, one timeline, every laptop perfectly in step.</p>
       </div>
       <div class="heading-actions">
-        <button id="identify" class="button subtle"><span class="fi">&#xE8B0;</span>Identify screens</button>
-        <button id="openAdminScreen" class="button accent"><span class="fi">&#xE7F4;</span>Open Screen 1</button>
+        <button id="identify" class="button subtle"><span class="fi">&#xE8B0;</span>Identify</button>
+        <button id="openAdminScreen" class="button accent"><span class="fi">&#xE7F4;</span>Open Display 1</button>
       </div>
     </section>
 
-    <section class="metric-grid" aria-label="Session summary">
-      <article class="metric-card">
-        <div class="metric-head"><span>Wall layout</span><span class="metric-icon fi">&#xE8A9;</span></div>
-        <strong id="layoutMetric">3 screens</strong>
-        <small>Admin + connected displays</small>
+    <section id="screens" class="workspace-panel display-links-panel">
+      <div class="workspace-header">
+        <div><span class="section-kicker">DISPLAY LINKS</span><h2 id="linksHeading">Displays, pre-assigned</h2><p id="linksCopy">Open each link on its matching laptop. Display 1 is this admin laptop.</p></div>
+        <div class="display-link-tools">
+          <span class="secure-chip"><span class="fi">&#xE72E;</span><span id="linkScope">Local network only</span></span>
+          <span id="displayCountBadge" class="count-chip">2 / 3 displays</span>
+          <button id="addDisplay" class="button accent" type="button"><span class="fi">&#xE710;</span><span id="addDisplayLabel">Add display</span></button>
+        </div>
+      </div>
+      <div id="screenLinks" class="screen-links"></div>
+      <p id="alternateLinks" class="alternate-links"></p>
+    </section>
+
+    <section id="settings" class="settings-grid top-settings">
+      <article id="framingPanel" class="workspace-panel compact-panel">
+        <div class="setting-title"><span class="setting-icon fi">&#xE8B0;</span><div><h3 id="framingHeading">Wall framing</h3><p id="framingCopy">Control how the movie fills the combined canvas.</p></div></div>
+        <div id="modeControls" class="segmented"><button data-mode="fit">Fit</button><button data-mode="crop">Cinema crop</button><button data-mode="stretch">Stretch</button></div>
       </article>
-      <article class="metric-card">
-        <div class="metric-head"><span>Ready now</span><span class="metric-icon fi">&#xE73E;</span></div>
-        <strong id="readyMetric">0 / 3</strong>
-        <div id="readySegments" class="ready-segments" aria-hidden="true"></div>
+
+      <article id="presenterTips" class="workspace-panel compact-panel" hidden>
+        <div class="setting-title"><span class="setting-icon fi">&#xE7F4;</span><div><h3>Presenter controls</h3><p>Use arrow keys or page jump. Every display follows the admin.</p></div></div>
+        <div class="presenter-shortcuts"><span><kbd>←</kbd> Previous</span><span><kbd>→</kbd> Next</span><span><kbd>F</kbd> Fullscreen</span></div>
       </article>
-      <article class="metric-card">
-        <div class="metric-head"><span>Playback</span><span class="metric-icon fi">&#xE768;</span></div>
-        <strong id="playbackMetric">Idle</strong>
-        <small id="playbackSub">Waiting for a movie</small>
-      </article>
-      <article class="metric-card featured-metric">
-        <div class="metric-head"><span>Now playing</span><span class="metric-icon fi">&#xE8B2;</span></div>
-        <strong id="movieMetric">No movie selected</strong>
-        <small id="movieSizeMetric">Choose a file from this admin laptop</small>
+
+      <article id="audioMixerPanel" class="workspace-panel compact-panel mixer-panel">
+        <div class="mixer-heading">
+          <div class="setting-title"><span class="setting-icon fi">&#xE767;</span><div><h3>Per-laptop audio</h3><p>Set volume or mute any joined laptop, including the admin.</p></div></div>
+          <div class="mixer-actions">
+            <div id="youtubeAudioMode" class="segmented compact-segmented" hidden aria-label="YouTube audio output">
+              <button data-youtube-audio="admin">Admin only</button><button data-youtube-audio="all">All screens</button>
+            </div>
+            <button id="muteAll" class="button subtle"><span class="fi">&#xE74F;</span>Mute all</button>
+          </div>
+        </div>
+        <div id="speakerGrid" class="speaker-grid"></div>
       </article>
     </section>
 
     <section class="overview-grid">
       <article class="panel wall-panel">
         <div class="panel-heading">
-          <div><span class="section-kicker">VIDEO WALL</span><h2>Live screen map</h2></div>
+          <div><span id="screenMapKicker" class="section-kicker">DISPLAY MAP</span><h2 id="screenMapTitle">Live screen map</h2></div>
           <span id="readyCount" class="count-chip">0/3 ready</span>
         </div>
-        <div id="screenGrid" class="wall-map" aria-label="Connected screens"></div>
+        <div id="screenGrid" class="wall-map" aria-label="Connected displays"></div>
         <div id="fileWarning" class="warning" role="alert"></div>
       </article>
 
       <article class="panel source-panel">
         <div class="panel-heading">
-          <div><span class="section-kicker">ADMIN SOURCE</span><h2>Movie file</h2></div>
-          <span class="fi panel-heading-icon">&#xE8B7;</span>
+          <div><span class="section-kicker">ADMIN SOURCE</span><h2 id="sourceHeading">Video file</h2></div>
+          <span id="sourceHeadingIcon" class="fi panel-heading-icon">&#xE8B7;</span>
+        </div>
+        <div id="videoSourceSelector" class="segmented source-selector">
+          <button id="localVideoSource" class="active" type="button" aria-pressed="true">Local video</button>
+          <button id="downloadYoutubeToggle" type="button" aria-pressed="false" aria-expanded="false" aria-controls="youtubeDownloadPanel">YouTube</button>
         </div>
         <div class="source-state">
-          <span class="source-icon fi">&#xE714;</span>
-          <div><strong id="movieTitle">Choose your movie</strong><p id="movieStatus">The movie is selected once here and streamed to every screen.</p></div>
+          <span id="sourceIcon" class="source-icon fi">&#xE714;</span>
+          <img id="youtubeThumbnail" class="source-thumbnail" alt="YouTube video thumbnail" hidden>
+          <div><strong id="assetTitle">Choose your video</strong><p id="assetStatus">Choose the file once here. CineWall streams it to every joined display.</p></div>
+          <button id="removeAsset" class="remove-asset-button" type="button" title="Remove loaded file" aria-label="Remove loaded file" hidden><span class="fi" aria-hidden="true">&#xE711;</span></button>
         </div>
-        <label class="file-button">
-          <input id="adminMovieFile" type="file" accept="video/*,.mkv">
-          <span class="fi">&#xE898;</span><span id="adminFileLabel">Choose movie</span>
+        <div class="source-upload-row">
+        <label id="fileSourceButton" class="file-button">
+          <input id="adminAssetFile" type="file" accept="video/*,.mkv">
+          <span class="fi">&#xE898;</span><span id="adminFileLabel">Choose video</span>
         </label>
-        <div id="uploadProgressWrap" class="upload-progress-wrap" hidden>
-          <div class="upload-copy"><span>Preparing movie</span><strong id="uploadProgressText">0%</strong></div>
+        </div>
+        <label class="sharing-choice" id="sharingChoice">File sharing<select id="sharingMethod"><option value="direct">Direct local file · no upload · original quality</option><option value="server">Server compatibility copy · upload/remux</option></select></label>
+        <label id="conversionChoice" class="conversion-choice" hidden><input id="allowReencode" type="checkbox">Allow lossy conversion only if my browser cannot decode this file</label>
+        <p id="sharingHint" class="sharing-hint">Keep this admin tab open. Direct sharing sends only needed movie bytes to your displays. On HTTP/LAN, select the same movie on each laptop.</p>
+        <section id="youtubeDownloadPanel" class="youtube-download-panel" hidden aria-label="Download a YouTube video">
+          <div class="download-panel-heading"><h3>YouTube</h3><span>Video &amp; audio downloads</span></div>
+          <form id="youtubeDownloadForm">
+            <label for="downloadYoutubeUrl">YouTube link</label>
+            <div class="download-link-row"><input id="downloadYoutubeUrl" type="url" placeholder="https://youtube.com/watch?v=…" required><button id="checkYoutubeFormats" class="button accent" type="submit">Find qualities</button></div>
+          </form>
+          <div id="downloadSelection" hidden>
+            <strong id="downloadVideoTitle" class="download-video-title"></strong>
+            <div class="download-selectors">
+              <label>Format<select id="downloadContainer" aria-label="Download format"></select></label>
+              <label>Quality<select id="downloadQuality" aria-label="Download quality"></select></label>
+            </div>
+            <small id="downloadSizeHint"></small>
+            <button id="prepareYoutubeDownload" class="button accent" type="button"><span class="fi" aria-hidden="true">&#xE896;</span>Prepare download</button>
+          </div>
+          <p id="youtubeDownloadStatus" class="download-status" role="status" aria-live="polite"></p>
+          <progress id="youtubeDownloadProgress" max="100" value="0" aria-label="Download progress" hidden></progress>
+          <div class="download-actions">
+            <button id="cancelYoutubeDownload" class="button subtle" type="button" hidden>Cancel</button>
+            <a id="saveYoutubeDownload" class="button accent" href="#" hidden><span class="fi" aria-hidden="true">&#xE896;</span>Save file</a>
+            <button id="loadYoutubeDownload" class="button subtle" type="button" hidden><span class="fi" aria-hidden="true">&#xE714;</span>Use on video wall</button>
+          </div>
+          <div id="savedVideoAudio" class="saved-video-audio" hidden>
+            <h4>MP3 from a saved video</h4>
+            <p>Convert a video already downloaded here. No new YouTube request is needed.</p>
+            <label for="savedVideoSource">Saved video</label>
+            <select id="savedVideoSource"></select>
+            <div class="saved-audio-row"><select id="savedAudioBitrate" aria-label="MP3 bitrate"><option value="320">320 kbps</option><option value="256">256 kbps</option><option value="192">192 kbps</option><option value="128">128 kbps</option><option value="96">96 kbps</option></select><button id="convertSavedAudio" class="button accent" type="button">Convert to MP3</button></div>
+          </div>
+          <small class="download-help">Choose from the qualities available for this video. Download videos you own or have permission to save.</small>
+        </section>
+        <div id="dropZone" class="drop-zone" hidden>
+          <span class="fi drop-zone-icon">&#xE714;</span>
+          <strong>Drop your file here</strong>
+          <small>Or click "Choose" button above</small>
+        </div>
+        <label id="playlistButton" class="file-button playlist-button" hidden>
+          <input id="playlistFiles" type="file" accept="audio/*,.flac,.m4a,.aac,.ogg" multiple>
+          <span class="fi">&#xE90B;</span><span>Add to playlist</span>
+        </label>
+        <form id="youtubeSourceForm" class="youtube-source-form" hidden>
+          <label for="youtubeUrl">YouTube URL</label>
+          <div class="youtube-url-row">
+            <input id="youtubeUrl" type="url" inputmode="url" autocomplete="url" placeholder="https://youtube.com/watch?v=…" aria-describedby="youtubeUrlHelp">
+            <button id="loadYoutube" class="button accent" type="submit"><span class="fi">&#xE768;</span>Load video</button>
+          </div>
+          <small id="youtubeUrlHelp">Supports youtube.com, youtu.be, Shorts, and Live links.</small>
+        </form>
+        <div id="uploadProgressWrap" class="upload-progress-wrap" role="status" aria-live="polite" hidden>
+          <div class="upload-copy"><span id="uploadCopy">Preparing file</span><strong id="uploadProgressText">0%</strong></div>
           <div class="upload-progress"><span id="uploadProgressBar"></span></div>
+          <button id="cancelPreparation" class="button subtle" type="button" hidden>Cancel preparation</button>
         </div>
       </article>
     </section>
 
     <section id="player" class="player-console">
-      <div class="preview-stage">
-        <video id="adminPreview" muted playsinline preload="metadata"></video>
-        <div id="previewEmpty" class="preview-empty"><span class="fi">&#xE768;</span><strong>Preview monitor</strong><small>Your movie appears here after preparation.</small></div>
-        <div class="preview-badge"><span class="status-dot"></span>LIVE PREVIEW</div>
+      <div id="previewStage" class="preview-stage">
+        <video id="mediaPreview" playsinline preload="metadata"></video>
+        <div id="audioPreview" class="audio-visual" hidden>
+          <span class="audio-orbit"><i class="fi">&#xE8D6;</i></span>
+          <div class="audio-bars" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+          <strong id="audioVisualTitle">Speaker room</strong><small>Synced on every connected laptop</small>
+        </div>
+        <iframe id="presentationFrame" class="presentation-frame" title="Presentation preview" hidden></iframe>
+        <img id="presentationImage" class="presentation-image" alt="Presentation preview" hidden>
+        <div id="youtubePreview" class="youtube-preview" hidden>
+          <img id="youtubePreviewImage" alt="YouTube preview">
+          <div><span class="fi">&#xE768;</span><strong>YouTube wall ready</strong><small>Playback opens on Display 1, not inside this dashboard.</small></div>
+        </div>
+        <div id="previewEmpty" class="preview-empty"><span id="previewEmptyIcon" class="fi">&#xE768;</span><strong id="previewEmptyTitle">Preview monitor</strong><small id="previewEmptyCopy">Your file appears here after preparation.</small></div>
+        <button id="previewGesture" class="gesture-surface" aria-label="Double-click the left or right side to seek ten seconds" hidden></button>
+        <div id="gestureFeedback" class="gesture-feedback" aria-live="polite"></div>
+        <div class="preview-badge"><span class="status-dot"></span><span id="previewBadgeText">ADMIN PREVIEW</span></div>
+        <button id="replayPreview" class="trailer-replay" type="button" hidden>↻ Replay 10s preview</button>
       </div>
+
       <div class="player-deck">
         <div class="now-playing-row">
-          <div class="track-art fi">&#xE8B2;</div>
-          <div class="track-copy"><span>NOW PLAYING</span><strong id="trackTitle">No movie loaded</strong></div>
+          <div id="trackArt" class="track-art fi">&#xE8B2;</div>
+          <div class="track-copy"><span id="trackKicker">NOW PLAYING</span><strong id="trackTitle">No file loaded</strong></div>
           <span id="playerState" class="state-pill">IDLE</span>
         </div>
-        <div class="timeline-row">
-          <span id="currentTime">00:00</span>
-          <input id="timeline" type="range" min="0" max="100" value="0" step="0.1" aria-label="Movie position" disabled>
-          <span id="duration">--:--</span>
+
+        <div id="mediaControls">
+          <div class="timeline-row">
+            <span id="currentTime">0:00</span>
+            <input id="timeline" type="range" min="0" max="100" value="0" step="0.1" aria-label="Playback position" disabled>
+            <span id="duration">--:--</span>
+          </div>
+          <div class="transport" aria-label="Playback controls">
+            <button id="loopButton" class="control-button" title="Toggle loop" aria-label="Toggle loop playback" disabled><span class="fi">&#xE1CD;</span></button>
+            <button id="restart" class="control-button" title="Restart" aria-label="Restart" disabled><span class="fi">&#xE72C;</span></button>
+            <button id="back" class="control-button seek-button" title="Back 10 seconds" aria-label="Back 10 seconds" disabled><span class="fi">&#xE892;</span><small>10</small></button>
+            <button id="play" class="play-button" title="Play" aria-label="Play" disabled><span class="fi">&#xE768;</span></button>
+            <button id="pause" class="play-button" title="Pause" aria-label="Pause" hidden><span class="fi">&#xE769;</span></button>
+            <button id="forward" class="control-button seek-button" title="Forward 10 seconds" aria-label="Forward 10 seconds" disabled><span class="fi">&#xE893;</span><small>10</small></button>
+            <button id="previewFullscreen" class="control-button" title="Open Display 1 in a new tab" aria-label="Open Display 1 in a new tab"><span class="fi">&#xE8A7;</span></button>
+          </div>
+          <div class="admin-volume-row">
+            <button id="adminMute" class="mini-icon-button" aria-label="Mute admin laptop"><span class="fi">&#xE767;</span></button>
+            <span>Admin laptop</span>
+            <input id="adminVolume" type="range" min="0" max="1" value="1" step="0.05" aria-label="Admin laptop volume">
+            <output id="adminVolumeValue">100%</output>
+          </div>
         </div>
-        <div class="transport" aria-label="Playback controls">
-          <button id="restart" class="control-button" title="Restart" aria-label="Restart" disabled><span class="fi">&#xE72C;</span></button>
-          <button id="back" class="control-button" title="Back 10 seconds" aria-label="Back 10 seconds" disabled><span class="fi">&#xE892;</span><small>10</small></button>
-          <button id="play" class="play-button" title="Play" aria-label="Play" disabled><span class="fi">&#xE768;</span></button>
-          <button id="pause" class="play-button" title="Pause" aria-label="Pause" hidden><span class="fi">&#xE769;</span></button>
-          <button id="forward" class="control-button" title="Forward 10 seconds" aria-label="Forward 10 seconds" disabled><span class="fi">&#xE893;</span><small>10</small></button>
-          <button id="openScreenControl" class="control-button" title="Open Screen 1" aria-label="Open Screen 1"><span class="fi">&#xE740;</span></button>
+
+        <div id="presentationControls" hidden>
+          <div class="presentation-page-row"><span>GO TO PAGE</span><input id="pageNumber" type="number" min="1" value="1" aria-label="Presentation page"><span id="pageTotal">/ --</span></div>
+          <div class="transport" aria-label="Presentation controls">
+            <button id="previousPage" class="control-button wide-control" title="Previous page" aria-label="Previous page" disabled><span class="fi">&#xE76B;</span></button>
+            <button id="presentFullscreen" class="play-button" title="Open Display 1 in a new tab" aria-label="Open Display 1 in a new tab"><span class="fi">&#xE8A7;</span></button>
+            <button id="nextPage" class="control-button wide-control" title="Next page" aria-label="Next page" disabled><span class="fi">&#xE76C;</span></button>
+          </div>
         </div>
-        <div class="shortcut-hint"><span><kbd>Space</kbd> Play / pause</span><span><kbd>←</kbd><kbd>→</kbd> Seek 10s</span><span><kbd>F</kbd> Fullscreen on Screen 1</span></div>
+
+        <div id="shortcutHint" class="shortcut-hint"><span><kbd>Space</kbd> Play / pause</span><span><kbd>←</kbd><kbd>→</kbd> Seek 10s</span><span>Double-click left/right to seek</span></div>
       </div>
     </section>
 
-    <section id="screens" class="workspace-panel">
-      <div class="workspace-header">
-        <div><span class="section-kicker">DISPLAY LINKS</span><h2>Three screens, pre-assigned</h2><p>Open each link on the matching laptop. Screen 1 is this admin laptop.</p></div>
-        <span class="secure-chip"><span class="fi">&#xE72E;</span>Local network only</span>
-      </div>
-      <div id="screenLinks" class="screen-links"></div>
-      <p id="alternateLinks" class="alternate-links"></p>
-    </section>
-
-    <section id="settings" class="settings-grid">
-      <article class="workspace-panel compact-panel">
-        <div class="setting-title"><span class="setting-icon fi">&#xE8A9;</span><div><h3>Number of screens</h3><p>Admin laptop always takes Screen 1.</p></div></div>
-        <div id="layoutControls" class="segmented"><button data-layout="2">2 screens</button><button data-layout="3">3 screens</button></div>
-      </article>
-      <article class="workspace-panel compact-panel">
-        <div class="setting-title"><span class="setting-icon fi">&#xE8B0;</span><div><h3>Wall framing</h3><p>Control how the film fills the combined canvas.</p></div></div>
-        <div id="modeControls" class="segmented"><button data-mode="fit">Fit</button><button data-mode="crop">Cinema crop</button><button data-mode="stretch">Stretch</button></div>
-      </article>
-      <article class="workspace-panel compact-panel audio-panel">
-        <div class="setting-title"><span class="setting-icon fi">&#xE767;</span><div><h3>Audio output</h3><p>Choose one laptop or play through all speakers.</p></div></div>
-        <div id="audioControls" class="segmented"></div>
-      </article>
-    </section>
   </main>
-  <script src="admin.js"></script>
+  <script src="admin.js?v=20261002-direct-10"></script>
+  <script src="youtube-download.js?v=20261001-source-7"></script>
 </body>
 </html>

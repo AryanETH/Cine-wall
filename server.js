@@ -4,42 +4,93 @@ const http = require('node:http');
 const fs = require('node:fs');
 const path = require('node:path');
 const os = require('node:os');
+const zlib = require('node:zlib');
+const { execFile } = require('node:child_process');
+const downloads = require('./youtube-downloads');
+const SERVER_ID = require('node:crypto').randomUUID();
 
 const PREFERRED_PORT = Number(process.env.PORT || 4173);
 const MAX_PORT_ATTEMPTS = 20;
-let activePort = PREFERRED_PORT;
 const HOST = '0.0.0.0';
 const PUBLIC_DIR = path.join(__dirname, 'public');
-const CACHE_DIR = path.join(__dirname, '.cinema-cache');
-const MAX_BODY = 64 * 1024;
-const MAX_MOVIE_SIZE = 50 * 1024 * 1024 * 1024;
+const CACHE_ROOT = path.resolve(process.env.CINEWALL_CACHE_DIR || path.join(__dirname, '.cinema-cache'));
+const OFFICE_CONVERTER = path.join(__dirname, 'convert-office.ps1');
+const MAX_JSON_BODY = 128 * 1024;
+const MAX_ASSET_SIZE = 50 * 1024 * 1024 * 1024;
+let activePort = PREFERRED_PORT;
 
 const contentTypes = {
   '.html': 'text/html; charset=utf-8',
   '.css': 'text/css; charset=utf-8',
   '.js': 'text/javascript; charset=utf-8',
+  '.mjs': 'text/javascript; charset=utf-8',
+  '.json': 'application/json; charset=utf-8',
   '.svg': 'image/svg+xml',
   '.png': 'image/png',
+  '.jpg': 'image/jpeg',
+  '.jpeg': 'image/jpeg',
+  '.webp': 'image/webp',
+  '.gif': 'image/gif',
+  '.pdf': 'application/pdf',
+  '.htm': 'text/html; charset=utf-8',
   '.ico': 'image/x-icon',
 };
 
+function createSession(room = '') {
+const CACHE_DIR = room ? path.join(CACHE_ROOT, 'rooms', room) : CACHE_ROOT;
+const SESSION_FILE = path.join(CACHE_DIR, 'session.json');
+const validExtensions = {
+  video: new Set(['.mp4', '.webm', '.mkv', '.mov', '.m4v']),
+  audio: new Set(['.mp3', '.wav', '.m4a', '.aac', '.ogg', '.oga', '.flac', '.webm']),
+  presentation: new Set(['.pdf', '.ppt', '.pptx', '.pps', '.ppsx', '.odp', '.doc', '.docx', '.rtf', '.png', '.jpg', '.jpeg', '.webp', '.gif']),
+};
+const officeExtensions = new Set(['.ppt', '.pptx', '.pps', '.ppsx', '.odp', '.doc', '.docx', '.rtf']);
+const imageExtensions = new Set(['.png', '.jpg', '.jpeg', '.webp', '.gif']);
 const viewers = new Set();
 const screens = new Map();
 let commandSequence = 0;
-let movieFile = null;
+let assetFile = null;
 let uploadInProgress = false;
+let preparation = null;
+let preparationController = null;
+
+function defaultAudioSettings() {
+  return Object.fromEntries(Array.from({ length: 5 }, (_, index) => [String(index + 1), { volume: 1, muted: false }]));
+}
+
 let state = {
+  sessionMode: 'video',
   playing: false,
+  loop: false,
   position: 0,
   anchorTime: Date.now(),
   mode: 'stretch',
-  screenCount: 3,
-  audioScreen: 2,
-  movie: null,
+  screenCount: 2,
+  audioSettings: defaultAudioSettings(),
+  youtubeAudioMode: 'admin',
+  asset: null,
+  page: 1,
+  notBefore: 0,
   commandId: 0,
 };
 
 fs.mkdirSync(CACHE_DIR, { recursive: true });
+
+// Keep the selected movie across server restarts so joined laptops can recover.
+try {
+  const saved = JSON.parse(fs.readFileSync(SESSION_FILE, 'utf8'));
+  const savedPath = saved.assetFile && path.resolve(saved.assetFile.path);
+  if (saved.state && ['video', 'audio', 'presentation', 'youtube'].includes(saved.state.sessionMode)
+      && (!savedPath || savedPath.startsWith(`${CACHE_DIR}${path.sep}`) && fs.existsSync(savedPath))) {
+    state = { ...state, ...saved.state, playing: false, notBefore: 0, anchorTime: Date.now() };
+    assetFile = saved.assetFile;
+    commandSequence = Number(state.commandId) || 0;
+  }
+} catch {}
+
+function saveSession() {
+  try { fs.writeFileSync(SESSION_FILE, JSON.stringify({ state: snapshot(), assetFile }), 'utf8'); } catch {}
+}
 
 function json(res, status, value) {
   const body = JSON.stringify(value);
@@ -57,7 +108,7 @@ function readJson(req) {
     const chunks = [];
     req.on('data', (chunk) => {
       size += chunk.length;
-      if (size > MAX_BODY) {
+      if (size > MAX_JSON_BODY) {
         reject(new Error('Request is too large'));
         req.destroy();
         return;
@@ -81,7 +132,7 @@ function currentPosition(at = Date.now()) {
 }
 
 function snapshot() {
-  return { ...state, serverTime: Date.now() };
+  return { ...state, preparation, serverId: SERVER_ID, serverTime: Date.now() };
 }
 
 function sendEvent(res, event, payload) {
@@ -98,45 +149,183 @@ function broadcast(event, payload) {
   }
 }
 
+function modeLimits(sessionMode = state.sessionMode) {
+  if (sessionMode === 'audio') return { min: 1, max: 5, initial: 1 };
+  if (sessionMode === 'presentation') return { min: 1, max: 3, initial: 1 };
+  return { min: 2, max: 3, initial: 2 };
+}
+
+function extractYouTubeId(value) {
+  const input = String(value || '').trim();
+  if (/^[a-zA-Z0-9_-]{11}$/.test(input)) return input;
+  let url;
+  try {
+    url = new URL(/^https?:\/\//i.test(input) ? input : `https://${input}`);
+  } catch {
+    throw new Error('Paste a valid YouTube link');
+  }
+  const host = url.hostname.toLowerCase().replace(/^www\./, '').replace(/^m\./, '');
+  let candidate = '';
+  if (host === 'youtu.be') candidate = url.pathname.split('/').filter(Boolean)[0] || '';
+  else if (host === 'youtube.com' || host === 'youtube-nocookie.com') {
+    if (url.pathname === '/watch') candidate = url.searchParams.get('v') || '';
+    else {
+      const parts = url.pathname.split('/').filter(Boolean);
+      if (['shorts', 'embed', 'live'].includes(parts[0])) candidate = parts[1] || '';
+    }
+  }
+  if (!/^[a-zA-Z0-9_-]{11}$/.test(candidate)) throw new Error('This YouTube link does not contain a valid video ID');
+  return candidate;
+}
+
+function audioSettingsForMode(sessionMode) {
+  const settings = defaultAudioSettings();
+  if (sessionMode === 'youtube') {
+    for (let screen = 2; screen <= 5; screen += 1) settings[String(screen)].muted = true;
+  }
+  return settings;
+}
+
+function removeCurrentAsset() {
+  const oldPath = assetFile?.path;
+  assetFile = null;
+  if (oldPath) fs.unlink(oldPath, () => {});
+}
+
 function applyCommand(input) {
   const now = Date.now();
-  const executeAt = now + 850;
+  const executeAt = now + (['screen-audio', 'mute-all', 'youtube-audio-mode'].includes(input.type) ? 0 : 90);
   const type = String(input.type || '');
   let position = currentPosition(executeAt);
 
-  if (type === 'play') {
-    if (!state.movie) throw new Error('Choose a movie on the admin laptop first');
+  if (type === 'session-mode') {
+    const sessionMode = String(input.sessionMode || '');
+    if (!['video', 'audio', 'presentation', 'youtube'].includes(sessionMode)) throw new Error('Unknown session mode');
+    if (sessionMode !== state.sessionMode) {
+      if (uploadInProgress) throw new Error('Wait for the current file to finish preparing, or cancel it first');
+      removeCurrentAsset();
+      const limits = modeLimits(sessionMode);
+      state = {
+        ...state,
+        sessionMode,
+        playing: false,
+        position: 0,
+        anchorTime: executeAt,
+        screenCount: limits.initial,
+        mode: sessionMode === 'presentation' || sessionMode === 'youtube' ? 'crop' : sessionMode === 'video' ? 'stretch' : state.mode,
+        audioSettings: audioSettingsForMode(sessionMode),
+        youtubeAudioMode: 'admin',
+        asset: null,
+        page: 1,
+      };
+      screens.clear();
+    }
+  } else if (type === 'clear-asset') {
+    if (uploadInProgress) throw new Error('Wait for the current file to finish preparing before removing it');
+    if (input.assetVersion && state.asset && input.assetVersion !== state.asset.version) throw new Error('The loaded file changed. Remove the current file instead');
+    removeCurrentAsset();
+    state = { ...state, asset: null, playing: false, position: 0, page: 1, anchorTime: executeAt };
+    for (const screen of screens.values()) {
+      Object.assign(screen, { mediaReady: false, duration: 0, playbackTime: 0, fileName: '', paused: true, buffering: false, error: '' });
+    }
+  } else if (type === 'load-youtube') {
+    if (state.sessionMode !== 'youtube') throw new Error('Switch the dashboard to YouTube mode first');
+    const videoId = extractYouTubeId(input.url);
+    removeCurrentAsset();
+    const version = `youtube-${videoId}-${Date.now()}`;
+    state = {
+      ...state,
+      playing: false,
+      position: 0,
+      anchorTime: executeAt,
+      asset: {
+        kind: 'youtube', renderType: 'youtube', videoId, version, size: 0,
+        name: `YouTube · ${videoId}`,
+        url: `https://www.youtube.com/watch?v=${videoId}`,
+        thumbnail: `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`,
+      },
+    };
+    for (const screen of screens.values()) {
+      screen.mediaReady = false;
+      screen.duration = 0;
+      screen.playbackTime = 0;
+      screen.error = '';
+    }
+  } else if (type === 'play') {
+    if (!state.asset || !['video', 'audio', 'youtube'].includes(state.sessionMode)) throw new Error('Choose a video, audio file, or YouTube link first');
     if (Number.isFinite(input.position)) position = Math.max(0, Number(input.position));
     state = { ...state, playing: true, position, anchorTime: executeAt };
   } else if (type === 'pause') {
     state = { ...state, playing: false, position, anchorTime: executeAt };
   } else if (type === 'seek') {
+    if (!['video', 'audio', 'youtube'].includes(state.sessionMode)) throw new Error('Seeking is only available for video, audio, and YouTube');
     position = Math.max(0, Number(input.position) || 0);
     state = { ...state, position, anchorTime: executeAt };
   } else if (type === 'restart') {
     state = { ...state, position: 0, anchorTime: executeAt };
+  } else if (type === 'loop') {
+    if (!['video', 'audio', 'youtube'].includes(state.sessionMode)) throw new Error('Loop is only available for media');
+    state = { ...state, loop: Boolean(input.loop) };
   } else if (type === 'mode') {
-    if (!['fit', 'crop', 'stretch'].includes(input.mode)) throw new Error('Unknown wall mode');
+    if (!['fit', 'crop', 'stretch'].includes(input.mode)) throw new Error('Unknown wall framing');
+    if (['presentation', 'youtube'].includes(state.sessionMode) && input.mode === 'stretch') throw new Error('Stretch is not available in this mode');
     state = { ...state, mode: input.mode };
   } else if (type === 'layout') {
     const screenCount = Number(input.screenCount);
-    if (![2, 3].includes(screenCount)) throw new Error('The wall must use two or three screens');
-    state = { ...state, screenCount, audioScreen: state.audioScreen === 'all' ? 'all' : Math.min(state.audioScreen, screenCount) };
-  } else if (type === 'audio') {
-    const audioScreen = input.screen === 'all' ? 'all' : Number(input.screen);
-    if (audioScreen !== 'all' && (![0, 1, 2, 3].includes(audioScreen) || audioScreen > state.screenCount)) throw new Error('Unknown audio screen');
-    state = { ...state, audioScreen };
+    const limits = modeLimits();
+    if (!Number.isInteger(screenCount) || screenCount < limits.min || screenCount > limits.max) {
+      throw new Error(`This mode supports ${limits.min} to ${limits.max} screens`);
+    }
+    state = { ...state, screenCount };
+  } else if (type === 'screen-audio') {
+    const screen = Number(input.screen);
+    if (!Number.isInteger(screen) || screen < 1 || screen > 5) throw new Error('Unknown speaker');
+    const previous = state.audioSettings[String(screen)] || { volume: 1, muted: false };
+    const volume = Number.isFinite(Number(input.volume)) ? Math.min(1, Math.max(0, Number(input.volume))) : previous.volume;
+    const muted = typeof input.muted === 'boolean' ? input.muted : previous.muted;
+    state = {
+      ...state,
+      audioSettings: { ...state.audioSettings, [String(screen)]: { volume, muted } },
+    };
+  } else if (type === 'mute-all') {
+    const muted = Boolean(input.muted);
+    state = {
+      ...state,
+      audioSettings: Object.fromEntries(Object.entries(state.audioSettings).map(([screen, setting]) => [screen, { ...setting, muted }])),
+    };
+  } else if (type === 'youtube-audio-mode') {
+    if (state.sessionMode !== 'youtube') throw new Error('YouTube audio options are only available in YouTube mode');
+    const youtubeAudioMode = input.youtubeAudioMode === 'all' ? 'all' : 'admin';
+    state = {
+      ...state,
+      youtubeAudioMode,
+      audioSettings: Object.fromEntries(Object.entries(state.audioSettings).map(([screen, setting]) => [
+        screen,
+        { ...setting, muted: youtubeAudioMode === 'admin' ? Number(screen) !== 1 : false },
+      ])),
+    };
+  } else if (type === 'page') {
+    if (state.sessionMode !== 'presentation' || !state.asset) throw new Error('Choose a presentation first');
+    const maximum = state.asset.pageCount || 999;
+    const page = Math.min(maximum, Math.max(1, Math.round(Number(input.page) || 1)));
+    state = { ...state, page };
+  } else if (type === 'next-page' || type === 'previous-page') {
+    if (state.sessionMode !== 'presentation' || !state.asset) throw new Error('Choose a presentation first');
+    const maximum = state.asset.pageCount || 999;
+    const page = type === 'next-page' ? Math.min(maximum, state.page + 1) : Math.max(1, state.page - 1);
+    state = { ...state, page };
   } else if (type === 'identify') {
-    // Identify is visual-only and does not change playback state.
+    // Visual-only command.
   } else {
     throw new Error('Unknown command');
   }
 
+  state.notBefore = executeAt;
   state.commandId = ++commandSequence;
-  const command = { type, executeAt, ...state, serverTime: now };
-  if (type === 'identify') command.identify = true;
+  const command = { type, executeAt, ...state, serverId: SERVER_ID, serverTime: now };
   broadcast('command', command);
   broadcast('state', snapshot());
+  saveSession();
   return command;
 }
 
@@ -155,119 +344,316 @@ function networkDetails() {
   return addresses.filter((item, index) => addresses.findIndex((candidate) => candidate.address === item.address) === index);
 }
 
-function networkAddresses() {
-  return networkDetails().map((item) => item.address);
-}
-
 function activeScreens() {
-  const cutoff = Date.now() - 7000;
+  const cutoff = Date.now() - 20000;
   for (const [id, info] of screens) {
     if (info.lastSeen < cutoff) screens.delete(id);
   }
-  return [...screens.values()].sort((a, b) => a.screen - b.screen || a.lastSeen - b.lastSeen);
+  return [...screens.values()].sort((a, b) => a.screen - b.screen || b.lastSeen - a.lastSeen);
 }
 
-function receiveMovie(req, res, url) {
-  return new Promise((resolve) => {
-    if (uploadInProgress) {
-      json(res, 409, { error: 'Another movie is still being prepared' });
-      resolve();
-      return;
-    }
-
-    const size = Number(req.headers['content-length'] || 0);
-    if (!Number.isFinite(size) || size <= 0 || size > MAX_MOVIE_SIZE) {
-      json(res, 400, { error: 'Movie size is missing, empty, or larger than 50 GB' });
-      resolve();
-      return;
-    }
-
-    let name = 'movie.mp4';
-    try {
-      name = decodeURIComponent(url.searchParams.get('name') || name).slice(0, 220);
-    } catch {
-      name = 'movie.mp4';
-    }
-    const typeHeader = String(req.headers['content-type'] || 'application/octet-stream');
-    const type = typeHeader.startsWith('video/') ? typeHeader : 'application/octet-stream';
-    const version = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-    const extension = path.extname(name).replace(/[^a-zA-Z0-9.]/g, '').slice(0, 12) || '.video';
-    const temporaryPath = path.join(CACHE_DIR, `upload-${version}.tmp`);
-    const finalPath = path.join(CACHE_DIR, `movie-${version}${extension}`);
-    const output = fs.createWriteStream(temporaryPath, { flags: 'wx' });
-    let received = 0;
-    let settled = false;
-    uploadInProgress = true;
-
-    const fail = (message) => {
-      if (settled) return;
-      settled = true;
-      uploadInProgress = false;
-      output.destroy();
-      fs.unlink(temporaryPath, () => {});
-      if (!res.headersSent) json(res, 500, { error: message });
-      resolve();
-    };
-
-    req.on('data', (chunk) => {
-      received += chunk.length;
-      if (received > MAX_MOVIE_SIZE) fail('Movie is larger than 50 GB');
+function convertOfficeToPdf(inputPath, outputPath, extension) {
+  return new Promise((resolve, reject) => {
+    execFile('powershell.exe', [
+      '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', OFFICE_CONVERTER,
+      '-InputPath', inputPath, '-OutputPath', outputPath, '-Extension', extension,
+    ], { windowsHide: true, timeout: 120000, maxBuffer: 1024 * 1024 }, (error, stdout, stderr) => {
+      if (error) {
+        reject(new Error(String(stderr || error.message || 'Office conversion failed').trim()));
+        return;
+      }
+      resolve(stdout);
     });
-    req.on('aborted', () => fail('Movie transfer was interrupted'));
-    req.on('error', () => fail('Movie transfer failed'));
-    output.on('error', () => fail('The movie could not be saved on the admin laptop'));
-    output.on('finish', () => {
-      if (settled) return;
-      output.close(() => {
-        if (received !== size) {
-          fail('Movie transfer was incomplete');
-          return;
-        }
-        fs.rename(temporaryPath, finalPath, (error) => {
-          if (error) {
-            fail('The movie could not be prepared');
-            return;
-          }
-          settled = true;
-          uploadInProgress = false;
-          const previousPath = movieFile?.path;
-          movieFile = { path: finalPath, name, size, type, version };
-          state = {
-            ...state,
-            playing: false,
-            position: 0,
-            anchorTime: Date.now(),
-            movie: { name, size, type, version },
-            commandId: ++commandSequence,
-          };
-          for (const screen of screens.values()) {
-            screen.mediaReady = false;
-            screen.duration = 0;
-          }
-          if (previousPath && previousPath !== finalPath) fs.unlink(previousPath, () => {});
-          broadcast('state', snapshot());
-          json(res, 200, { ok: true, movie: state.movie, state: snapshot() });
-          resolve();
-        });
-      });
-    });
-    req.pipe(output);
   });
 }
 
-function serveMovie(req, res) {
-  if (!movieFile || !fs.existsSync(movieFile.path)) {
-    json(res, 404, { error: 'No movie has been selected on the admin laptop' });
+function countPdfPages(filePath, size) {
+  if (size > 512 * 1024 * 1024) return 0;
+  try {
+    const source = fs.readFileSync(filePath).toString('latin1');
+    const counts = [...source.matchAll(/\/Count\s+(\d+)/g)].map((match) => Number(match[1])).filter(Number.isFinite);
+    if (counts.length) return Math.max(...counts);
+    const pageObjects = source.match(/\/Type\s*\/Page\b/g);
+    return pageObjects?.length || 0;
+  } catch {
+    return 0;
+  }
+}
+
+function htmlEscape(value) {
+  return String(value).replace(/[&<>"']/g, (character) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[character]);
+}
+
+function decodeXml(value) {
+  return String(value)
+    .replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"').replace(/&apos;/g, "'")
+    .replace(/&#(\d+);/g, (_, code) => String.fromCodePoint(Number(code)))
+    .replace(/&#x([0-9a-f]+);/gi, (_, code) => String.fromCodePoint(parseInt(code, 16)));
+}
+
+function unzipEntries(filePath) {
+  const archive = fs.readFileSync(filePath);
+  let end = -1;
+  for (let index = archive.length - 22; index >= Math.max(0, archive.length - 65557); index -= 1) {
+    if (archive.readUInt32LE(index) === 0x06054b50) { end = index; break; }
+  }
+  if (end < 0) throw new Error('The Office file is not a valid ZIP document');
+  const entryCount = archive.readUInt16LE(end + 10);
+  let offset = archive.readUInt32LE(end + 16);
+  const entries = new Map();
+  for (let index = 0; index < entryCount; index += 1) {
+    if (archive.readUInt32LE(offset) !== 0x02014b50) throw new Error('The Office ZIP directory is damaged');
+    const method = archive.readUInt16LE(offset + 10);
+    const compressedSize = archive.readUInt32LE(offset + 20);
+    const nameLength = archive.readUInt16LE(offset + 28);
+    const extraLength = archive.readUInt16LE(offset + 30);
+    const commentLength = archive.readUInt16LE(offset + 32);
+    const localOffset = archive.readUInt32LE(offset + 42);
+    const name = archive.subarray(offset + 46, offset + 46 + nameLength).toString('utf8');
+    if (archive.readUInt32LE(localOffset) !== 0x04034b50) throw new Error('The Office ZIP entry is damaged');
+    const localNameLength = archive.readUInt16LE(localOffset + 26);
+    const localExtraLength = archive.readUInt16LE(localOffset + 28);
+    const dataStart = localOffset + 30 + localNameLength + localExtraLength;
+    const compressed = archive.subarray(dataStart, dataStart + compressedSize);
+    if (method === 0) entries.set(name, Buffer.from(compressed));
+    else if (method === 8) entries.set(name, zlib.inflateRawSync(compressed));
+    offset += 46 + nameLength + extraLength + commentLength;
+  }
+  return entries;
+}
+
+function extractParagraphs(xml, prefix) {
+  const paragraphPattern = new RegExp(`<${prefix}:p\\b[\\s\\S]*?<\\/${prefix}:p>`, 'g');
+  const textPattern = new RegExp(`<${prefix}:t(?:\\s[^>]*)?>([\\s\\S]*?)<\\/${prefix}:t>`, 'g');
+  const paragraphs = [];
+  for (const paragraph of xml.match(paragraphPattern) || []) {
+    const pieces = [...paragraph.matchAll(textPattern)].map((match) => decodeXml(match[1]));
+    const text = pieces.join(prefix === 'a' ? ' ' : '').replace(/\s+/g, ' ').trim();
+    if (text) paragraphs.push(text);
+  }
+  return paragraphs;
+}
+
+function buildOfficeHtml(title, pages) {
+  const safeTitle = htmlEscape(title);
+  const pageMarkup = pages.map((paragraphs, pageIndex) => {
+    const clean = paragraphs.filter(Boolean);
+    const heading = clean[0] || `${safeTitle} · Page ${pageIndex + 1}`;
+    const body = clean.slice(1).map((paragraph) => `<p>${htmlEscape(paragraph)}</p>`).join('');
+    return `<section class="page" data-page="${pageIndex + 1}"><div class="paper"><span class="page-number">${pageIndex + 1}</span><h1>${htmlEscape(heading)}</h1>${body || '<p class="empty">No readable text on this page.</p>'}</div></section>`;
+  }).join('');
+  return `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${safeTitle}</title><style>*{box-sizing:border-box}html,body{width:100%;height:100%;margin:0;overflow:hidden;background:#070a10;color:#f8faf6;font-family:Segoe UI,Arial,sans-serif}.page{position:absolute;inset:0;display:none;place-items:center;padding:4vh}.page.active{display:grid}.paper{position:relative;width:92vw;height:88vh;padding:8vh 8vw;overflow:hidden;border:1px solid rgba(255,255,255,.12);border-radius:2vw;background:#111624;box-shadow:0 4vh 10vh rgba(0,0,0,.35)}h1{max-width:72vw;margin:0 0 5vh;color:#a8ff35;font-size:clamp(2.4rem,6vw,6rem);font-weight:560;letter-spacing:-.055em;line-height:.96}p{max-width:76vw;margin:1.2em 0;color:#d8dce5;font-size:clamp(1.05rem,2.2vw,2rem);line-height:1.45}.page-number{position:absolute;right:3vw;bottom:3vh;color:#747c8c;font-size:.8rem}.empty{color:#8f96a7}</style></head><body>${pageMarkup}<script>(()=>{const pages=[...document.querySelectorAll('.page')];function show(){const value=Math.max(1,Math.min(pages.length,parseInt(location.hash.replace(/\\D/g,''),10)||1));pages.forEach((page,index)=>page.classList.toggle('active',index===value-1))}addEventListener('hashchange',show);show()})()</script></body></html>`;
+}
+
+function renderOfficeFallback(inputPath, outputPath, extension, name) {
+  let pages = [];
+  if (extension === '.rtf') {
+    const source = fs.readFileSync(inputPath, 'latin1');
+    pages = source.split(/\\page\b/).map((part) => part
+      .replace(/\\'([0-9a-f]{2})/gi, (_, hex) => String.fromCharCode(parseInt(hex, 16)))
+      .replace(/\\par[d]?\b/g, '\n').replace(/\\[a-z]+-?\d* ?/gi, '').replace(/[{}]/g, '')
+      .split(/\n+/).map((line) => line.trim()).filter(Boolean));
+  } else {
+    const entries = unzipEntries(inputPath);
+    if (extension === '.pptx' || extension === '.ppsx') {
+      const slides = [...entries.keys()].filter((entry) => /^ppt\/slides\/slide\d+\.xml$/i.test(entry)).sort((a, b) => Number(a.match(/(\d+)/)[1]) - Number(b.match(/(\d+)/)[1]));
+      pages = slides.map((entry) => extractParagraphs(entries.get(entry).toString('utf8'), 'a'));
+    } else if (extension === '.docx') {
+      const document = entries.get('word/document.xml');
+      if (!document) throw new Error('The Word document has no readable document.xml');
+      const paragraphs = extractParagraphs(document.toString('utf8'), 'w');
+      for (let index = 0; index < paragraphs.length; index += 14) pages.push(paragraphs.slice(index, index + 14));
+    } else if (extension === '.odp') {
+      const content = entries.get('content.xml');
+      if (!content) throw new Error('The OpenDocument presentation has no content.xml');
+      const xml = content.toString('utf8');
+      const slideXml = xml.match(/<draw:page\b[\s\S]*?<\/draw:page>/g) || [];
+      pages = slideXml.map((slide) => [...slide.matchAll(/<text:p(?:\s[^>]*)?>([\s\S]*?)<\/text:p>/g)].map((match) => decodeXml(match[1].replace(/<[^>]+>/g, '')).trim()).filter(Boolean));
+    } else {
+      throw new Error('A full Office installation is required for this legacy file type');
+    }
+  }
+  pages = pages.filter((page) => page.length);
+  if (!pages.length) pages = [[name, 'No readable text was found. Save this file as PDF for full-fidelity presentation.']];
+  fs.writeFileSync(outputPath, buildOfficeHtml(name, pages), 'utf8');
+  return pages.length;
+}
+
+function mimeForAsset(kind, extension, requestType) {
+  if (kind === 'video') return requestType.startsWith('video/') ? requestType : 'video/mp4';
+  if (kind === 'audio') return requestType.startsWith('audio/') ? requestType : 'audio/mpeg';
+  if (extension === '.pdf') return 'application/pdf';
+  if (imageExtensions.has(extension)) return contentTypes[extension] || requestType || 'image/jpeg';
+  return requestType || 'application/octet-stream';
+}
+
+async function receiveAsset(req, res, url) {
+  if (uploadInProgress) {
+    json(res, 409, { error: 'A file is already being prepared. Follow its progress or cancel it first.', preparation });
     return;
   }
-  const total = movieFile.size;
+
+  const kind = String(url.searchParams.get('kind') || 'video');
+  if (!['video', 'audio', 'presentation'].includes(kind)) {
+    json(res, 400, { error: 'Unknown file mode' });
+    return;
+  }
+  if (kind !== state.sessionMode) {
+    json(res, 409, { error: `Switch the dashboard to ${kind} mode first` });
+    return;
+  }
+
+  const size = Number(req.headers['content-length'] || 0);
+  if (!Number.isFinite(size) || size <= 0 || size > MAX_ASSET_SIZE) {
+    json(res, 400, { error: 'File size is missing, empty, or larger than 50 GB' });
+    return;
+  }
+
+  let name = `${kind}-file`;
+  try { name = decodeURIComponent(url.searchParams.get('name') || name).slice(0, 220); } catch {}
+  const extension = path.extname(name).toLowerCase().replace(/[^a-z0-9.]/g, '').slice(0, 12);
+  if (!validExtensions[kind].has(extension)) {
+    json(res, 415, { error: `This ${kind} file type is not supported` });
+    return;
+  }
+
+  const requestType = String(req.headers['content-type'] || 'application/octet-stream');
+  const version = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  const temporaryPath = path.join(CACHE_DIR, `upload-${version}.tmp`);
+  const rawPath = path.join(CACHE_DIR, `asset-${version}${extension}`);
+  uploadInProgress = true;
+  preparationController = new AbortController();
+  const signal = preparationController.signal;
+  preparation = { version, kind, name, size, phase: 'uploading', progress: 0, error: '', started: Date.now() };
+  broadcast('state', snapshot());
+  let received = 0;
+
+  try {
+    await new Promise((resolve, reject) => {
+      const output = fs.createWriteStream(temporaryPath, { flags: 'wx' });
+      req.on('data', (chunk) => {
+        received += chunk.length;
+        preparation.progress = Math.min(100, received / size * 100);
+        if (received > MAX_ASSET_SIZE) req.destroy(new Error('File is larger than 50 GB'));
+      });
+      req.on('aborted', () => reject(new Error('File transfer was interrupted')));
+      req.on('error', reject);
+      output.on('error', reject);
+      output.on('finish', resolve);
+      const abortUpload = () => { req.unpipe(output); output.destroy(new Error('Preparation cancelled')); req.resume(); };
+      signal.addEventListener('abort', abortUpload, { once: true });
+      output.on('close', () => signal.removeEventListener('abort', abortUpload));
+      req.pipe(output);
+    });
+
+    if (received !== size) throw new Error('File transfer was incomplete');
+    await fs.promises.rename(temporaryPath, rawPath);
+    signal.throwIfAborted();
+    preparation.phase = 'checking';
+    preparation.progress = 0;
+    broadcast('state', snapshot());
+
+    let finalPath = rawPath;
+    let finalType = mimeForAsset(kind, extension, requestType);
+    let renderType = kind === 'presentation' ? (imageExtensions.has(extension) ? 'image' : 'pdf') : 'media';
+    let converted = false;
+    let lossless = false;
+    let pageCount = 0;
+
+    if (kind === 'video') {
+      const mp4Path = path.join(CACHE_DIR, `asset-${version}-wall.mp4`);
+      const prepared = await downloads.prepareWallVideo(rawPath, mp4Path, { signal, allowTranscode: url.searchParams.get('reencode') === '1', onProgress(progress, method) {
+        preparation.phase = method === 'remux' ? 'remuxing' : method === 'unchanged' ? 'checking' : 'converting';
+        preparation.progress = Math.round(progress);
+      } });
+      finalPath = prepared.path;
+      finalType = 'video/mp4';
+      converted = prepared.converted;
+      lossless = prepared.lossless;
+      if (finalPath !== rawPath) await fs.promises.unlink(rawPath).catch(() => {});
+    }
+
+    if (kind === 'presentation' && officeExtensions.has(extension)) {
+      const pdfPath = path.join(CACHE_DIR, `asset-${version}.pdf`);
+      try {
+        await convertOfficeToPdf(rawPath, pdfPath, extension);
+        await fs.promises.unlink(rawPath).catch(() => {});
+        finalPath = pdfPath;
+        finalType = 'application/pdf';
+        renderType = 'pdf';
+        converted = true;
+      } catch (error) {
+        const htmlPath = path.join(CACHE_DIR, `asset-${version}.htm`);
+        pageCount = renderOfficeFallback(rawPath, htmlPath, extension, name);
+        await fs.promises.unlink(rawPath).catch(() => {});
+        finalPath = htmlPath;
+        finalType = 'text/html; charset=utf-8';
+        renderType = 'html';
+        converted = 'simplified';
+      }
+    }
+
+    signal.throwIfAborted();
+    if (state.sessionMode !== kind) throw new Error('The session mode changed during preparation');
+    const finalSize = (await fs.promises.stat(finalPath)).size;
+    if (!pageCount) pageCount = kind === 'presentation' && renderType === 'pdf' ? countPdfPages(finalPath, finalSize) : kind === 'presentation' ? 1 : 0;
+    const previousPath = assetFile?.path;
+    assetFile = { path: finalPath, name, size: finalSize, originalSize: size, type: finalType, version, kind, renderType, pageCount, converted, lossless };
+    state = {
+      ...state,
+      playing: false,
+      position: 0,
+      anchorTime: Date.now(),
+      page: 1,
+      asset: { name, size: finalSize, originalSize: size, type: finalType, version, kind, renderType, pageCount, converted, lossless },
+      commandId: ++commandSequence,
+    };
+    for (const screen of screens.values()) {
+      screen.mediaReady = false;
+      screen.duration = 0;
+    }
+    if (previousPath && previousPath !== finalPath) fs.unlink(previousPath, () => {});
+    preparation.phase = 'ready';
+    preparation.progress = 100;
+    broadcast('state', snapshot());
+    saveSession();
+    json(res, 200, { ok: true, asset: state.asset, state: snapshot() });
+  } catch (error) {
+    await fs.promises.unlink(temporaryPath).catch(() => {});
+    await fs.promises.unlink(rawPath).catch(() => {});
+    await fs.promises.unlink(path.join(CACHE_DIR, `asset-${version}-wall.mp4`)).catch(() => {});
+    preparation.phase = signal.aborted ? 'cancelled' : 'error';
+    preparation.error = signal.aborted ? 'Preparation cancelled. You can choose another file.' : error.message || 'The file could not be prepared';
+    broadcast('state', snapshot());
+    if (!res.headersSent && !res.destroyed) json(res, signal.aborted ? 409 : 500, { error: preparation.error, preparation });
+  } finally {
+    uploadInProgress = false;
+    preparationController = null;
+  }
+}
+
+function safeDownloadName(name) {
+  return encodeURIComponent(String(name || 'shared-file').replace(/[\r\n]/g, ''));
+}
+
+function serveAsset(req, res) {
+  if (!assetFile || !fs.existsSync(assetFile.path)) {
+    json(res, 404, { error: 'No file has been selected on the admin laptop' });
+    return;
+  }
+  const total = assetFile.size;
   const range = String(req.headers.range || '');
-  const baseHeaders = {
-    'Content-Type': movieFile.type,
+  const headers = {
+    'Content-Type': assetFile.type,
     'Accept-Ranges': 'bytes',
     'Cache-Control': 'no-store',
+    'Content-Disposition': `inline; filename*=UTF-8''${safeDownloadName(assetFile.name)}`,
     'X-Content-Type-Options': 'nosniff',
   };
+  if (assetFile.type.startsWith('text/html')) {
+    headers['Content-Security-Policy'] = "default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'";
+  }
   let start = 0;
   let end = total - 1;
   let status = 200;
@@ -292,15 +678,15 @@ function serveMovie(req, res) {
       return;
     }
     status = 206;
-    baseHeaders['Content-Range'] = `bytes ${start}-${end}/${total}`;
+    headers['Content-Range'] = `bytes ${start}-${end}/${total}`;
   }
-  baseHeaders['Content-Length'] = end - start + 1;
-  res.writeHead(status, baseHeaders);
+  headers['Content-Length'] = end - start + 1;
+  res.writeHead(status, headers);
   if (req.method === 'HEAD') {
     res.end();
     return;
   }
-  const stream = fs.createReadStream(movieFile.path, { start, end });
+  const stream = fs.createReadStream(assetFile.path, { start, end });
   stream.on('error', () => res.destroy());
   stream.pipe(res);
 }
@@ -322,41 +708,132 @@ function serveStatic(req, res, pathname) {
       'Content-Type': contentTypes[path.extname(resolved).toLowerCase()] || 'application/octet-stream',
       'Content-Length': data.length,
       'Cache-Control': 'no-cache',
+      'Referrer-Policy': 'strict-origin-when-cross-origin',
+      'Permissions-Policy': 'autoplay=(self "https://www.youtube.com" "https://www.youtube-nocookie.com")',
       'X-Content-Type-Options': 'nosniff',
-      'Content-Security-Policy': "default-src 'self'; style-src 'self'; script-src 'self'; media-src 'self' blob:; img-src 'self' data:; connect-src 'self'",
+      'Content-Security-Policy': "default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self' https://www.youtube.com https://s.ytimg.com; media-src 'self' blob:; img-src 'self' data: blob: https://i.ytimg.com https://yt3.ggpht.com https://api.qrserver.com; connect-src 'self' https://www.youtube.com; frame-src 'self' blob: https://www.youtube.com https://www.youtube-nocookie.com; object-src 'self'",
     });
     res.end(data);
   });
 }
 
-const server = http.createServer(async (req, res) => {
-  const url = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
+async function handle(req, res, url) {
   try {
     if (req.method === 'GET' && url.pathname === '/api/time') {
       json(res, 200, { serverTime: Date.now() });
       return;
     }
-
     if (req.method === 'GET' && url.pathname === '/api/info') {
-      json(res, 200, { port: activePort, addresses: networkAddresses(), networks: networkDetails(), state: snapshot() });
+      json(res, 200, { port: activePort, hosted: Boolean(room), room, iceServers: iceServers(), addresses: room ? [] : networkDetails().map((item) => item.address), networks: room ? [] : networkDetails(), state: snapshot() });
       return;
     }
-
     if (req.method === 'GET' && url.pathname === '/api/status') {
       json(res, 200, { state: snapshot(), screens: activeScreens() });
       return;
     }
-
-    if (req.method === 'POST' && url.pathname === '/api/movie') {
-      await receiveMovie(req, res, url);
+    if (req.method === 'POST' && url.pathname === '/api/local-source') {
+      if (uploadInProgress) throw new Error('Cancel the current preparation first');
+      const body = await readJson(req);
+      if (!['video', 'audio'].includes(state.sessionMode)) throw new Error('Choose Video or Audio mode first');
+      if (body.type && !/^(video|audio)\/[a-z0-9.+-]+$/i.test(body.type)) throw new Error('Choose a video or audio file, not a document');
+      if (!/^[a-f0-9-]{36}$/.test(body.peerId || '') || !/^[a-f0-9]{64}$/.test(body.fingerprint || '') || !Number.isSafeInteger(body.size) || body.size <= 0 || body.size > MAX_ASSET_SIZE) throw new Error('Invalid local file metadata');
+      removeCurrentAsset();
+      state = { ...state, playing: false, position: 0, anchorTime: Date.now(), commandId: ++commandSequence,
+        asset: { name: String(body.name || 'Local movie').slice(0, 220), size: body.size, originalSize: body.size, duration: Number(body.duration) || 0,
+          type: String(body.type || 'video/mp4').slice(0, 100), kind: state.sessionMode, renderType: 'media', source: 'peer', peerId: body.peerId,
+          fingerprint: body.fingerprint, version: require('node:crypto').randomUUID() } };
+      for (const screen of screens.values()) Object.assign(screen, { mediaReady: false, duration: 0, playbackTime: 0, error: '' });
+      saveSession(); broadcast('state', snapshot()); json(res, 200, { state: snapshot() }); return;
+    }
+    if (req.method === 'POST' && url.pathname === '/api/peer-signal') {
+      const body = await readJson(req);
+      if (![body.from, body.to].every((id) => /^[a-f0-9-]{36}$/.test(id || ''))) throw new Error('Invalid peer identity');
+      if (![...viewers].some((viewer) => viewer.peerId === body.from)) { json(res, 403, { error: 'Connect your file-sharing tab before signaling' }); return; }
+      if (body.description && (!['offer', 'answer'].includes(body.description.type) || typeof body.description.sdp !== 'string' || body.description.sdp.length > 64000)) throw new Error('Invalid peer description');
+      const target = [...viewers].find((viewer) => viewer.peerId === body.to);
+      if (!target) { json(res, 409, { error: 'The admin source is offline. Keep its dashboard tab open.' }); return; }
+      sendEvent(target, 'peer-signal', { from: body.from, description: body.description, candidate: body.candidate }); json(res, 200, { ok: true }); return;
+    }
+    if (req.method === 'POST' && url.pathname === '/api/media/cancel') {
+      const body = await readJson(req);
+      if (!preparationController || !preparation || !uploadInProgress) { json(res, 200, { state: snapshot() }); return; }
+      if (body.version !== preparation.version) throw new Error('The preparation changed. Cancel the current file instead');
+      preparationController.abort();
+      json(res, 200, { state: snapshot() });
       return;
     }
-
-    if ((req.method === 'GET' || req.method === 'HEAD') && url.pathname === '/api/movie/stream') {
-      serveMovie(req, res);
+    if (req.method === 'GET' && url.pathname === '/api/youtube/tools') {
+      json(res, 200, await downloads.capabilities());
       return;
     }
-
+    if (req.method === 'GET' && url.pathname === '/api/youtube/saved-videos') {
+      json(res, 200, { videos: downloads.savedVideos().filter((job) => (downloads.get(job.id).room || '') === room) });
+      return;
+    }
+    if (req.method === 'POST' && url.pathname === '/api/youtube/formats') {
+      const body = await readJson(req);
+      json(res, 200, await downloads.inspect(extractYouTubeId(body.url)));
+      return;
+    }
+    if (req.method === 'POST' && url.pathname === '/api/youtube/downloads') {
+      const body = await readJson(req);
+      json(res, 202, downloads.start(String(body.inspectionId), String(body.optionId), room));
+      return;
+    }
+    const downloadRoute = /^\/api\/youtube\/downloads\/([a-f0-9-]{36})(?:\/(file|cancel|load|audio))?$/.exec(url.pathname);
+    if (downloadRoute) {
+      const job = downloads.get(downloadRoute[1]);
+      if ((job.room || '') !== room) throw new Error('Download not found in this session');
+      const action = downloadRoute[2];
+      if (req.method === 'GET' && !action) { json(res, 200, downloads.publicJob(job)); return; }
+      if (req.method === 'POST' && action === 'cancel') { json(res, 200, downloads.cancel(job.id)); return; }
+      if (req.method === 'POST' && action === 'audio') {
+        const body = await readJson(req);
+        json(res, 202, downloads.convertSavedVideo(job.id, body.bitrate || 320));
+        return;
+      }
+      if (['GET', 'HEAD'].includes(req.method) && action === 'file') {
+        if (job.state !== 'ready' || !job.path) { json(res, 409, { error: 'This download is not ready yet.' }); return; }
+        res.writeHead(200, { 'Content-Type': job.option.kind === 'video' ? `video/${job.option.container}` : job.option.container === 'mp3' ? 'audio/mpeg' : job.option.container === 'm4a' ? 'audio/mp4' : 'audio/wav',
+          'Content-Length': fs.statSync(job.path).size, 'Content-Disposition': `attachment; filename*=UTF-8''${safeDownloadName(job.fileName)}`, 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' });
+        if (req.method === 'HEAD') res.end();
+        else { const stream = fs.createReadStream(job.path); stream.on('error', () => res.destroy()); stream.pipe(res); res.on('close', () => stream.destroy()); }
+        return;
+      }
+      if (req.method === 'POST' && action === 'load') {
+        if (state.sessionMode !== 'video' || uploadInProgress) { json(res, 409, { error: 'Open the video dashboard and finish any current upload first.' }); return; }
+        uploadInProgress = true;
+        const version = `download-${Date.now()}-${job.id}`;
+        const destination = path.join(CACHE_DIR, `asset-${version}.mp4`);
+        try {
+          const file = await downloads.copyForWall(job.id, destination);
+          if (state.sessionMode !== 'video') throw new Error('The mode changed during preparation. Return to Video and try again.');
+          const previousPath = assetFile?.path;
+          assetFile = { path: destination, ...file, originalSize: file.size, type: 'video/mp4', version, kind: 'video', renderType: 'media', pageCount: 0, converted: false };
+          const { path: privatePath, ...asset } = assetFile;
+          state = { ...state, playing: false, position: 0, anchorTime: Date.now(), notBefore: 0, asset, commandId: ++commandSequence };
+          if (previousPath && previousPath !== destination) fs.unlink(previousPath, () => {});
+          saveSession();
+          broadcast('state', snapshot());
+          json(res, 200, { state: snapshot() });
+        } catch (error) {
+          await fs.promises.unlink(destination).catch(() => {});
+          throw error;
+        } finally { uploadInProgress = false; }
+        return;
+      }
+      json(res, 405, { error: 'Method not allowed' });
+      return;
+    }
+    if (req.method === 'POST' && (url.pathname === '/api/media' || url.pathname === '/api/movie')) {
+      if (url.pathname === '/api/movie' && !url.searchParams.has('kind')) url.searchParams.set('kind', 'video');
+      await receiveAsset(req, res, url);
+      return;
+    }
+    if ((req.method === 'GET' || req.method === 'HEAD') && (url.pathname === '/api/media/stream' || url.pathname === '/api/movie/stream')) {
+      serveAsset(req, res);
+      return;
+    }
     if (req.method === 'GET' && url.pathname === '/events') {
       res.writeHead(200, {
         'Content-Type': 'text/event-stream',
@@ -366,26 +843,32 @@ const server = http.createServer(async (req, res) => {
       });
       res.write(': connected\n\n');
       viewers.add(res);
+      res.peerId = /^[a-f0-9-]{36}$/.test(url.searchParams.get('peer') || '') ? url.searchParams.get('peer') : '';
+      if (res.peerId) for (const previous of viewers) if (previous !== res && previous.peerId === res.peerId) { viewers.delete(previous); previous.end(); }
       sendEvent(res, 'state', snapshot());
       req.on('close', () => viewers.delete(res));
       return;
     }
-
     if (req.method === 'POST' && url.pathname === '/api/status') {
       const body = await readJson(req);
       const screen = Number(body.screen);
       const id = String(body.clientId || '').slice(0, 80);
-      if (!id || ![1, 2, 3].includes(screen)) throw new Error('Invalid screen status');
+      if (!id || !Number.isInteger(screen) || screen < 1 || screen > 5) throw new Error('Invalid screen status');
       screens.set(id, {
         clientId: id,
         screen,
+        build: String(body.build || '').slice(0, 80),
         ready: Boolean(body.ready),
         mediaReady: Boolean(body.mediaReady),
         fileName: String(body.fileName || '').slice(0, 220),
         fileSize: Number(body.fileSize) || 0,
         duration: Number(body.duration) || 0,
         playbackTime: Number(body.playbackTime) || 0,
+        page: Number(body.page) || 0,
         paused: Boolean(body.paused),
+        playerState: Number(body.playerState),
+        buffering: Boolean(body.buffering),
+        autoplayMuted: Boolean(body.autoplayMuted),
         error: String(body.error || '').slice(0, 300),
         lastSeen: Date.now(),
       });
@@ -393,27 +876,55 @@ const server = http.createServer(async (req, res) => {
       broadcast('screens', { screens: activeScreens(), serverTime: Date.now() });
       return;
     }
-
     if (req.method === 'POST' && url.pathname === '/api/command') {
       const command = applyCommand(await readJson(req));
       json(res, 200, { ok: true, command });
       return;
     }
-
     if (req.method === 'GET') {
       serveStatic(req, res, url.pathname);
       return;
     }
-
     json(res, 405, { error: 'Method not allowed' });
   } catch (error) {
     json(res, 400, { error: error.message || 'Bad request' });
   }
+}
+
+return { handle, pulse() { broadcast('pulse', snapshot()); activeScreens(); }, lastUsed: Date.now(), idle() { return !viewers.size && !uploadInProgress; }, close() { for (const viewer of viewers) viewer.end(); } };
+}
+
+function iceServers() {
+  try { const servers = JSON.parse(process.env.CINEWALL_ICE_SERVERS || '[]'); if (Array.isArray(servers) && servers.length) return servers; } catch {}
+  return [{ urls: 'stun:stun.l.google.com:19302' }];
+}
+function isLocalHost(host) {
+  const hostname = host.toLowerCase().replace(/:\d+$/, '');
+  return /^(localhost|127\.0\.0\.1|\[::1\])$/.test(hostname) || /^(10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.)/.test(hostname);
+}
+const sessions = new Map();
+const server = http.createServer(async (req, res) => {
+  const url = new URL(req.url, 'http://localhost');
+  const room = url.searchParams.get('room') || '';
+  const hosted = process.env.CINEWALL_HOSTED === '1' || Boolean(process.env.RAILWAY_ENVIRONMENT) || !isLocalHost(String(req.headers['x-forwarded-host'] || req.headers.host || 'localhost').split(',')[0].trim());
+  if ((room && !/^[a-f0-9-]{36}$/.test(room)) || (hosted && !room && (url.pathname.startsWith('/api/') || url.pathname === '/events'))) {
+    res.writeHead(400, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ error: 'Open your private CineWall session link first.' })); return;
+  }
+  const key = room || '';
+  if (!sessions.has(key)) {
+    if (sessions.size >= 64) { res.writeHead(503); res.end('Too many active sessions. Try later.'); return; }
+    sessions.set(key, createSession(key));
+  }
+  const session = sessions.get(key);
+  session.lastUsed = Date.now();
+  await session.handle(req, res, url);
 });
 
 const pulse = setInterval(() => {
-  broadcast('pulse', snapshot());
-  activeScreens();
+  for (const [key, session] of sessions) {
+    session.pulse();
+    if (key && session.idle() && Date.now() - session.lastUsed > 30 * 60 * 1000) { session.close(); sessions.delete(key); }
+  }
 }, 2000);
 pulse.unref();
 
@@ -425,27 +936,25 @@ server.on('error', (error) => {
     setTimeout(() => server.listen(activePort, HOST), 100);
     return;
   }
-  console.error(`\nThe cinema server could not start: ${error.message}\n`);
+  console.error(`\nThe CineWall server could not start: ${error.message}\n`);
   process.exitCode = 1;
 });
 
 server.on('listening', () => {
-  const networks = networkDetails();
-  console.log('\nCineWall is running.\n');
+  const networks = Object.values(os.networkInterfaces()).flat().filter((item) => item.family === 'IPv4' && !item.internal);
+  console.log('\nCineWall Studio is running.\n');
+  console.log(`Start:  http://localhost:${activePort}/`);
   console.log(`Admin:  http://localhost:${activePort}/admin.html`);
   if (networks.length) {
-    console.log('\nRecommended screen link (devices on the same Wi-Fi):');
+    console.log('\nRecommended display link:');
     console.log(`  http://${networks[0].address}:${activePort}/screen.html`);
     for (const network of networks.slice(1)) {
-      const label = network.isHotspot ? 'Mobile Hotspot link' : `Alternative link (${network.name})`;
+      const label = network.address === '192.168.137.1' ? 'Mobile Hotspot link' : 'Alternative link';
       console.log(`${label}:`);
       console.log(`  http://${network.address}:${activePort}/screen.html`);
     }
-  } else {
-    console.log(`\nScreen: http://<ADMIN-LAPTOP-IP>:${activePort}/screen.html`);
   }
   console.log('\nKeep this window open. Press Ctrl+C to stop.\n');
 });
 
 server.listen(activePort, HOST);
-

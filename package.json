@@ -2,10 +2,13 @@
   "name": "cinewall",
   "version": "1.0.0",
   "private": true,
-  "description": "A dependency-free local-network video wall for three Windows laptops.",
+  "description": "A local-network studio for synchronized video, audio, and presentations across Windows laptops.",
   "scripts": {
     "start": "node server.js",
-    "check": "node --check server.js && node --check public/admin.js && node --check public/screen.js"
+    "test": "node --test tests/*.test.js",
+    "test:preparation": "node tests/preparation-integration.js",
+    "check": "node --check server.js && node --check youtube-downloads.js && node --check public/launcher.js && node --check public/admin.js && node --check public/screen.js && node --check public/youtube-provider.js && node --check public/youtube-download.js && node --check public/theme.js && node --check public/session.js && node --check public/media-peer.js && node --check public/media-worker.js",
+    "setup:downloads": "powershell -NoProfile -ExecutionPolicy Bypass -File setup-download-tools.ps1"
   },
   "engines": {
     "node": ">=18"

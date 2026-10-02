@@ -3,6 +3,7 @@
 
 # Node modules
 node_modules/
+tools/
 
 # OS files
 .DS_Store

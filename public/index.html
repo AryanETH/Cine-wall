@@ -3,10 +3,82 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta http-equiv="refresh" content="0;url=/admin.html">
-  <title>Opening CineWall…</title>
+  <title>CineWall Studio · Choose a mode</title>
+  <script src="theme.js"></script>
+  <script src="session.js"></script>
+  <link rel="stylesheet" href="styles.css">
 </head>
-<body>
-  <p><a href="/admin.html">Open the CineWall dashboard</a></p>
+<body class="mode-body">
+  <main class="mode-shell">
+    <header class="mode-nav">
+      <div class="brand-lockup">
+        <span class="brand-icon" aria-hidden="true"><img src="/assets/removed_background (24).png" alt="CineWall Logo"></span>
+        <span><strong>CINEWALL</strong><small>Multi-screen studio</small></span>
+      </div>
+      <div class="nav-actions">
+        <button id="openSupport" class="button support-button" type="button"><span class="fi">&#xE006;</span><span>Support this project</span></button>
+        <button class="theme-toggle" data-theme-toggle type="button"><span class="fi" data-theme-icon>&#xE706;</span><span data-theme-label>Light</span></button>
+        <span id="launcherConnection" class="connection-chip"><span class="status-dot"></span><span>Local studio</span></span>
+      </div>
+    </header>
+
+    <section class="mode-hero">
+      <span class="section-kicker">START A SESSION</span>
+      <h1>What do you want<br>to share today?</h1>
+      <p>Choose a mode. CineWall will open the right dashboard, controls, and display links for every laptop.</p>
+    </section>
+
+    <section class="mode-grid" aria-label="CineWall modes">
+      <button class="mode-card featured" data-session-mode="video">
+        <span class="mode-card-number">01</span>
+        <span class="mode-card-icon fi">&#xE714;</span>
+        <span class="mode-card-copy"><strong>Stream a video</strong><small>One movie divided across 2 or 3 screens, with synchronized playback and per-laptop sound.</small></span>
+        <span class="mode-card-action">Open video wall <i class="fi">&#xE72A;</i></span>
+      </button>
+      <button class="mode-card" data-session-mode="audio">
+        <span class="mode-card-number">02</span>
+        <span class="mode-card-icon fi">&#xE8D6;</span>
+        <span class="mode-card-copy"><strong>Stream audio</strong><small>Play one track through as many as 5 synchronized laptop speakers with individual volume controls.</small></span>
+        <span class="mode-card-action">Open speaker room <i class="fi">&#xE72A;</i></span>
+      </button>
+      <div class="mode-card coming-soon" data-bg="presentation">
+        <span class="mode-card-number">03</span>
+        <span class="mode-card-icon fi">&#xE7F4;</span>
+        <span class="mode-card-copy"><strong>Presentation mode</strong><small>Present PDF, PowerPoint, Word, or image files on up to 3 screens with synced page navigation.</small></span>
+        <span class="mode-card-action coming-soon-badge">Cooking in progress</span>
+      </div>
+      <div class="mode-card youtube-mode-card coming-soon" data-bg="youtube">
+        <span class="mode-card-number">04</span>
+        <span class="mode-card-icon fi">&#xE768;</span>
+        <span class="mode-card-copy"><strong>Stream YouTube</strong><small>Paste one YouTube link and span the synchronized player across 2 or 3 laptops.</small></span>
+        <span class="mode-card-action coming-soon-badge">Cooking in progress</span>
+      </div>
+    </section>
+
+    <footer class="mode-footer"><span><i class="fi">&#xE72E;</i> Files stay on this local network</span><span>Builder: <a href="https://www.linkedin.com/in/aryan686/" target="_blank" rel="noopener noreferrer" style="color: var(--accent); text-decoration: none;">@aryan</a></span></footer>
+  </main>
+  <div id="supportModal" class="support-modal" hidden>
+    <section class="support-dialog" role="dialog" aria-modal="true" aria-labelledby="supportTitle">
+      <button id="closeSupport" class="support-close" type="button" aria-label="Close support window"><span class="fi">&#xE711;</span></button>
+      <span class="support-icon fi" aria-hidden="true">&#xE006;</span>
+      <span class="section-kicker">SUPPORT CINEWALL</span>
+      <h2 id="supportTitle">Help this project grow</h2>
+      <p>Enter the amount you would like to contribute and generate a UPI payment QR code.</p>
+      <form id="supportForm" class="support-form">
+        <label for="supportAmount">Support amount</label>
+        <div class="support-amount"><span>₹</span><input id="supportAmount" name="amount" type="number" min="1" max="100000" step="1" inputmode="decimal" placeholder="100" required></div>
+        <button class="button accent" type="submit"><span class="fi">&#xE8BC;</span>Generate payment QR</button>
+      </form>
+      <div id="supportQrResult" class="support-qr-result" hidden aria-live="polite">
+        <img id="supportQr" alt="UPI payment QR code">
+        <div><span>READY TO SCAN</span><strong id="supportQrAmount">₹0</strong><small>Paying CineWall Project</small></div>
+        <a id="openUpiApp" class="button accent" href="#"><span class="fi">&#xE8A7;</span>Open UPI app</a>
+        <button id="changeSupportAmount" class="button subtle" type="button">Change amount</button>
+      </div>
+      <small class="support-note">The payment is completed in your UPI app. CineWall never sees or stores your banking details.</small>
+    </section>
+  </div>
+  <div id="launcherBusy" class="launcher-busy" hidden><span class="spinner"></span><strong>Preparing your studio…</strong></div>
+  <script src="launcher.js"></script>
 </body>
 </html>
