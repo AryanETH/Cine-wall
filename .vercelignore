@@ -1,0 +1,4 @@
+.cinema-cache
+node_modules
+*.log
+.git
