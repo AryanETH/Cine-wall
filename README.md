@@ -9,6 +9,12 @@ CineWall connects Windows Devices on the same local network for four synchronize
 
 Run on a local network or deploy on Railway at `https://watch.aitoyz.in`. On HTTPS, the original video/audio stays in the admin browser and only requested byte ranges are shared with displays. On HTTP/LAN, CineWall transfers the single selected file to the local server for all displays. See [HOSTING.md](HOSTING.md) for private session links and deployment.
 
+## Video tutorial
+
+[![Watch the CineWall tutorial on YouTube](https://img.youtube.com/vi/nKjiv6_XSN4/hqdefault.jpg)](https://www.youtube.com/watch?v=nKjiv6_XSN4)
+
+[Watch the tutorial on YouTube](https://www.youtube.com/watch?v=nKjiv6_XSN4). You can also use **Tutorial** on any dashboard.
+
 ## Start CineWall
 
 1. Extract the ZIP completely.

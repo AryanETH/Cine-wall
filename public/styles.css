@@ -110,7 +110,8 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .section-kicker { display: block; margin-bottom: 8px; color: var(--accent); font-size: .66rem; font-weight: 850; letter-spacing: .17em; }
 .page-heading h1 { margin: 0; color: var(--ink); font-size: clamp(2.1rem, 4vw, 4rem); font-weight: 560; letter-spacing: -.055em; line-height: .98; }
 .page-heading p { margin: 10px 0 0; color: var(--muted); font-size: .9rem; }
-.heading-actions { display: flex; gap: 9px; }
+.heading-actions { display: flex; flex-wrap: wrap; gap: 9px; }
+.tutorial-link { text-decoration: none; white-space: nowrap; }
 .button { display: inline-flex; align-items: center; justify-content: center; gap: 9px; padding: 11px 16px; border: 1px solid var(--line); border-radius: 999px; font-size: .75rem; font-weight: 750; }
 .button.subtle { background: var(--surface); color: var(--ink); }
 .button.accent { border-color: var(--accent); background: var(--accent-gradient); color: var(--accent-ink); }
