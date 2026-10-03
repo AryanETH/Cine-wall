@@ -11,10 +11,10 @@ const filePeer = window.CineWallFilePeer ? new window.CineWallFilePeer.FilePeer(
 const validModes = ['video', 'audio', 'presentation', 'youtube'];
 const modeConfig = {
   video: {
-    label: 'Video', icon: '&#xE714;', kicker: 'VIDEO SESSION', title: 'Video control room',
+    label: 'Video', icon: '&#xE714;', kicker: 'Welcome To', title: 'Video control room',
     source: 'Video file',
     choose: 'Choose your video', button: 'Choose video', accept: '.mp4,.m4v,.webm,.mkv', min: 2, max: 3,
-    map: 'Video wall map', assetLabel: 'Now playing', statusLabel: 'Playback', preview: 'VIDEO PREVIEW',
+    map: 'Device Info', assetLabel: 'Now playing', statusLabel: 'Playback', preview: 'VIDEO PREVIEW',
   },
   audio: {
     label: 'Audio', icon: '&#xE8D6;', kicker: 'AUDIO SESSION', title: 'Multi-speaker control room',
@@ -66,6 +66,65 @@ let controlsQueue = Promise.resolve();
 let controlSequence = 0;
 const pendingControls = new Map();
 const queuedRevisions = new Map();
+let sharingMode = 'instant';
+let adminDisplayWindow = null;
+try { sharingMode = localStorage.getItem('cinewall-sharing') === 'server' ? 'server' : 'instant'; } catch {}
+
+function sourceLocked() {
+  return Boolean(status.state.ownerId && status.state.ownerId !== window.CineWallSession?.deviceId);
+}
+
+function playbackReady() {
+  return status.state.allReady === true && !sourceLocked() && !uploadBusy && !isPreparing();
+}
+
+function renderSharing() {
+  const options = $('#sharingOptions');
+  if (!options) return;
+  renderViewerSource();
+  options.hidden = !['video', 'audio'].includes(status.state.sessionMode);
+  options.querySelectorAll('[data-sharing]').forEach((button) => {
+    button.classList.toggle('active', button.dataset.sharing === sharingMode);
+    button.setAttribute('aria-pressed', String(button.dataset.sharing === sharingMode));
+    button.disabled = uploadBusy || isPreparing() || sourceLocked();
+  });
+  $('#sourceRole').textContent = sourceLocked() ? 'Another laptop is admin. Wait for it to remove the file.' : status.state.ownerId ? `You are admin${status.state.asset?.source === 'peer' ? ' · Keep this tab open' : ''}` : 'First to choose a file becomes admin';
+  $('#adminAssetFile').disabled = sourceLocked() || uploadBusy || removeBusy || isPreparing();
+  $('#removeAsset').disabled = sourceLocked() || uploadBusy || removeBusy || isPreparing();
+  $('#loadYoutubeDownload').disabled = sourceLocked() || uploadBusy || isPreparing();
+  $('#loadYoutube').disabled = sourceLocked() || uploadBusy || isPreparing();
+}
+
+function renderViewerSource() {
+  const locked = sourceLocked(), editor = $('#sourceEditor'), viewer = $('#viewerSource');
+  if (!editor || !viewer) return;
+  editor.hidden = locked;
+  editor.disabled = locked;
+  viewer.hidden = !locked;
+  if (!locked) return;
+  $('#videoFormatInfo').open = false;
+  const select = $('#viewerScreenSelect'), count = status.state.screenCount;
+  const numbers = Array.from({ length: Math.max(0, count - 1) }, (_, index) => index + 2);
+  const joined = status.screens || [];
+  const own = joined.find((screen) => screen.deviceId === window.CineWallSession?.deviceId && numbers.includes(screen.screen));
+  const selected = Number(select.value);
+  const available = numbers.find((number) => !joined.some((screen) => screen.screen === number && screen.ready));
+  const choices = numbers.map((number) => `<option value="${number}">${status.state.sessionMode === 'audio' ? 'Speaker' : 'Screen'} ${number}</option>`).join('');
+  if (select.innerHTML !== choices) select.innerHTML = choices;
+  select.value = String(own?.screen || (numbers.includes(selected) ? selected : available || numbers[0] || ''));
+  $('#openViewerScreen').disabled = !numbers.length;
+  select.hidden = numbers.length < 2;
+  viewer.querySelector('label').hidden = select.hidden;
+}
+
+function openViewerScreen() {
+  if (!sourceLocked()) return;
+  const number = Number($('#viewerScreenSelect').value);
+  if (!Number.isInteger(number) || number < 2 || number > status.state.screenCount) return;
+  const route = `/screen.html?screen=${number}`;
+  const opened = window.open(window.CineWallSession?.link(route) || route, `cinewall-display-${number}-${window.CineWallSession?.room || 'lan'}`);
+  opened?.focus();
+}
 
 function acceptState(next) {
   if (next.serverId === status.state.serverId && next.commandId < status.state.commandId) return;
@@ -87,9 +146,9 @@ function isPreparing() {
 function renderPreparation() {
   const job = status.state.preparation;
   const active = isPreparing();
-  $('#cancelPreparation').hidden = !active || job.kind !== 'video';
+  $('#cancelPreparation').hidden = !active || sourceLocked();
   $('#cancelPreparation').disabled = cancelBusy;
-  $('#adminAssetFile').disabled = uploadBusy || active || removeBusy;
+  $('#adminAssetFile').disabled = uploadBusy || active || removeBusy || sourceLocked();
   $('#playlistFiles').disabled = uploadBusy || active;
   if (!active) {
     if (!uploadBusy) $('#uploadProgressWrap').hidden = true;
@@ -171,7 +230,7 @@ function logicalScreens() {
 }
 
 function isFullyReady(screen) {
-  return Boolean(screen.ready && (!status.state.asset || screen.mediaReady));
+  return Boolean(screen.ready && (!status.state.asset || screen.mediaReady && screen.assetVersion === status.state.asset.version && !screen.error && !screen.buffering));
 }
 
 function audioSetting(number) {
@@ -183,6 +242,8 @@ function updateServerTime(state) {
 }
 
 async function command(payload) {
+  if (sourceLocked() && !['screen-audio', 'identify'].includes(payload.type)) return null;
+  if (payload.type === 'play' && !playbackReady()) return null;
   const sequence = ++controlSequence;
   const state = status.state;
   const now = Date.now() + serverOffset;
@@ -203,10 +264,11 @@ async function command(payload) {
   } else if (payload.type === 'loop') {
     pendingControls.set('loop', { sequence, patch: { loop: Boolean(payload.loop) }, assetVersion: state.asset?.version, sessionMode: state.sessionMode });
     status.state = { ...state, loop: Boolean(payload.loop) }; renderPlayer();
-  } else if (['mute-all', 'youtube-audio-mode'].includes(payload.type)) {
+  } else if (['mute-all', 'youtube-audio-mode', 'audio-output'].includes(payload.type)) {
     status.state.audioSettings = { ...state.audioSettings };
     for (let screen = 1; screen <= state.screenCount; screen++) {
-      const patch = { ...audioSetting(screen), muted: payload.type === 'mute-all' ? Boolean(payload.muted) : payload.youtubeAudioMode !== 'all' && screen !== 1 };
+      const output = payload.type === 'audio-output' ? payload.output : payload.youtubeAudioMode;
+      const patch = { ...audioSetting(screen), muted: payload.type === 'mute-all' ? Boolean(payload.muted) : output !== 'all' && screen !== 1 };
       pendingControls.set(`audio-${screen}`, { sequence, patch, screen, assetVersion: state.asset?.version, sessionMode: state.sessionMode });
       status.state.audioSettings[screen] = patch;
     }
@@ -268,6 +330,8 @@ function renderModeShell() {
   $('#playlistButton').hidden = state.sessionMode !== 'audio' || downloadingYouTube;
   $('#loopButton').hidden = state.sessionMode === 'presentation';
   $('#dropZone').hidden = !localMediaMode || downloadingYouTube;
+  $('#videoFormatInfo').hidden = state.sessionMode !== 'video' || downloadingYouTube;
+  if ($('#videoFormatInfo').hidden) $('#videoFormatInfo').open = false;
 
   // Update drop zone icon based on mode
   if (!$('#dropZone').hidden) {
@@ -293,9 +357,14 @@ function renderModeShell() {
   $('#removeAsset').disabled = uploadBusy || isPreparing() || removeBusy;
   $('#removeAsset').title = `Remove ${config.label.toLowerCase()}`;
   $('#removeAsset').setAttribute('aria-label', `Remove loaded ${config.label.toLowerCase()}`);
-  $('#youtubeAudioMode').hidden = !isYouTube;
+  $('#youtubeAudioMode').hidden = state.sessionMode === 'presentation';
   $('#youtubeAudioMode').querySelectorAll('[data-youtube-audio]').forEach((button) => {
-    button.classList.toggle('active', button.dataset.youtubeAudio === (state.youtubeAudioMode || 'admin'));
+    const allSpeakers = Array.from({ length: state.screenCount }, (_, index) => audioSetting(index + 1)).every((setting) => !setting.muted);
+    const oneSpeaker = !audioSetting(1).muted && Array.from({ length: Math.max(0, state.screenCount - 1) }, (_, index) => audioSetting(index + 2)).every((setting) => setting.muted);
+    const active = button.dataset.youtubeAudio === 'all' ? allSpeakers && state.screenCount > 1 : oneSpeaker;
+    button.classList.toggle('active', active);
+    button.setAttribute('aria-pressed', String(active));
+    button.disabled = sourceLocked();
   });
 
   $('#framingHeading').textContent = state.sessionMode === 'presentation' ? 'Document framing' : state.sessionMode === 'youtube' ? 'YouTube wall framing' : 'Wall framing';
@@ -311,7 +380,7 @@ function renderModeShell() {
   if (state.sessionMode === 'presentation') {
     $('#shortcutHint').innerHTML = '<span><kbd>←</kbd><kbd>→</kbd> Change page</span><span>Expand opens Display 1</span><span>All displays follow automatically</span>';
   } else if (state.sessionMode === 'audio') {
-    $('#shortcutHint').innerHTML = '<span><kbd>Space</kbd> Play / pause</span><span><kbd>←</kbd><kbd>→</kbd> Seek 10s</span><span>Volume is set per laptop below</span>';
+    $('#shortcutHint').innerHTML = '<span><kbd>Space</kbd> Play / pause</span><span><kbd>←</kbd><kbd>→</kbd> Seek 10s</span><span>Volume is set per Device below</span>';
   } else {
     $('#shortcutHint').innerHTML = '<span><kbd>Space</kbd> Play / pause</span><span><kbd>←</kbd><kbd>→</kbd> Seek 10s</span><span>Double-click left/right to seek</span>';
   }
@@ -326,14 +395,14 @@ function renderScreens() {
   screenGrid.innerHTML = screens.map((screen) => {
     const fullyReady = isFullyReady(screen);
     const waitingLabel = state.sessionMode === 'youtube' ? 'Waiting for link' : 'Waiting for file';
-    const loadingLabel = state.sessionMode === 'youtube' ? (screen.buffering ? 'Buffering' : 'Loading YouTube') : 'Loading file';
+    const loadingLabel = isPreparing() ? `Sending ${Math.round(state.preparation.progress || 0)}%` : state.sessionMode === 'youtube' ? (screen.buffering ? 'Buffering' : 'Loading YouTube') : `Loading ${Math.round(screen.loadProgress || 0)}%`;
     const stateLabel = !screen.ready ? 'Not joined' : screen.error ? 'Needs attention' : !state.asset ? waitingLabel : !screen.mediaReady ? loadingLabel : screen.buffering ? 'Buffering' : state.playing && !screen.paused ? 'Playing' : screen.autoplayMuted ? 'Click for sound' : 'Ready';
-    const outdated = screen.build && screen.build !== '2026.10.02-formats-15';
-    const detail = screen.error || (outdated ? 'Reopen this laptop’s numbered link to update its player.' : state.asset?.name) || (screen.screen === 1 ? 'Open Display 1 on the admin laptop' : 'Open the assigned link on this laptop');
-    const footer = state.sessionMode === 'presentation' && screen.ready ? `Page ${screen.page || state.page}` : fullyReady && state.sessionMode !== 'presentation' ? formatTime(screen.playbackTime) : '—';
+    const outdated = screen.build && screen.build !== '2026.10.03-room-22';
+    const detail = screen.error || (outdated ? 'Reopen this Device’s numbered link to update its player.' : state.asset?.name) || (screen.screen === 1 ? 'Open Display 1 on the admin Device' : 'Open the assigned link on this Device');
+    const footer = state.sessionMode === 'presentation' && screen.ready ? `Page ${screen.page || state.page}` : isPreparing() ? `${Math.round(state.preparation.progress || 0)}% sent` : fullyReady && state.sessionMode !== 'presentation' ? formatTime(screen.playbackTime) : state.asset && screen.ready ? `${Math.round(screen.loadProgress || 0)}% ready` : '—';
     return `<article class="display-tile ${fullyReady ? 'ready' : ''}">
       <div class="display-tile-head"><span class="display-number">${screen.screen}</span><span class="display-state"><span class="status-dot"></span>${stateLabel}</span></div>
-      <h3>${escapeHtml(screenRole(screen.screen))}</h3><p title="${escapeHtml(detail)}">${escapeHtml(detail)}</p><div class="display-time">${footer}</div>
+      <h3>${escapeHtml(screenRole(screen.screen))}</h3><p title="${escapeHtml(detail)}">${escapeHtml(detail)}</p><div class="display-time">${footer}</div>${(state.asset || isPreparing()) && ['audio', 'video'].includes(state.sessionMode) ? `<progress class="display-load-progress" max="100" value="${isPreparing() ? Math.round(state.preparation.progress || 0) : fullyReady ? 100 : Math.round(screen.loadProgress || 0)}" aria-label="Display ${screen.screen} loading"></progress>` : ''}
     </article>`;
   }).join('');
 }
@@ -349,7 +418,7 @@ function renderLinks() {
   const hosted = window.CineWallSession?.hosted || connectionInfo.hosted;
   const baseRemote = hosted ? location.origin : `http://${primaryAddress()}:${connectionInfo.port}`;
   const noun = state.sessionMode === 'audio' ? 'speaker' : 'display';
-  $('#linksHeading').textContent = state.sessionMode === 'audio' ? 'Speaker links' : 'Displays, pre-assigned';
+  $('#linksHeading').textContent = state.sessionMode === 'audio' ? 'Speaker links' : 'Displays';
   $('#addDisplayLabel').textContent = `Add ${noun}`;
   $('#addDisplay').disabled = state.screenCount >= config.max;
   $('#addDisplay').title = state.screenCount >= config.max ? `Maximum ${config.max} ${noun}s reached` : `Add another ${noun}`;
@@ -358,7 +427,7 @@ function renderLinks() {
     const origin = number === 1 ? location.origin : baseRemote;
     const url = window.CineWallSession?.link(`/screen.html?screen=${number}`, origin) || `${origin}/screen.html?screen=${number}`;
     const role = screenRole(number, state.screenCount, state.sessionMode);
-    const device = number === 1 ? 'This admin laptop' : `Laptop ${number}`;
+    const device = number === 1 ? 'This admin Device' : `Device ${number}`;
     const removable = number === state.screenCount && state.screenCount > config.min;
     return `<article class="screen-link-card">
       <div class="link-card-head"><div class="screen-role"><span class="screen-role-icon fi">${config.icon}</span><div><strong>${escapeHtml(role)}</strong><small>${device}</small></div></div><div class="link-card-meta"><span class="display-number">${number}</span>${removable ? `<button class="remove-screen-button" data-remove-display="${number}" title="Remove last ${noun}" aria-label="Remove ${noun} ${number}"><span class="fi">&#xE711;</span></button>` : ''}</div></div>
@@ -378,7 +447,7 @@ function renderMixer() {
     const setting = settings[String(number)] || { volume: 1, muted: false };
     const percent = Math.round(setting.volume * 100);
     return `<div class="speaker-card ${setting.muted ? 'muted' : ''}" data-speaker="${number}">
-      <div class="speaker-card-head"><span class="speaker-number">${number}</span><div><strong>${escapeHtml(screenRole(number))}</strong><small>${number === 1 ? 'Admin laptop' : `Laptop ${number}`}</small></div><button data-mute-screen="${number}" class="mini-icon-button" aria-label="${setting.muted ? 'Unmute' : 'Mute'} ${escapeHtml(screenRole(number))}"><span class="fi">${setting.muted ? '&#xE74F;' : '&#xE767;'}</span></button></div>
+      <div class="speaker-card-head"><span class="speaker-number">${number}</span><div><strong>${escapeHtml(screenRole(number))}</strong><small>${number === 1 ? 'Admin Device' : `Device ${number}`}</small></div><button data-mute-screen="${number}" class="mini-icon-button" aria-label="${setting.muted ? 'Unmute' : 'Mute'} ${escapeHtml(screenRole(number))}"><span class="fi">${setting.muted ? '&#xE74F;' : '&#xE767;'}</span></button></div>
       <div class="speaker-slider"><input data-volume-screen="${number}" type="range" min="0" max="1" step="0.01" value="${setting.volume}" aria-label="${escapeHtml(screenRole(number))} volume"><output>${percent}%</output></div>
     </div>`;
   }).join('');
@@ -508,6 +577,7 @@ function setPreviewKind() {
 }
 
 function renderPlayer() {
+  renderSharing();
   const state = status.state;
   const config = modeConfig[state.sessionMode];
   const hasAsset = Boolean(state.asset);
@@ -543,6 +613,9 @@ function renderPlayer() {
     $('#play').hidden = Boolean(state.playing);
     $('#pause').hidden = !state.playing;
     ['#restart', '#back', '#play', '#pause', '#forward', '#loopButton'].forEach((selector) => { $(selector).disabled = !hasAsset || uploadBusy || isPreparing(); });
+    $('#play').disabled = !hasAsset || !playbackReady();
+    $('#play').title = !hasAsset ? 'Choose a file' : sourceLocked() ? 'Controlled by the admin' : !playbackReady() ? 'Waiting for every display' : 'Play';
+    if (hasAsset && !state.playing && !playbackReady()) $('#playerState').textContent = sourceLocked() ? 'VIEWER' : 'WAITING FOR DISPLAYS';
     loopEnabled = Boolean(state.loop);
     $('#loopButton').classList.toggle('active', loopEnabled);
     timeline.disabled = !hasAsset || uploadBusy || isPreparing();
@@ -608,16 +681,30 @@ function seekRelative(seconds) {
 }
 
 function openDisplayOne() {
-  const displayWindow = window.open(window.CineWallSession?.link('/screen.html?screen=1') || '/screen.html?screen=1', `cinewall-display-1-${window.CineWallSession?.room || 'lan'}`);
-  displayWindow?.focus();
+  if (!adminDisplayWindow || adminDisplayWindow.closed) {
+    adminDisplayWindow = window.open(window.CineWallSession?.link('/screen.html?screen=1') || '/screen.html?screen=1', `cinewall-display-1-${window.CineWallSession?.room || 'lan'}`);
+  }
+  adminDisplayWindow?.focus();
 }
 
 function playOnAdminDisplay() {
-  openDisplayOne();
+  if (!playbackReady()) return;
+  // An already-ready display may have been opened using its copied link.
+  // Do not navigate/reload it just as the synchronized play command arrives.
+  if (adminDisplayWindow && !adminDisplayWindow.closed) adminDisplayWindow.focus();
   command({ type: 'play', position: positionNow() });
 }
 
+$('#sharingOptions')?.addEventListener('click', (event) => {
+  const button = event.target.closest('[data-sharing]');
+  if (!button || uploadBusy || isPreparing() || sourceLocked()) return;
+  sharingMode = button.dataset.sharing === 'server' ? 'server' : 'instant';
+  try { localStorage.setItem('cinewall-sharing', sharingMode); } catch {}
+  renderSharing();
+});
+
 $('#play').addEventListener('click', playOnAdminDisplay);
+$('#openViewerScreen').addEventListener('click', openViewerScreen);
 $('#pause').addEventListener('click', () => command({ type: 'pause' }));
 $('#restart').addEventListener('click', () => command({ type: 'restart' }));
 $('#back').addEventListener('click', () => seekRelative(-10));
@@ -647,7 +734,7 @@ $('#modeControls').addEventListener('click', (event) => {
 });
 $('#youtubeAudioMode').addEventListener('click', (event) => {
   const button = event.target.closest('[data-youtube-audio]');
-  if (button) command({ type: 'youtube-audio-mode', youtubeAudioMode: button.dataset.youtubeAudio });
+  if (button) command({ type: 'audio-output', output: button.dataset.youtubeAudio === 'all' ? 'all' : 'single' });
 });
 
 timeline.addEventListener('pointerdown', () => { scrubbing = true; });
@@ -773,7 +860,7 @@ async function shareLocalFile(file) {
   previewLocalFile(file, status.state.sessionMode);
   render();
   try {
-    const state = await filePeer.publish(file, Number.isFinite(media.duration) ? media.duration : 0);
+    const state = await filePeer.publish(file, Number.isFinite(media.duration) ? media.duration : 0, { relay: true });
     status.state = state;
     if (localPreview) {
       localPreview.pending = false;
@@ -792,8 +879,21 @@ async function shareLocalFile(file) {
 // Shared upload function
 async function uploadFile(file) {
   if (!file || uploadBusy || removeBusy) return;
+  if (sourceLocked()) { warning.textContent = 'Wait until the admin removes its file.'; warning.classList.add('show'); return; }
   if (isPreparing()) { renderPreparation(); return; }
   const kind = status.state.sessionMode;
+  // Open during the file-picker gesture, not after an asynchronous upload.
+  if (window.CineWallSession?.deviceId && !status.screens.some((screen) => screen.screen === 1 && screen.ready)) openDisplayOne();
+  if (window.CineWallSession?.deviceId) {
+    uploadBusy = true;
+    try {
+      const response = await fetch('/api/source/claim', { method: 'POST' });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error);
+      acceptState(result.state);
+    } catch (error) { warning.textContent = error.message; warning.classList.add('show'); uploadBusy = false; render(); return; }
+    uploadBusy = false;
+  }
   if (['video', 'audio'].includes(kind)) {
     uploadBusy = true;
     $('#adminAssetFile').disabled = true;
@@ -806,11 +906,12 @@ async function uploadFile(file) {
       warning.textContent = error.message || VIDEO_FORMAT_HELP;
       warning.classList.add('show');
       $('#adminAssetFile').value = '';
+      if (window.CineWallSession?.deviceId) fetch('/api/source/release', { method: 'POST' }).then(() => refresh()).catch(() => {});
       return;
     } finally { uploadBusy = false; $('#adminAssetFile').disabled = false; }
     if (status.state.sessionMode !== kind) return;
   }
-  const needsNetworkCopy = location.protocol === 'http:' && !window.CineWallSession?.hosted;
+  const needsNetworkCopy = sharingMode === 'server';
   if (['video', 'audio'].includes(kind) && filePeer && !needsNetworkCopy) { shareLocalFile(file); return; }
   uploadBusy = true;
   clearTimeout(uploadHideTimer);
@@ -876,7 +977,7 @@ async function uploadFile(file) {
     updateServerTime(result.state);
     $('#uploadProgressWrap').classList.remove('preparing');
     $('#uploadProgressBar').style.width = '100%';
-    $('#uploadCopy').textContent = 'Ready on connected screens';
+    $('#uploadCopy').textContent = 'File sent · loading displays';
     $('#uploadProgressText').textContent = 'Ready';
     uploadHideTimer = setTimeout(() => { $('#uploadProgressWrap').hidden = true; }, 1800);
     $('#adminAssetFile').value = '';
@@ -892,7 +993,7 @@ const sourcePanel = $('.source-panel');
 const dropZone = $('#dropZone');
 
 function handleFileDrop(file) {
-  if (!file) return;
+  if (!file || sourceLocked()) return;
   const sessionMode = status.state.sessionMode;
   const extension = file.name.toLowerCase().split('.').pop();
 
@@ -927,7 +1028,7 @@ function handleFileDrop(file) {
 
 // Highlight drop zone when file is dragged over the source panel
 sourcePanel.addEventListener('dragenter', (e) => {
-  if (status.state.sessionMode === 'youtube' || uploadBusy || isPreparing()) return;
+  if (sourceLocked() || status.state.sessionMode === 'youtube' || uploadBusy || isPreparing()) return;
   sourcePanel.classList.add('drag-active');
   dropZone.classList.add('drag-over');
 });
@@ -940,7 +1041,7 @@ sourcePanel.addEventListener('dragleave', (e) => {
 });
 
 sourcePanel.addEventListener('dragover', (e) => {
-  if (status.state.sessionMode === 'youtube' || uploadBusy || isPreparing()) return;
+  if (sourceLocked() || status.state.sessionMode === 'youtube' || uploadBusy || isPreparing()) return;
   e.dataTransfer.dropEffect = 'copy';
 });
 
@@ -948,7 +1049,7 @@ sourcePanel.addEventListener('drop', (e) => {
   sourcePanel.classList.remove('drag-active');
   dropZone.classList.remove('drag-over');
 
-  if (status.state.sessionMode === 'youtube' || uploadBusy || isPreparing()) return;
+  if (sourceLocked() || status.state.sessionMode === 'youtube' || uploadBusy || isPreparing()) return;
 
   const files = e.dataTransfer.files;
   if (files.length > 0) {
@@ -961,7 +1062,7 @@ sourcePanel.addEventListener('drop', (e) => {
       if (['https:', 'http:'].includes(url.protocol) && /^(www\.|m\.|music\.)?(youtube\.com|youtu\.be)$/.test(url.hostname)) {
         window.CineWallDownloadPanel?.chooseSource(true);
         $('#downloadYoutubeUrl').value = url.href;
-        $('#youtubeDownloadStatus').textContent = 'YouTube link added. Choose Find qualities to continue.';
+        $('#youtubeDownloadStatus').textContent = 'YouTube link added. Choose qualities to continue.';
       }
     } catch { /* Ignore non-file/non-YouTube drops. */ }
   }
@@ -1047,14 +1148,19 @@ media.addEventListener('ended', () => media.pause());
 $('#replayPreview').addEventListener('click', startTrailer);
 
 document.addEventListener('keydown', (event) => {
-  if (event.target.matches('input, button, a')) return;
+  if (event.key === 'Escape') $('#videoFormatInfo').open = false;
+  if (event.target.isContentEditable || event.target.matches('input, textarea, select, summary, [contenteditable="true"]')) return;
+  const focusedAction = event.target.closest?.('button, a');
+  if (focusedAction && !['play', 'pause', 'back', 'forward', 'previousPage', 'nextPage'].includes(focusedAction.id)) return;
   if (status.state.sessionMode === 'presentation') {
     if (event.code === 'ArrowLeft') { event.preventDefault(); command({ type: 'previous-page' }); }
     else if (event.code === 'ArrowRight') { event.preventDefault(); command({ type: 'next-page' }); }
   } else {
     if (event.code === 'Space' && status.state.asset) {
       event.preventDefault();
-      command(status.state.playing ? { type: 'pause' } : { type: 'play', position: positionNow() });
+      if (event.repeat) return;
+      if (status.state.playing) command({ type: 'pause' });
+      else playOnAdminDisplay();
     } else if (event.code === 'ArrowLeft') {
       event.preventDefault(); seekRelative(-10);
     } else if (event.code === 'ArrowRight') {
@@ -1119,12 +1225,12 @@ events.addEventListener('state', (event) => {
 events.addEventListener('screens', (event) => {
   status.screens = JSON.parse(event.data).screens;
   renderScreens();
-  if (status.state.sessionMode === 'youtube') renderPlayer();
+  refresh();
 });
 events.addEventListener('pulse', (event) => {
   const previous = status.state;
   acceptState(JSON.parse(event.data));
-  if (previous.commandId !== status.state.commandId || previous.asset?.version !== status.state.asset?.version || previous.preparation?.phase !== status.state.preparation?.phase || previous.serverId !== status.state.serverId) render();
+  if (previous.commandId !== status.state.commandId || previous.asset?.version !== status.state.asset?.version || previous.ownerId !== status.state.ownerId || previous.allReady !== status.state.allReady || previous.preparation?.phase !== status.state.preparation?.phase || previous.serverId !== status.state.serverId) render();
   else { renderPreparation(); syncPreview(); }
 });
 

@@ -81,6 +81,7 @@
     constructor() {
       this.id = uuid(); this.file = null; this.asset = null; this.connections = new Map(); this.connectionTasks = new Map(); this.waiting = new Map(); this.sequence = 0; this.generation = 0;
       this.fileUrls = new Map(); this.localSource = ''; this.playbackType = null;
+      this.sourceReplies = new Set();
       this.local = new BroadcastChannel(`cinewall-file-${window.CineWallSession?.room || 'lan'}`);
       this.local.onmessage = (event) => this.onLocal(event.data);
       this.events = new EventSource(`/events?peer=${this.id}`);
@@ -89,6 +90,23 @@
         if (this.file && asset?.peerId === this.id && asset.fingerprint === this.publishingFingerprint) this.asset = asset;
       });
       this.events.addEventListener('peer-signal', (event) => this.onSignal(JSON.parse(event.data)).catch((error) => this.report(error)));
+      this.events.addEventListener('source-range', async (event) => {
+        const request = JSON.parse(event.data);
+        if (!this.file || request.version !== this.asset?.version || !Number.isSafeInteger(request.start) || !Number.isSafeInteger(request.end) || request.start < 0 || request.end < request.start || request.end >= this.file.size || request.end - request.start >= 512 * 1024) return;
+        if (this.sourceReplies.has(request.id)) return;
+        this.sourceReplies.add(request.id);
+        try {
+          const bytes = await this.file.slice(request.start, request.end + 1).arrayBuffer();
+          for (let attempt = 0; attempt < 3 && request.version === this.asset?.version; attempt++) {
+            try {
+              const response = await fetch(`/api/source/range?id=${encodeURIComponent(request.id)}`, { method: 'POST', headers: { 'Content-Type': 'application/octet-stream' }, body: bytes });
+              if (response.ok || [409, 401, 423].includes(response.status)) break;
+            } catch { /* Retry a dropped reply without rereading the file. */ }
+            await new Promise((resolve) => setTimeout(resolve, 250 * (attempt + 1)));
+          }
+        } catch { /* Cancelled reads are normal when the movie changes. */ }
+        finally { this.sourceReplies.delete(request.id); }
+      });
       if (navigator.serviceWorker) navigator.serviceWorker.addEventListener('message', (event) => {
         if (!['media-meta', 'media-range'].includes(event.data?.type) || !event.ports[0]) return;
         const port = event.ports[0];
@@ -101,11 +119,11 @@
     }
     report(error) { window.dispatchEvent(new CustomEvent('cinewall-peer-error', { detail: error.message })); }
     async request(route, body) { const response = await fetch(route, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }); const data = await response.json(); if (!response.ok) throw new Error(data.error); return data; }
-    async publish(file, duration = 0) {
+    async publish(file, duration = 0, { relay = false } = {}) {
       this.clear(); this.file = file; this.fileUrl = this.localUrl();
       this.publishingFingerprint = await fingerprint(file);
       const codecs = await inspectCodecs(file);
-      const result = await this.request('/api/local-source', { peerId: this.id, name: file.name, size: file.size, type: mediaType(file), duration, codecs, fingerprint: this.publishingFingerprint });
+      const result = await this.request('/api/local-source', { peerId: this.id, name: file.name, size: file.size, type: mediaType(file), duration, codecs, fingerprint: this.publishingFingerprint, relay });
       this.asset = result.state.asset; return result.state;
     }
     localUrl(type = mediaType(this.file)) {
@@ -135,6 +153,10 @@
         } catch {}
       }
       if (generation !== this.generation) throw new Error('The selected movie changed');
+      if (asset.transport === 'relay') {
+        const route = `/api/media/stream?v=${encodeURIComponent(asset.version)}&retry=${retry}`;
+        return window.CineWallSession?.link(route) || route;
+      }
       if (!navigator.serviceWorker || !window.isSecureContext) throw new Error('Reload the dashboard and choose the file again to send it to this screen.');
       const registration = await navigator.serviceWorker.register('/media-worker.js', { updateViaCache: 'none' });
       const incoming = registration?.installing || registration?.waiting;
@@ -195,7 +217,7 @@
       if (generation !== this.generation) throw new Error('The selected movie changed');
       const id = ++this.sequence;
       return new Promise((resolve, reject) => {
-        const timer = setTimeout(() => { this.waiting.delete(`rtc-${id}`); reject(new Error('The connection to the admin source timed out. Keep the admin tab open and check network access between the laptops.')); }, 20000);
+        const timer = setTimeout(() => { this.waiting.delete(`rtc-${id}`); reject(new Error('The connection to the admin source timed out. Keep the admin tab open and check network access between the Devices.')); }, 20000);
         this.waiting.set(`rtc-${id}`, { resolve, reject, timer, chunks: [], expected: end - start, received: 0 });
         try { peer.channel.send(JSON.stringify({ type: 'range', id, version: asset.version, start, end })); }
         catch (error) { clearTimeout(timer); this.waiting.delete(`rtc-${id}`); reject(error); }
@@ -209,7 +231,7 @@
       const pc = new RTCPeerConnection({ iceServers: info.iceServers || [] });
       const peer = { pc, channel: null, candidates: [], queue: Promise.resolve(), queued: 0, closed: false }; this.connections.set(id, peer);
       pc.onicecandidate = (event) => { if (event.candidate && !peer.closed) this.request('/api/peer-signal', { from: this.id, to: id, candidate: event.candidate }).catch((error) => { if (!peer.closed) this.report(error); }); };
-      pc.onconnectionstatechange = () => { if (!peer.closed && ['failed', 'closed'].includes(pc.connectionState)) { this.connections.delete(id); this.report(new Error('Connection to the admin source was lost. Keep the admin tab open and check network access between the laptops.')); } };
+      pc.onconnectionstatechange = () => { if (!peer.closed && ['failed', 'closed'].includes(pc.connectionState)) { this.connections.delete(id); this.report(new Error('Connection to the admin source was lost. Keep the admin tab open and check network access between the Devices.')); } };
       const bind = (channel) => { peer.channel = channel; channel.binaryType = 'arraybuffer'; channel.bufferedAmountLowThreshold = 128 * 1024; channel.onmessage = (event) => this.onData(peer, event.data); };
       pc.ondatachannel = (event) => bind(event.channel);
       if (offer) { bind(pc.createDataChannel('movie-ranges', { ordered: true })); await pc.setLocalDescription(await pc.createOffer()); await this.request('/api/peer-signal', { from: this.id, to: id, description: pc.localDescription }); }
@@ -226,7 +248,7 @@
     async connect(id) {
       const peer = await this.getPeer(id, true);
       const deadline = Date.now() + 15000;
-      while (peer.channel?.readyState !== 'open') { if (Date.now() > deadline || ['failed', 'closed'].includes(peer.pc.connectionState)) throw new Error('Direct connection to the admin source is unavailable. Keep the admin tab open and check network access between the laptops.'); await new Promise((resolve) => setTimeout(resolve, 50)); }
+      while (peer.channel?.readyState !== 'open') { if (Date.now() > deadline || ['failed', 'closed'].includes(peer.pc.connectionState)) throw new Error('Direct connection to the admin source is unavailable. Keep the admin tab open and check network access between the Devices.'); await new Promise((resolve) => setTimeout(resolve, 50)); }
       return peer;
     }
     async onSignal(data) {

@@ -62,18 +62,23 @@ document.querySelector('.mode-grid').addEventListener('click', async (event) => 
   const sessionMode = card.dataset.sessionMode;
   busy.hidden = false;
   try {
+    const current = await (await fetch('/api/status', { cache: 'no-store' })).json();
+    if (current.state.ownerId && current.state.ownerId !== window.CineWallSession?.deviceId) {
+      location.href = window.CineWallSession.link(`/admin.html?mode=${current.state.sessionMode}`);
+      return;
+    }
     const response = await fetch('/api/command', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ type: 'session-mode', sessionMode }),
     });
-    if (!response.ok) throw new Error('Mode could not start');
+    if (!response.ok) { const result = await response.json(); throw new Error(result.error || 'Mode could not start'); }
     const dashboard = `/admin.html?mode=${encodeURIComponent(sessionMode)}`;
     location.href = window.CineWallSession?.link(dashboard) || dashboard;
-  } catch {
+  } catch (error) {
     busy.hidden = true;
     document.querySelector('#launcherConnection').classList.remove('online');
-    document.querySelector('#launcherConnection span:last-child').textContent = 'Server unavailable';
+    document.querySelector('#launcherConnection span:last-child').textContent = error.message || 'Server unavailable';
   }
 });
 

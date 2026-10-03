@@ -53,9 +53,11 @@ let assetFile = null;
 let uploadInProgress = false;
 let preparation = null;
 let preparationController = null;
+let sourceOwner = null;
+const relayRequests = new Map();
 
-function defaultAudioSettings() {
-  return Object.fromEntries(Array.from({ length: 5 }, (_, index) => [String(index + 1), { volume: 1, muted: false }]));
+function defaultAudioSettings(all = false) {
+  return Object.fromEntries(Array.from({ length: 5 }, (_, index) => [String(index + 1), { volume: 1, muted: !all && index > 0 }]));
 }
 
 let state = {
@@ -76,7 +78,7 @@ let state = {
 
 fs.mkdirSync(CACHE_DIR, { recursive: true });
 
-// Keep the selected movie across server restarts so joined laptops can recover.
+// Keep the selected movie across server restarts so joined Devices can recover.
 try {
   const saved = JSON.parse(fs.readFileSync(SESSION_FILE, 'utf8'));
   const savedPath = saved.assetFile && path.resolve(saved.assetFile.path);
@@ -85,11 +87,14 @@ try {
     state = { ...state, ...saved.state, playing: false, notBefore: 0, anchorTime: Date.now() };
     assetFile = saved.assetFile;
     commandSequence = Number(state.commandId) || 0;
+    sourceOwner = saved.sourceOwner || null;
+    // An in-browser source cannot survive a server/browser restart.
+    if (state.asset?.source === 'peer') { state.asset = null; sourceOwner = null; }
   }
 } catch {}
 
 function saveSession() {
-  try { fs.writeFileSync(SESSION_FILE, JSON.stringify({ state: snapshot(), assetFile }), 'utf8'); } catch {}
+  try { fs.writeFileSync(SESSION_FILE, JSON.stringify({ state: snapshot(), assetFile, sourceOwner }), 'utf8'); } catch {}
 }
 
 function json(res, status, value) {
@@ -132,7 +137,42 @@ function currentPosition(at = Date.now()) {
 }
 
 function snapshot() {
-  return { ...state, preparation, serverId: SERVER_ID, serverTime: Date.now() };
+  return { ...state, ownerId: sourceOwner?.id || '', roomId: room || 'hotspot', allReady: allDisplaysReady(), preparation, serverId: SERVER_ID, serverTime: Date.now() };
+}
+
+function identity(req) {
+  const id = String(req.headers['x-cinewall-device'] || '');
+  const token = String(req.headers['x-cinewall-key'] || '');
+  if (!/^[a-f0-9-]{36}$/.test(id) || !/^[a-f0-9-]{36}$/.test(token)) {
+    const error = new Error('Reload CineWall to join this room.'); error.status = 401; throw error;
+  }
+  return { id, hash: require('node:crypto').createHash('sha256').update(token).digest('hex') };
+}
+
+function checkOwner(req, claim = false) {
+  if (sourceOwner && !state.asset && !uploadInProgress && Date.now() - sourceOwner.claimedAt > 60000) sourceOwner = null;
+  const device = identity(req);
+  if (sourceOwner && (sourceOwner.id !== device.id || sourceOwner.hash !== device.hash)) {
+    const error = new Error('Another laptop is the admin. Wait until it removes the file.'); error.status = 423; throw error;
+  }
+  if (!sourceOwner && claim) {
+    sourceOwner = { ...device, claimedAt: Date.now() }; saveSession(); broadcast('state', snapshot());
+  }
+  return device;
+}
+
+function releaseReservation() {
+  if (!state.asset && !uploadInProgress) { sourceOwner = null; saveSession(); broadcast('state', snapshot()); }
+}
+
+function allDisplaysReady() {
+  if (!state.asset || uploadInProgress) return false;
+  const joined = activeScreens();
+  for (let number = 1; number <= state.screenCount; number++) {
+    const latest = joined.filter((screen) => screen.screen === number).sort((a, b) => b.lastSeen - a.lastSeen)[0];
+    if (!latest?.ready || !latest.mediaReady || latest.assetVersion !== state.asset.version || latest.error || latest.buffering) return false;
+  }
+  return true;
 }
 
 function sendEvent(res, event, payload) {
@@ -179,14 +219,13 @@ function extractYouTubeId(value) {
 }
 
 function audioSettingsForMode(sessionMode) {
-  const settings = defaultAudioSettings();
-  if (sessionMode === 'youtube') {
-    for (let screen = 2; screen <= 5; screen += 1) settings[String(screen)].muted = true;
-  }
+  const settings = defaultAudioSettings(sessionMode === 'audio');
+  if (sessionMode === 'presentation') for (const setting of Object.values(settings)) setting.muted = true;
   return settings;
 }
 
 function removeCurrentAsset() {
+  for (const request of relayRequests.values()) request.reject(new Error('The selected file changed.'));
   const oldPath = assetFile?.path;
   assetFile = null;
   if (oldPath) fs.unlink(oldPath, () => {});
@@ -194,7 +233,9 @@ function removeCurrentAsset() {
 
 function applyCommand(input) {
   const now = Date.now();
-  const executeAt = now + (['screen-audio', 'mute-all', 'youtube-audio-mode'].includes(input.type) ? 0 : 90);
+  // Give every ready browser time to receive the same start, rather than
+  // starting the source first. Mixer changes remain immediate.
+  const executeAt = now + (['screen-audio', 'mute-all', 'youtube-audio-mode', 'audio-output'].includes(input.type) ? 0 : input.type === 'play' ? 350 : 90);
   const type = String(input.type || '');
   let position = currentPosition(executeAt);
 
@@ -204,6 +245,7 @@ function applyCommand(input) {
     if (sessionMode !== state.sessionMode) {
       if (uploadInProgress) throw new Error('Wait for the current file to finish preparing, or cancel it first');
       removeCurrentAsset();
+      sourceOwner = null;
       const limits = modeLimits(sessionMode);
       state = {
         ...state,
@@ -224,6 +266,7 @@ function applyCommand(input) {
     if (uploadInProgress) throw new Error('Wait for the current file to finish preparing before removing it');
     if (input.assetVersion && state.asset && input.assetVersion !== state.asset.version) throw new Error('The loaded file changed. Remove the current file instead');
     removeCurrentAsset();
+    sourceOwner = null;
     state = { ...state, asset: null, playing: false, position: 0, page: 1, anchorTime: executeAt };
     for (const screen of screens.values()) {
       Object.assign(screen, { mediaReady: false, duration: 0, playbackTime: 0, fileName: '', paused: true, buffering: false, error: '' });
@@ -253,6 +296,7 @@ function applyCommand(input) {
     }
   } else if (type === 'play') {
     if (!state.asset || !['video', 'audio', 'youtube'].includes(state.sessionMode)) throw new Error('Choose a video, audio file, or YouTube link first');
+    if (!allDisplaysReady()) { const error = new Error('Wait until every display is ready.'); error.status = 409; throw error; }
     if (Number.isFinite(input.position)) position = Math.max(0, Number(input.position));
     state = { ...state, playing: true, position, anchorTime: executeAt };
   } else if (type === 'pause') {
@@ -293,9 +337,9 @@ function applyCommand(input) {
       ...state,
       audioSettings: Object.fromEntries(Object.entries(state.audioSettings).map(([screen, setting]) => [screen, { ...setting, muted }])),
     };
-  } else if (type === 'youtube-audio-mode') {
-    if (state.sessionMode !== 'youtube') throw new Error('YouTube audio options are only available in YouTube mode');
-    const youtubeAudioMode = input.youtubeAudioMode === 'all' ? 'all' : 'admin';
+  } else if (type === 'youtube-audio-mode' || type === 'audio-output') {
+    if (!['video', 'audio', 'youtube'].includes(state.sessionMode) || type === 'youtube-audio-mode' && state.sessionMode !== 'youtube') throw new Error('Audio output is unavailable in this mode');
+    const youtubeAudioMode = (type === 'audio-output' ? input.output : input.youtubeAudioMode) === 'all' ? 'all' : 'admin';
     state = {
       ...state,
       youtubeAudioMode,
@@ -322,7 +366,7 @@ function applyCommand(input) {
 
   state.notBefore = executeAt;
   state.commandId = ++commandSequence;
-  const command = { type, executeAt, ...state, serverId: SERVER_ID, serverTime: now };
+  const command = { type, executeAt, ...snapshot(), serverTime: now };
   broadcast('command', command);
   broadcast('state', snapshot());
   saveSession();
@@ -522,6 +566,7 @@ async function receiveAsset(req, res, url) {
   const version = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
   const temporaryPath = path.join(CACHE_DIR, `upload-${version}.tmp`);
   const rawPath = path.join(CACHE_DIR, `asset-${version}${extension}`);
+  checkOwner(req, true);
   uploadInProgress = true;
   preparationController = new AbortController();
   const signal = preparationController.signal;
@@ -616,6 +661,7 @@ async function receiveAsset(req, res, url) {
     if (!res.headersSent && !res.destroyed) json(res, signal.aborted ? 409 : kind === 'video' && /MP4|WebM|video track|audio track|browser/i.test(preparation.error) ? 415 : 500, { error: preparation.error, preparation });
   } finally {
     uploadInProgress = false;
+    releaseReservation();
     preparationController = null;
   }
 }
@@ -624,9 +670,67 @@ function safeDownloadName(name) {
   return encodeURIComponent(String(name || 'shared-file').replace(/[\r\n]/g, ''));
 }
 
+async function serveInstantAsset(req, res, url) {
+  const asset = state.asset;
+  if (!asset || asset.source !== 'peer' || url.searchParams.get('v') !== asset.version) { json(res, 409, { error: 'The selected file changed.' }); return; }
+  let start = 0, end = asset.size - 1, status = 200;
+  const range = String(req.headers.range || '');
+  if (range) {
+    const match = /^bytes=(\d*)-(\d*)$/.exec(range);
+    if (!match || (!match[1] && !match[2])) { res.writeHead(416, { 'Content-Range': `bytes */${asset.size}` }); res.end(); return; }
+    start = match[1] ? Number(match[1]) : Math.max(0, asset.size - Number(match[2]));
+    end = match[1] && match[2] ? Math.min(Number(match[2]), end) : end;
+    status = 206;
+  }
+  if (!Number.isSafeInteger(start) || !Number.isSafeInteger(end) || start < 0 || start > end || start >= asset.size) { res.writeHead(416, { 'Content-Range': `bytes */${asset.size}` }); res.end(); return; }
+  // A browser can request the whole remaining movie. Complete short ranges
+  // before sending headers, so a source reconnect cannot truncate that response.
+  if (range && req.method !== 'HEAD') end = Math.min(end, start + 2 * 1024 * 1024 - 1);
+  const headers = { 'Content-Type': asset.type, 'Accept-Ranges': 'bytes', 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' };
+  if (range || req.method === 'HEAD') headers['Content-Length'] = end - start + 1;
+  if (status === 206) headers['Content-Range'] = `bytes ${start}-${end}/${asset.size}`;
+  if (req.method === 'HEAD') { res.writeHead(status, headers); res.end(); return; }
+  let pendingId = '', closed = false;
+  const closedHandler = () => { closed = true; if (pendingId) relayRequests.get(pendingId)?.reject(new Error('Display stopped reading.')); };
+  res.once('close', closedHandler);
+  try {
+    const buffers = [];
+    // Relay only a bounded byte range at a time; never store or buffer a movie.
+    for (let offset = start; offset <= end && !closed; offset += 512 * 1024) {
+      if (state.asset?.version !== asset.version) throw new Error('The selected file changed.');
+      if (relayRequests.size >= 32) throw new Error('Too many file requests. Try again.');
+      const chunkEnd = Math.min(end, offset + 512 * 1024 - 1);
+      pendingId = require('node:crypto').randomUUID();
+      const buffer = await new Promise((resolve, reject) => {
+        const id = pendingId;
+        const finish = (error, bytes) => { const pending = relayRequests.get(id); if (!pending) return; clearTimeout(pending.timer); clearInterval(pending.retryTimer); relayRequests.delete(id); error ? reject(error) : resolve(bytes); };
+        const send = () => {
+          if (state.asset?.version !== asset.version) { finish(new Error('The selected file changed.')); return; }
+          const source = [...viewers].find((viewer) => viewer.peerId === asset.peerId && !viewer.destroyed);
+          if (source) try { sendEvent(source, 'source-range', { id, version: asset.version, start: offset, end: chunkEnd }); } catch { /* EventSource reconnects; resend the same request. */ }
+        };
+        relayRequests.set(id, { version: asset.version, length: chunkEnd - offset + 1, timer: setTimeout(() => finish(new Error('Connection interrupted. Keep the admin source tab open and awake.')), 30000), retryTimer: setInterval(send, 2000), resolve: (bytes) => finish(null, bytes), reject: (error) => finish(error) });
+        send();
+      });
+      pendingId = '';
+      if (closed) break;
+      if (range) { buffers.push(buffer); continue; }
+      // A non-range GET uses chunked transfer, not a movie-sized Content-Length.
+      if (!res.headersSent) res.writeHead(status, headers);
+      if (!res.write(buffer)) await new Promise((resolve) => {
+        const done = () => { res.removeListener('drain', done); res.removeListener('close', done); resolve(); };
+        res.once('drain', done); res.once('close', done);
+      });
+    }
+    if (!closed) { if (range) { res.writeHead(status, headers); res.end(Buffer.concat(buffers)); } else res.end(); }
+  } catch (error) {
+    if (!closed) { if (res.headersSent) res.destroy(); else { res.setHeader('Retry-After', '2'); json(res, 503, { error: error.message }); } }
+  } finally { res.removeListener('close', closedHandler); }
+}
+
 function serveAsset(req, res) {
   if (!assetFile || !fs.existsSync(assetFile.path)) {
-    json(res, 404, { error: 'No file has been selected on the admin laptop' });
+    json(res, 404, { error: 'No file has been selected on the admin Device' });
     return;
   }
   const total = assetFile.size;
@@ -679,7 +783,7 @@ function serveAsset(req, res) {
 }
 
 function serveStatic(req, res, pathname) {
-  const route = pathname === '/' ? '/index.html' : pathname;
+  const route = pathname === '/' ? '/index.html' : pathname === '/favicon.ico' ? '/favicon.svg' : pathname;
   const decoded = decodeURIComponent(route);
   const resolved = path.resolve(PUBLIC_DIR, `.${decoded}`);
   if (!resolved.startsWith(`${PUBLIC_DIR}${path.sep}`)) {
@@ -718,6 +822,24 @@ async function handle(req, res, url) {
       json(res, 200, { state: snapshot(), screens: activeScreens() });
       return;
     }
+    if (req.method === 'POST' && url.pathname === '/api/source/claim') {
+      checkOwner(req, true); json(res, 200, { state: snapshot() }); return;
+    }
+    if (req.method === 'POST' && url.pathname === '/api/source/release') {
+      checkOwner(req); releaseReservation(); json(res, 200, { state: snapshot() }); return;
+    }
+    if (req.method === 'POST' && url.pathname === '/api/source/range') {
+      checkOwner(req);
+      const pending = relayRequests.get(url.searchParams.get('id'));
+      if (!pending || pending.version !== state.asset?.version) { json(res, 409, { error: 'This file request expired.' }); return; }
+      const chunks = []; let length = 0;
+      try {
+        for await (const chunk of req) { length += chunk.length; if (length > pending.length) throw new Error('Invalid file range length.'); chunks.push(chunk); }
+        if (length !== pending.length) throw new Error('Incomplete file range.');
+        pending.resolve(Buffer.concat(chunks)); json(res, 200, { ok: true });
+      } catch (error) { pending.reject(error); throw error; }
+      return;
+    }
     if (req.method === 'POST' && url.pathname === '/api/local-source') {
       if (uploadInProgress) throw new Error('Cancel the current preparation first');
       const body = await readJson(req);
@@ -730,10 +852,11 @@ async function handle(req, res, url) {
         json(res, 415, { error: 'This format is not supported. Convert it to MP4 with H.264 video and AAC audio first.' }); return;
       }
       if (!/^[a-f0-9-]{36}$/.test(body.peerId || '') || !/^[a-f0-9]{64}$/.test(body.fingerprint || '') || !Number.isSafeInteger(body.size) || body.size <= 0 || body.size > MAX_ASSET_SIZE) throw new Error('Invalid local file metadata');
+      checkOwner(req, true);
       removeCurrentAsset();
       state = { ...state, playing: false, position: 0, anchorTime: Date.now(), commandId: ++commandSequence,
         asset: { name: String(body.name || 'Local movie').slice(0, 220), size: body.size, originalSize: body.size, duration: Number(body.duration) || 0,
-          type: String(body.type || 'video/mp4').slice(0, 100), kind: state.sessionMode, renderType: 'media', source: 'peer', peerId: body.peerId,
+          type: String(body.type || 'video/mp4').slice(0, 100), kind: state.sessionMode, renderType: 'media', source: 'peer', transport: body.relay ? 'relay' : 'webrtc', peerId: body.peerId,
           fingerprint: body.fingerprint, codecs: Array.isArray(body.codecs) ? body.codecs.filter((codec) => typeof codec === 'string' && /^(V|A)_[A-Z0-9/_-]{1,60}$/.test(codec)).slice(0, 8) : [], version: require('node:crypto').randomUUID() } };
       for (const screen of screens.values()) Object.assign(screen, { mediaReady: false, duration: 0, playbackTime: 0, error: '' });
       saveSession(); broadcast('state', snapshot()); json(res, 200, { state: snapshot() }); return;
@@ -748,6 +871,7 @@ async function handle(req, res, url) {
       sendEvent(target, 'peer-signal', { from: body.from, description: body.description, candidate: body.candidate }); json(res, 200, { ok: true }); return;
     }
     if (req.method === 'POST' && url.pathname === '/api/media/cancel') {
+      checkOwner(req);
       const body = await readJson(req);
       if (!preparationController || !preparation || !uploadInProgress) { json(res, 200, { state: snapshot() }); return; }
       if (body.version !== preparation.version) throw new Error('The preparation changed. Cancel the current file instead');
@@ -788,6 +912,7 @@ async function handle(req, res, url) {
         const targetMode = state.sessionMode;
         const validDownload = targetMode === 'audio' ? job.option.kind === 'audio' && ['mp3', 'm4a', 'aac', 'wav'].includes(job.option.container) : targetMode === 'video' && job.option.kind === 'video' && job.option.container === 'mp4';
         if (!validDownload || uploadInProgress) { json(res, 409, { error: 'Open the matching video/audio dashboard and finish any current upload first.' }); return; }
+        checkOwner(req, true);
         uploadInProgress = true;
         const version = `download-${Date.now()}-${job.id}`;
         const destination = path.join(CACHE_DIR, `asset-${version}.${job.option.container}`);
@@ -806,7 +931,7 @@ async function handle(req, res, url) {
         } catch (error) {
           await fs.promises.unlink(destination).catch(() => {});
           throw error;
-        } finally { uploadInProgress = false; }
+        } finally { uploadInProgress = false; releaseReservation(); }
         return;
       }
       json(res, 405, { error: 'Method not allowed' });
@@ -818,7 +943,9 @@ async function handle(req, res, url) {
       return;
     }
     if ((req.method === 'GET' || req.method === 'HEAD') && (url.pathname === '/api/media/stream' || url.pathname === '/api/movie/stream')) {
-      serveAsset(req, res);
+      if (state.asset?.source === 'peer') await serveInstantAsset(req, res, url);
+      else if (url.searchParams.get('v') && url.searchParams.get('v') !== state.asset?.version) json(res, 409, { error: 'The selected file changed.' });
+      else serveAsset(req, res);
       return;
     }
     if (req.method === 'GET' && url.pathname === '/events') {
@@ -843,10 +970,14 @@ async function handle(req, res, url) {
       if (!id || !Number.isInteger(screen) || screen < 1 || screen > 5) throw new Error('Invalid screen status');
       screens.set(id, {
         clientId: id,
+        deviceId: /^[a-f0-9-]{36}$/i.test(String(req.headers['x-cinewall-device'] || '')) ? String(req.headers['x-cinewall-device']) : '',
         screen,
         build: String(body.build || '').slice(0, 80),
         ready: Boolean(body.ready),
         mediaReady: Boolean(body.mediaReady),
+        assetVersion: String(body.assetVersion || '').slice(0, 100),
+        loadProgress: Math.min(100, Math.max(0, Number(body.loadProgress) || 0)),
+        bufferedSeconds: Math.max(0, Number(body.bufferedSeconds) || 0),
         fileName: String(body.fileName || '').slice(0, 220),
         fileSize: Number(body.fileSize) || 0,
         duration: Number(body.duration) || 0,
@@ -864,7 +995,10 @@ async function handle(req, res, url) {
       return;
     }
     if (req.method === 'POST' && url.pathname === '/api/command') {
-      const command = applyCommand(await readJson(req));
+      const input = await readJson(req);
+      if (sourceOwner && !['identify', 'screen-audio'].includes(input.type)) checkOwner(req);
+      if (input.type === 'load-youtube') { extractYouTubeId(input.url); checkOwner(req, true); }
+      const command = applyCommand(input);
       json(res, 200, { ok: true, command });
       return;
     }
@@ -874,7 +1008,7 @@ async function handle(req, res, url) {
     }
     json(res, 405, { error: 'Method not allowed' });
   } catch (error) {
-    json(res, 400, { error: error.message || 'Bad request' });
+    json(res, error.status || 400, { error: error.message || 'Bad request' });
   }
 }
 

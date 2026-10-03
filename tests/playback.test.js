@@ -7,12 +7,12 @@ const path = require('node:path');
 const vm = require('node:vm');
 const { downloadChoices, downloadError, common } = require('../youtube-downloads');
 
-function player(screen, mode = 'video', peer = null) {
+function player(screen, mode = 'video', peer = null, fullscreen = async () => {}) {
   const nodes = new Map();
   const node = (selector) => {
     if (nodes.has(selector)) return nodes.get(selector);
     const classes = new Set();
-    const item = { hidden: false, value: 0, innerHTML: '', textContent: '', duration: 300, currentTime: 0, paused: true, readyState: 4, muted: false, ended: false,
+    const item = { hidden: false, value: 0, innerHTML: '', textContent: '', duration: 300, videoWidth: 1280, videoHeight: 720, currentTime: 0, paused: true, readyState: 4, muted: false, ended: false,
       style: { setProperty() {} }, dataset: {}, handlers: {},
       classList: { add: (...names) => names.forEach((name) => classes.add(name)), remove: (...names) => names.forEach((name) => classes.delete(name)), contains: (name) => classes.has(name), toggle(name, flag) { if (flag) classes.add(name); else classes.delete(name); } },
       addEventListener(name, callback) { this.handlers[name] = callback; },
@@ -23,18 +23,18 @@ function player(screen, mode = 'video', peer = null) {
     nodes.set(selector, item);
     return item;
   };
-  const state = { serverId: 'server-1', sessionMode: mode, screenCount: 3, playing: true, position: 12, anchorTime: Date.now(), serverTime: Date.now(), notBefore: 0, commandId: 7, mode: 'stretch',
+  const state = { serverId: 'server-1', sessionMode: mode, allReady: true, screenCount: 3, playing: true, position: 12, anchorTime: Date.now(), serverTime: Date.now(), notBefore: 0, commandId: 7, mode: 'stretch',
     audioSettings: { 1: { volume: 1, muted: false }, 2: { volume: 1, muted: false }, 3: { volume: 1, muted: false } },
     asset: mode === 'youtube' ? { videoId: 'YE7VzlLtp-4', version: 'yt-test' } : { name: peer ? 'test.mkv' : 'test.mp4', version: 'movie-test', source: peer ? 'peer' : undefined } };
-  const statuses = [];
+  const statuses = [], documentHandlers = {}, timers = [];
   const storage = () => ({ getItem: () => null, setItem() {}, removeItem() {} });
   const context = vm.createContext({ console, URLSearchParams, Math, Number, String, Boolean, Date, JSON, Promise, performance,
     location: { search: `?screen=${screen}`, origin: 'http://192.168.137.1:4173', href: `http://192.168.137.1:4173/screen.html?screen=${screen}` },
     innerWidth: 1280, innerHeight: 720, localStorage: storage(), sessionStorage: storage(),
-    document: { querySelector: node, addEventListener() {}, body: { dataset: {} }, documentElement: { requestFullscreen: async () => {} } },
+    document: { querySelector: node, addEventListener(name, handler) { documentHandlers[name] = handler; }, body: { dataset: {} }, documentElement: { requestFullscreen: fullscreen } },
     window: { addEventListener() {}, CineWallFilePeer: peer ? { FilePeer: class { constructor() { return peer; } } } : undefined },
     EventSource: class { addEventListener() {} },
-    setTimeout: () => 1, clearTimeout() {}, setInterval() {},
+    setTimeout: (handler, delay) => { timers.push({ handler, delay }); return timers.length; }, clearTimeout() {}, setInterval() {},
     fetch: async (url, init) => {
       if (url.startsWith('/api/time')) return { ok: true, json: async () => ({ serverTime: Date.now() }) };
       if (init?.body) statuses.push(JSON.parse(init.body));
@@ -42,8 +42,102 @@ function player(screen, mode = 'video', peer = null) {
     },
   });
   vm.runInContext(fs.readFileSync(path.join(__dirname, '../public/screen.js'), 'utf8'), context);
-  return { context, state, nodes, statuses, evaluate: (code) => vm.runInContext(code, context) };
+  return { context, state, nodes, statuses, documentHandlers, timers, evaluate: (code) => vm.runInContext(code, context) };
 }
+
+test('every mode attempts fullscreen once on join, allows one-tap retry, and respects exiting fullscreen', async () => {
+  for (const mode of ['video', 'audio', 'presentation', 'youtube']) {
+    let calls = 0;
+    const client = player(2, mode, null, async (options) => { calls++; assert.equal(options.navigationUI, 'hide'); throw new Error('User gesture required'); });
+    await new Promise(setImmediate);
+    assert.equal(calls, 1);
+    const prompt = client.nodes.get('#enterPlayerFullscreen');
+    assert.equal(prompt.hidden, false, `${mode}: blocked automatic entry exposes one-tap fallback`);
+    client.evaluate('updateLabels(); updateLabels()'); assert.equal(calls, 1, 'no repeated fullscreen requests during sync');
+    client.context.document.documentElement.requestFullscreen = async () => { calls++; client.context.document.fullscreenElement = client.context.document.documentElement; };
+    await prompt.handlers.click(); assert.equal(calls, 2); assert.equal(prompt.hidden, true);
+    client.context.document.fullscreenElement = null;
+    client.documentHandlers.fullscreenchange(); client.evaluate('updateLabels()');
+    assert.equal(prompt.hidden, false); assert.equal(calls, 2, 'Escape is respected; fullscreen does not immediately reopen');
+  }
+});
+
+test('join requests fullscreen before awaiting media playback', async () => {
+  const actions = [], client = player(1); await new Promise(setImmediate);
+  client.context.document.documentElement.requestFullscreen = async () => { actions.push('fullscreen'); };
+  client.nodes.get('#video').play = async () => { actions.push('play'); };
+  await client.nodes.get('#readyButton').handlers.click();
+  assert.equal(actions[0], 'fullscreen'); assert.ok(actions.includes('play'));
+});
+
+test('Display 1 updates Play instantly but does not start audio before the shared server start', async () => {
+  const client = player(1, 'audio'); await new Promise(setImmediate);
+  const video = client.nodes.get('#video');
+  client.evaluate('currentState.playing = false'); video.paused = true;
+  let starts = 0, reply;
+  video.play = async () => { starts++; video.paused = false; };
+  client.context.fetch = async (route) => route === '/api/command' ? new Promise((resolve) => { reply = resolve; }) : { ok: true, json: async () => ({ state: client.state }) };
+  const pending = client.evaluate("command({type:'play', position:12})"); await new Promise(setImmediate);
+  assert.equal(client.evaluate('currentState.playing'), true);
+  client.evaluate('correctDrift(currentState, false)'); assert.equal(starts, 0);
+  const command = { ...client.state, playing: true, type: 'play', commandId: 8, notBefore: Date.now() + 350, executeAt: Date.now() + 350, anchorTime: Date.now() + 350 };
+  reply({ ok: true, json: async () => ({ command }) }); await pending;
+  assert.equal(starts, 0); assert.ok(client.timers.at(-1).delay > 200);
+  client.context.sharedStart = { ...command, executeAt: Date.now() - 1, notBefore: 0, anchorTime: Date.now(), serverTime: Date.now() };
+  await client.evaluate('execute(sharedStart)'); assert.equal(starts, 1);
+});
+
+test('native speaker drift uses small speed corrections without repeatedly seeking', async () => {
+  const client = player(2, 'audio'); await new Promise(setImmediate);
+  const video = client.nodes.get('#video'); video.paused = false;
+  client.evaluate('currentState.playing = true; currentState.position = 20; currentState.anchorTime = serverNow()');
+  video.currentTime = 19.95;
+  client.evaluate('correctDrift(currentState, false)');
+  assert.equal(video.currentTime, 19.95); assert.ok(video.playbackRate > 1 && video.playbackRate <= 1.015);
+  video.currentTime = client.evaluate('targetPosition(currentState)') + .05;
+  client.evaluate('correctDrift(currentState, false)'); assert.ok(video.playbackRate < 1 && video.playbackRate >= .985);
+});
+
+test('a relay interruption after successful playback reconnects without blaming codecs, and successful recovery resets retries', async () => {
+  const opened = [];
+  const client = player(2, 'video', { clear() {}, open(asset, options) { opened.push(options); return Promise.resolve(`/api/media/stream?v=${asset.version}&retry=${options?.retry || 0}`); } });
+  await new Promise(setImmediate);
+  client.evaluate("currentState.asset.transport = 'relay'");
+  const video = client.nodes.get('#video'); video.handlers.playing();
+  for (const code of [2, 3, 4]) {
+    video.error = { code }; await video.handlers.error();
+    assert.match(client.evaluate('lastError'), /Connection interrupted/);
+    assert.doesNotMatch(client.evaluate('lastError'), /H.264|unsupported|cannot play/);
+    const timer = client.timers.at(-1); assert.equal(timer.delay, 1000);
+    timer.handler(); await new Promise(setImmediate);
+    assert.ok(opened.at(-1).retry > 0);
+    video.handlers.loadedmetadata(); video.handlers.playing();
+    assert.equal(client.evaluate('transferRecoveryAttempts'), 0);
+    assert.equal(client.evaluate('lastError'), '');
+    assert.ok(video.currentTime >= 12, 'rejoins the shared timeline instead of restarting');
+  }
+});
+
+test('Space and arrow keys match the player controls, work after focusing controls, and ignore typing or held Space', async () => {
+  const client = player(1); await new Promise(setImmediate);
+  const key = (code, id = 'screenPlay', repeat = false, typing = false) => {
+    let prevented = false;
+    client.documentHandlers.keydown({ code, key: code === 'Space' ? ' ' : code, repeat, target: { matches: () => typing, closest: () => id ? { id } : null }, preventDefault() { prevented = true; } });
+    return prevented;
+  };
+  assert.equal(key('Space'), true); await new Promise(setImmediate);
+  assert.ok(client.statuses.some((payload) => payload.type === 'pause'));
+  const before = client.statuses.length;
+  key('Space', 'screenPlay', true); assert.equal(client.statuses.length, before);
+  const position = client.evaluate('targetPosition(currentState)');
+  key('ArrowRight', 'screenForward'); await new Promise(setImmediate);
+  const forward = client.statuses.filter((payload) => payload.type === 'seek').at(-1); assert.ok(Math.abs(forward.position - position - 10) < .1);
+  const afterForward = client.evaluate('targetPosition(currentState)');
+  key('ArrowLeft', 'screenBack'); await new Promise(setImmediate);
+  const back = client.statuses.filter((payload) => payload.type === 'seek').at(-1); assert.ok(Math.abs(back.position - afterForward + 10) < .1);
+  assert.equal(key('Space', '', false, true), false);
+  assert.equal(key('Space', 'readyButton'), false);
+});
 
 test('all three numbered links automatically join and play despite blocked sound', async () => {
   for (const screen of [1, 2, 3]) {
@@ -122,7 +216,7 @@ test('audio progressing without decoded video frames reports a picture failure, 
   assert.match(client.evaluate('lastError'), /decoded no HEVC video frames/);
   assert.equal(client.evaluate('mediaIsReady()'), false);
   assert.equal(client.statuses.at(-1).mediaReady, false);
-  assert.match(client.statuses.at(-1).error, /file stays on the admin laptop/);
+  assert.match(client.statuses.at(-1).error, /file stays on the admin Device/);
   assert.equal(client.nodes.get('#decoderHelpLink').hidden, false);
   video.getVideoPlaybackQuality = () => ({ totalVideoFrames: 1 });
   assert.equal(client.evaluate('checkVideoFrames(6500)'), false);
@@ -233,7 +327,7 @@ test('removing YouTube destroys its player and clears stale errors', async () =>
   assert.equal(client.evaluate('lastError'), '');
 });
 
-test('clear-asset resets and broadcasts playback without removing joined laptops or saved downloads', () => {
+test('clear-asset resets and broadcasts playback without removing joined Devices or saved downloads', () => {
   const code = fs.readFileSync(path.join(__dirname, '../server.js'), 'utf8');
   const slice = code.slice(code.indexOf('function removeCurrentAsset()'), code.indexOf('function networkDetails()'));
   const deleted = [];
@@ -241,7 +335,7 @@ test('clear-asset resets and broadcasts playback without removing joined laptops
   let persisted = false;
   const context = vm.createContext({ Date, String, Number, Object, Error,
     fs: { unlink(file) { deleted.push(file); } }, SERVER_ID: 'test-server',
-    assetFile: { path: 'session-wall-copy.mp4' }, uploadInProgress: false, commandSequence: 0,
+    assetFile: { path: 'session-wall-copy.mp4' }, uploadInProgress: false, commandSequence: 0, relayRequests: new Map(), sourceOwner: null,
     state: { sessionMode: 'video', asset: { version: 'loaded-1' }, playing: true, position: 50, page: 2, screenCount: 3, audioSettings: { 1: { muted: false } } },
     screens: new Map([[1, { ready: true, mediaReady: true, paused: false, playbackTime: 50, fileName: 'movie.mp4' }]]),
     currentPosition: () => 50, broadcast: (event, payload) => events.push({ event, payload }),
@@ -324,7 +418,7 @@ function uploadDashboard() {
     URL: { createObjectURL: () => 'blob:selected-file', revokeObjectURL: (url) => revoked.push(url) },
     setTimeout: () => 1, clearTimeout() {},
     render() { vm.runInContext('setPreviewKind()', context); },
-    updateServerTime() {}, formatBytes: (size) => `${size} bytes`,
+    updateServerTime() {}, formatBytes: (size) => `${size} bytes`, sourceLocked: () => false, sharingMode: 'server',
     XMLHttpRequest: class {
       constructor() {
         this.handlers = {};

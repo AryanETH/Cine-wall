@@ -9,7 +9,7 @@
     if (apiPromise) return apiPromise;
     apiPromise = new Promise((resolve, reject) => {
       const previousReady = window.onYouTubeIframeAPIReady;
-      const timeout = setTimeout(() => reject(new Error('The YouTube player took too long to load. Check this laptop’s internet connection.')), 8000);
+      const timeout = setTimeout(() => reject(new Error('The YouTube player took too long to load. Check this Device’s internet connection.')), 8000);
       window.onYouTubeIframeAPIReady = () => {
         clearTimeout(timeout);
         if (typeof previousReady === 'function') previousReady();
@@ -20,7 +20,7 @@
       script.async = true;
       script.addEventListener('error', () => {
         clearTimeout(timeout);
-        reject(new Error('The YouTube Player API could not load. Check this laptop’s internet connection.'));
+        reject(new Error('The YouTube Player API could not load. Check this Device’s internet connection.'));
       });
       document.head.appendChild(script);
     }).catch((error) => {
@@ -54,7 +54,7 @@
         this.readyTimer = setTimeout(() => {
           if (!this.ready) this.callbacks.onError?.(-1, this);
         }, 8000);
-        // Construct the iframe ourselves so every laptop delegates autoplay
+        // Construct the iframe ourselves so every Device delegates autoplay
         // and sends an explicit referrer, including private LAN HTTP origins.
         const frame = document.createElement('iframe');
         frame.id = this.elementId;

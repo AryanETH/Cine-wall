@@ -2,13 +2,14 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>CineWall Studio · Display</title>
   <script src="icons.js?v=20261002-icons-18"></script>
   <script src="theme.js"></script>
-  <script src="session.js"></script>
-  <script src="media-peer.js?v=20261002-mkv-17"></script>
-  <link rel="stylesheet" href="styles.css?v=20261002-icons-18">
+  <script src="session.js?v=20261003-sharing-19"></script>
+  <script src="media-peer.js?v=20261003-stream-20"></script>
+  <link rel="stylesheet" href="styles.css?v=20261003-room-22">
 </head>
 <body class="screen-body" data-session-mode="video">
   <div class="wall-viewport">
@@ -62,7 +63,7 @@
         <button id="screenForward" class="screen-control-button" title="Forward 10 seconds" aria-label="Forward 10 seconds"><span class="fi">&#xE893;</span></button>
         <button id="screenFullscreen" class="screen-control-button" title="Fullscreen" aria-label="Fullscreen"><span class="fi">&#xE740;</span></button>
       </div>
-      <div class="screen-volume-row"><button id="screenMute" aria-label="Mute this laptop"><span class="fi">&#xE767;</span></button><input id="screenVolume" type="range" min="0" max="1" step="0.05" value="1" aria-label="This laptop volume"><output id="screenVolumeValue">100%</output></div>
+      <div class="screen-volume-row"><button id="screenMute" aria-label="Mute this Device"><span class="fi">&#xE767;</span></button><input id="screenVolume" type="range" min="0" max="1" step="0.05" value="1" aria-label="This Device volume"><output id="screenVolumeValue">100%</output></div>
     </div>
     <div id="screenPresentationControls" hidden>
       <div class="screen-presentation-page"><span>PAGE</span><strong id="screenPage">1</strong><span id="screenPageTotal">/ --</span></div>
@@ -77,6 +78,7 @@
   </section>
 
   <div id="identify" class="identify"></div>
+  <button id="enterPlayerFullscreen" class="fullscreen-prompt" type="button" hidden><span class="fi" aria-hidden="true">&#xE740;</span>Enter fullscreen</button>
   <div id="connectionLost" class="connection-lost"><span class="fi">&#xEB55;</span><strong>Trying to reconnect</strong><small>Keep the admin tab open.</small></div>
   <button id="playBlocked" class="play-blocked"><span class="fi">&#xE768;</span>Click once to allow sound and playback</button>
 
@@ -95,10 +97,10 @@
         <span><i class="fi">&#xE73E;</i>Automatic sync</span>
       </div>
       <button id="readyButton" class="ready-button" disabled><span class="fi">&#xE740;</span><span id="readyButtonLabel">Enter fullscreen &amp; join</span></button>
-      <p id="setupHint" class="setup-hint">Display 1 is the admin laptop and includes playback controls.</p>
+      <p id="setupHint" class="setup-hint">Display 1 is the admin Device and includes playback controls.</p>
     </div>
   </section>
   <script src="youtube-provider.js?v=20261001-playback-5"></script>
-  <script src="screen.js?v=20261002-source-14"></script>
+  <script src="screen.js?v=20261003-room-22"></script>
 </body>
 </html>

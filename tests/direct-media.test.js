@@ -12,10 +12,10 @@ const turn = () => new Promise(setImmediate);
 
 function sessionPage(href, savedRoom) {
   const location = new URL(href), calls = [], clicks = [], storage = new Map(savedRoom ? [['cinewall-room', savedRoom]] : []);
-  class XHR { open(...args) { calls.push(args); } }
+  class XHR { open(...args) { calls.push(args); } setRequestHeader() {} }
   class Events { constructor(url) { calls.push(['events', url]); } }
   const window = { fetch: async (...args) => { calls.push(['fetch', ...args]); return {}; }, EventSource: Events };
-  const context = vm.createContext({ URL, Request, location, window, XMLHttpRequest: XHR, crypto: crypto.webcrypto,
+  const context = vm.createContext({ URL, Request, Headers, location, window, XMLHttpRequest: XHR, crypto: crypto.webcrypto,
     localStorage: { getItem: (key) => storage.get(key), setItem: (key, value) => storage.set(key, value) },
     history: { replaceState(a, b, value) { calls.push(['history', String(value)]); } },
     document: { addEventListener(type, handler) { clicks.push(handler); } },
@@ -37,6 +37,10 @@ test('hosted page creates private domain links, never localhost or internal Rail
   assert.ok(link.href.includes(`room=${room}`));
   await client.window.fetch('https://www.youtube.com/');
   assert.equal(client.calls.at(-1)[1], 'https://www.youtube.com/');
+  assert.equal(client.calls.at(-1)[2], undefined, 'never leak source-device credentials to an external origin');
+  await client.window.fetch('/api/source/claim', { method: 'POST' });
+  assert.equal(client.calls.at(-1)[2].headers.get('X-CineWall-Device'), client.window.CineWallSession.deviceId);
+  assert.match(client.calls.at(-1)[2].headers.get('X-CineWall-Key'), /^[a-f0-9-]{36}$/);
 });
 
 test('an explicit private link wins over another session saved in the browser; LAN links remain LAN', () => {
@@ -111,6 +115,28 @@ test('direct publish sends metadata only, with correct audio MIME fallback and o
   owner.clear();
 });
 
+test('Instant retries a failed source reply, ignores concurrent duplicates, and gives display reloads a fresh URL', async () => {
+  const client = peerPage(), owner = new client.api.FilePeer(), file = virtualFile(1000000);
+  const state = await owner.publish(file, 60, { relay: true });
+  state.asset.transport = 'relay'; owner.asset = state.asset;
+  let replies = 0;
+  client.context.fetch = async (route, options) => {
+    assert.match(route, /\/api\/source\/range\?id=request/);
+    assert.equal(options.body.byteLength, 20);
+    return { ok: ++replies > 1, status: replies > 1 ? 200 : 503 };
+  };
+  const event = { data: JSON.stringify({ id: 'request', version: state.asset.version, start: 100, end: 119 }) };
+  const before = file.reads.length;
+  const pending = client.events[0].handlers['source-range'](event);
+  await client.events[0].handlers['source-range'](event); await pending;
+  assert.equal(replies, 2); assert.equal(file.reads.length, before + 1);
+  assert.equal(owner.sourceReplies.size, 0);
+  const remote = new client.api.FilePeer(); remote.localRequest = async () => { throw new Error('Different laptop'); };
+  const original = await remote.open(state.asset), retry = await remote.open(state.asset, { retry: 2 });
+  assert.notEqual(original, retry); assert.match(retry, /retry=2/);
+  owner.clear(); remote.clear();
+});
+
 test('MKV OS MIME associations are normalized in metadata, preview and local playback without reading 12 GB', async () => {
   const client = peerPage(), file = virtualFile(12 * 1024 ** 3, 'movie.MKV', 'video/mkv');
   const owner = new client.api.FilePeer(), state = await owner.publish(file);
@@ -183,7 +209,7 @@ test('insecure remote LAN displays never ask for a second copy of the admin movi
   const client = peerPage({ secure: false }), owner = new client.api.FilePeer(), file = virtualFile(1000);
   const asset = (await owner.publish(file)).asset;
   const receiver = new client.api.FilePeer(); receiver.asset = asset;
-  receiver.localRequest = async () => { throw new Error('The admin is on another laptop'); };
+  receiver.localRequest = async () => { throw new Error('The admin is on another Device'); };
   await assert.rejects(receiver.open(asset), /choose the file again/);
   assert.equal(receiver.file, null);
   assert.equal(owner.file, file);
@@ -273,7 +299,7 @@ function controller() {
   const code = source('admin.js'), requests = [];
   const node = { textContent: '', classList: { add() {}, remove() {} } };
   const context = vm.createContext({ Map, Promise, Date, Number, String, Math, JSON, warning: node,
-    renderPlayer() {}, renderMixer() {}, render() {}, updateServerTime() {}, refresh: async () => {},
+    renderPlayer() {}, renderMixer() {}, render() {}, updateServerTime() {}, refresh: async () => {}, sourceLocked: () => false, playbackReady: () => true,
     fetch: async (route, init) => new Promise((resolve) => requests.push({ payload: JSON.parse(init.body), resolve })),
   });
   vm.runInContext(`let controlsQueue = Promise.resolve(), controlSequence = 0, serverOffset = 0; const pendingControls = new Map(), queuedRevisions = new Map(); let status = { state: { sessionMode: 'video', serverId: 's', commandId: 1, asset: { version: 'movie' }, playing: false, position: 0, anchorTime: Date.now(), audioSettings: {1:{volume:1,muted:false}} } }; function positionNow() { return status.state.position; } function audioSetting(screen) { return status.state.audioSettings[screen] || {volume:1,muted:false}; }`, context);
@@ -294,7 +320,7 @@ test('optimistic play/pause stays instant while stale server events cannot roll 
   assert.equal(c.run('pendingControls.size'), 0);
 });
 
-test('queued seeks/volume updates coalesce without dropping the latest value on another laptop', async () => {
+test('queued seeks/volume updates coalesce without dropping the latest value on another Device', async () => {
   const c = controller(), actual = c.run('status.state');
   const first = c.run("command({type:'seek',position:10})"); await turn();
   const updates = [20, 30, 40].map((position) => c.run(`command({type:'seek',position:${position}})`));

@@ -57,6 +57,8 @@ button, a, label { -webkit-tap-highlight-color: transparent; }
 button { cursor: pointer; }
 .fi { display: inline-flex; align-items: center; justify-content: center; font-family: inherit; font-style: normal; font-weight: 400; line-height: 1; vertical-align: middle; }
 .cw-icon { display: block; width: 1em; height: 1em; flex: none; pointer-events: none; }
+.source-role { color: var(--muted); font-size: .78rem; margin: 8px 0 14px; }
+.display-load-progress { width: 100%; height: 6px; accent-color: var(--accent); }
 
 .admin-body {
   min-height: 100vh;
@@ -623,7 +625,11 @@ body[data-session-mode="audio"] .top-settings { grid-template-columns: 1fr; }
 }
 
 .drop-zone-icon {
-  display: block;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 2rem;
+  height: 2rem;
   margin: 0 auto 12px;
   font-size: 2rem;
   color: var(--muted);
@@ -661,6 +667,15 @@ body[data-session-mode="audio"] .top-settings { grid-template-columns: 1fr; }
 @keyframes upload-preparing { from { transform: translateX(-110%); } to { transform: translateX(300%); } }
 @media (prefers-reduced-motion: reduce) { .upload-progress-wrap.preparing .upload-progress span { animation: none; transform: none; width: 100% !important; opacity: .5; } }
 .source-upload-row > .file-button { flex: 1 1 180px; min-width: 0; }
+.format-info { position: relative; flex: 0 0 44px; align-self: center; }
+.format-info summary { display: grid; place-items: center; width: 44px; height: 44px; border: 1px solid var(--line); border-radius: 50%; background: var(--surface-2); color: var(--accent); cursor: pointer; font-size: 1rem; font-weight: 800; list-style: none; }
+.format-info summary::-webkit-details-marker { display: none; }
+.format-info summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+.format-info[open] summary { border-color: var(--accent); }
+.format-info-card { position: absolute; right: 0; top: calc(100% + 10px); z-index: 20; width: min(310px, calc(100vw - 64px)); padding: 18px; border: 1px solid var(--line); border-radius: 15px; background: var(--surface); color: var(--ink); box-shadow: var(--shadow); font-size: .78rem; line-height: 1.6; }
+.format-info-card p { margin: 10px 0 0; color: var(--muted); }
+.format-info-card b { color: var(--ink); }
+.fullscreen-prompt { position: fixed; z-index: 35; top: max(18px, env(safe-area-inset-top)); right: max(18px, env(safe-area-inset-right)); display: flex; align-items: center; gap: 8px; padding: 12px 18px; border: 1px solid #ffffff40; border-radius: 999px; background: #111827e6; color: white; font-size: .8rem; box-shadow: 0 6px 24px #0004; }
 .youtube-download-panel { margin-top: 16px; padding: 18px; border: 1px solid var(--line); border-radius: 18px; background: var(--surface); }
 .download-panel-heading { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 16px; }
 .download-panel-heading h3 { margin: 0; font-size: .9rem; }
@@ -684,6 +699,13 @@ body[data-session-mode="audio"] .top-settings { grid-template-columns: 1fr; }
 .source-panel {
   position: relative;
 }
+.source-editor { border: 0; margin: 0; padding: 0; min-width: 0; }
+.viewer-source { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; min-height: 240px; text-align: center; }
+.viewer-source h2 { margin: 0; font-size: 1.2rem; color: var(--ink); }
+.viewer-source p { margin: 0; color: var(--muted); font-size: .8rem; }
+.viewer-source label { font-size: .75rem; color: var(--muted); }
+.viewer-source select { width: min(100%, 260px); padding: 10px 14px; border-radius: 12px; border: 1px solid var(--line); background: var(--surface-2); color: var(--ink); }
+.viewer-source .button { min-height: 44px; }
 
 .source-panel.drag-active {
   background: color-mix(in srgb, var(--accent) 3%, var(--surface));

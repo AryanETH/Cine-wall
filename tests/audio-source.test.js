@@ -95,7 +95,7 @@ test('audio file and YouTube link drops handle missing MIME and mixed-case exten
     if (!nodes.has(selector)) nodes.set(selector, { value: '', classList: { add() {}, remove() {} }, addEventListener(name, fn) { handlers[name] = fn; }, contains: () => false });
     return nodes.get(selector);
   };
-  const context = vm.createContext({ $, warning: $('#fileWarning'), status: { state: { sessionMode: 'audio' } }, uploadBusy: false, isPreparing: () => false,
+  const context = vm.createContext({ $, warning: $('#fileWarning'), status: { state: { sessionMode: 'audio' } }, uploadBusy: false, isPreparing: () => false, sourceLocked: () => false,
     document: { body: { addEventListener() {} } }, uploadFile: (file) => loaded.push(file.name), URL,
     window: { CineWallDownloadPanel: { chooseSource: (open) => sources.push(open) } },
   });
@@ -109,4 +109,7 @@ test('audio file and YouTube link drops handle missing MIME and mixed-case exten
   assert.equal($('#downloadYoutubeUrl').value, 'https://music.youtube.com/watch?v=YE7VzlLtp-4');
   handlers.drop({ dataTransfer: { files: [], getData: () => 'https://youtube.com.evil.example/watch' } });
   assert.equal(sources.at(-1), true); assert.equal(loaded.length, 6);
+  context.sourceLocked = () => true;
+  handlers.drop({ dataTransfer: { files: [{ name: 'new.mp3', type: '' }] } });
+  assert.equal(loaded.length, 6, 'another laptop cannot replace the source by dropping a file');
 });

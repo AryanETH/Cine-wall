@@ -8,7 +8,7 @@ YouTube is a first-class CineWall mode beside local video, audio, and presentati
 - Official YouTube IFrame Player API integration in numbered display pages only.
 - Two- and three-display wall layouts. Each display clips a different horizontal slice from the same combined 16:9 canvas.
 - Admin-authoritative play, pause, restart, seek, timeline, fullscreen handoff, volume, mute, and periodic drift correction.
-- Display 1 audio by default, optional audio on all displays, and per-laptop mixer controls.
+- Display 1 audio by default, optional audio on all displays, and per-Device mixer controls.
 - Buffering, player state, duration, current time, title, readiness, reconnect, and understandable embedding/network errors reported to the dashboard.
 - A static dashboard thumbnail, so the dashboard does not create a competing playback instance.
 

@@ -1,6 +1,6 @@
 'use strict';
 
-const CLIENT_BUILD = '2026.10.02-formats-15';
+const CLIENT_BUILD = '2026.10.03-room-22';
 const filePeer = window.CineWallFilePeer ? new window.CineWallFilePeer.FilePeer() : null;
 const $ = (selector) => document.querySelector(selector);
 const video = $('#video');
@@ -27,6 +27,8 @@ let screenNumber = [1, 2, 3, 4, 5].includes(requestedScreen) ? requestedScreen :
 let wallScreens = 3;
 let sessionMode = 'video';
 let ready = false;
+let defaultFullscreenAttempted = false;
+let fullscreenRequest = null;
 let serverOffset = 0;
 let currentState = null;
 let currentAssetVersion = '';
@@ -38,6 +40,8 @@ let pdfAssetVersion = '';
 let pdfRenderTask = null;
 let pdfRenderToken = 0;
 let mediaLoadAttempts = 0;
+let mediaPlayedVersion = '';
+let transferRecoveryAttempts = 0;
 let mediaRecoveryAttempts = 0;
 let mediaRecoveryInFlight = '';
 let videoFrameObservation = null;
@@ -63,14 +67,15 @@ let localPlaybackIntent = null;
 let localVolumeTimer = null;
 let localVolumeRevision = 0;
 const generatedId = globalThis.crypto?.randomUUID?.() || `screen-${Date.now()}-${Math.random().toString(36).slice(2)}`;
-const clientId = sessionStorage.getItem('cinewall-client-id') || generatedId;
-sessionStorage.setItem('cinewall-client-id', clientId);
+// A new tab can inherit its opener's sessionStorage. Never let two numbered
+// displays overwrite each other's status by inheriting the same client ID.
+const clientId = generatedId;
 
 const modeDetails = {
-  video: { icon: '&#xE714;', setup: 'JOIN THE VIDEO WALL', noun: 'display', title: 'Choose this<br><em>display position</em>', copy: 'Confirm this laptop’s place in the wall, then enter fullscreen. The admin sends the movie automatically.' },
-  audio: { icon: '&#xE8D6;', setup: 'JOIN THE SPEAKER ROOM', noun: 'speaker', title: 'Choose this<br><em>speaker number</em>', copy: 'Confirm this laptop’s speaker number. The admin controls the track, timing, volume, and mute state.' },
+  video: { icon: '&#xE714;', setup: 'JOIN THE VIDEO WALL', noun: 'display', title: 'Choose this<br><em>display position</em>', copy: 'Confirm this Device’s place in the wall, then enter fullscreen. The admin sends the movie automatically.' },
+  audio: { icon: '&#xE8D6;', setup: 'JOIN THE SPEAKER ROOM', noun: 'speaker', title: 'Choose this<br><em>speaker number</em>', copy: 'Confirm this Device’s speaker number. The admin controls the track, timing, volume, and mute state.' },
   presentation: { icon: '&#xE7F4;', setup: 'JOIN THE PRESENTATION', noun: 'display', title: 'Choose this<br><em>audience display</em>', copy: 'Confirm this audience display, then enter fullscreen. Every page follows the admin automatically.' },
-  youtube: { icon: '&#xE768;', setup: 'JOIN THE YOUTUBE WALL', noun: 'display', title: 'Choose this<br><em>YouTube display</em>', copy: 'Confirm this laptop’s place in the wall. The admin controls one synchronized YouTube player across every display.' },
+  youtube: { icon: '&#xE768;', setup: 'JOIN THE YOUTUBE WALL', noun: 'display', title: 'Choose this<br><em>YouTube display</em>', copy: 'Confirm this Device’s place in the wall. The admin controls one synchronized YouTube player across every display.' },
 };
 
 function formatTime(value) {
@@ -159,7 +164,25 @@ function setLayout(count) {
   updateReadyButton();
 }
 
+function updateFullscreenPrompt() {
+  $('#enterPlayerFullscreen').hidden = !ready || Boolean(document.fullscreenElement) || !document.documentElement.requestFullscreen;
+}
+
+function enterPlayerFullscreen() {
+  if (document.fullscreenElement || !document.documentElement.requestFullscreen) { updateFullscreenPrompt(); return Promise.resolve(); }
+  if (fullscreenRequest) return fullscreenRequest;
+  // Start within the click handler, before awaiting media/network operations.
+  try {
+    fullscreenRequest = Promise.resolve(document.documentElement.requestFullscreen({ navigationUI: 'hide' }))
+      .catch(() => { /* Normal browsers require a click; leave the one-tap button. */ })
+      .finally(() => { fullscreenRequest = null; updateFullscreenPrompt(); });
+  } catch { updateFullscreenPrompt(); return Promise.resolve(); }
+  return fullscreenRequest;
+}
+
 function updateLabels() {
+  updateFullscreenPrompt();
+  if (ready && !defaultFullscreenAttempted) { defaultFullscreenAttempted = true; enterPlayerFullscreen(); }
   const details = modeDetails[sessionMode];
   document.body.dataset.sessionMode = sessionMode;
   $('#screenBrandIcon').innerHTML = details.icon;
@@ -168,7 +191,7 @@ function updateLabels() {
   $('#setupKicker').textContent = details.setup;
   $('#setupHeading').innerHTML = details.title;
   $('#setupDescription').textContent = details.copy;
-  $('#setupHint').textContent = sessionMode === 'audio' ? 'Speaker 1 is the admin laptop. Every laptop still needs one click to allow browser audio.' : sessionMode === 'presentation' ? 'Display 1 is the admin laptop and includes page controls.' : sessionMode === 'youtube' ? 'Display 1 is the admin laptop. Join once on every laptop so YouTube can play and sync.' : 'Display 1 is the admin laptop and includes playback controls.';
+  $('#setupHint').textContent = sessionMode === 'audio' ? 'Speaker 1 is the admin Device. Every Device still needs one click to allow browser audio.' : sessionMode === 'presentation' ? 'Display 1 is the admin Device and includes page controls.' : sessionMode === 'youtube' ? 'Display 1 is the admin Device. Join once on every Device so YouTube can play and sync.' : 'Display 1 is the admin Device and includes playback controls.';
   $('#readyButtonLabel').textContent = sessionMode === 'audio' ? 'Enable audio & join speaker room' : 'Enter fullscreen & join';
   $('#waitingIcon').innerHTML = details.icon;
   $('#waitingTitle').textContent = 'Waiting for the admin';
@@ -351,7 +374,7 @@ async function recoverDirectMedia(asset, code) {
   const attempt = ++mediaRecoveryAttempts;
   mediaRecoveryInFlight = asset.version;
   lastError = 'Retrying the original file locally. No upload or conversion…';
-  $('#waitingTitle').textContent = 'Checking playback on this laptop';
+  $('#waitingTitle').textContent = 'Checking playback on this Device';
   $('#waitingCopy').textContent = lastError;
   waitingAsset.classList.add('show');
   postStatus();
@@ -378,6 +401,8 @@ function loadMedia(asset, force = false) {
   if (!asset) {
     if (!currentAssetVersion && !video.getAttribute('src')) return;
     currentAssetVersion = '';
+    mediaPlayedVersion = '';
+    transferRecoveryAttempts = 0;
     mediaRecoveryAttempts = 0;
     mediaRecoveryInFlight = '';
     videoFrameObservation = null;
@@ -389,14 +414,14 @@ function loadMedia(asset, force = false) {
     return;
   }
   if (asset.version === currentAssetVersion && !force) return;
-  if (asset.version !== currentAssetVersion) { mediaLoadAttempts = 0; mediaRecoveryAttempts = 0; mediaRecoveryInFlight = ''; videoFrameObservation = null; }
+  if (asset.version !== currentAssetVersion) { mediaPlayedVersion = ''; transferRecoveryAttempts = 0; clearTimeout(mediaLoadTimer); mediaLoadAttempts = 0; mediaRecoveryAttempts = 0; mediaRecoveryInFlight = ''; videoFrameObservation = null; }
   currentAssetVersion = asset.version;
   mediaLoadAttempts += 1;
   lastError = '';
   video.pause();
   if (asset.source === 'peer' && filePeer) {
     const version = asset.version;
-    filePeer.open(asset).then((url) => { if (currentAssetVersion === version) { video.src = url; video.load(); } }).catch((error) => { if (currentAssetVersion !== version) return; lastError = error.message; $('#decoderHelpLink').hidden = true; $('#waitingTitle').textContent = 'Connection to the admin source failed'; $('#waitingCopy').textContent = error.message; waitingAsset.classList.add('show'); postStatus(); });
+    filePeer.open(asset, force ? { retry: mediaLoadAttempts } : undefined).then((url) => { if (currentAssetVersion === version) { video.src = url; video.load(); postStatus(); } }).catch((error) => { if (currentAssetVersion !== version) return; lastError = error.message; scheduleTransferRecovery(asset); });
     return;
   }
   video.src = window.CineWallSession?.link(`/api/media/stream?v=${encodeURIComponent(asset.version)}&screen=${screenNumber}&attempt=${mediaLoadAttempts}`) || `/api/media/stream?v=${encodeURIComponent(asset.version)}&screen=${screenNumber}&attempt=${mediaLoadAttempts}`;
@@ -423,7 +448,7 @@ function verifyYouTubePlayback(videoId) {
     if (!ready || !currentState?.playing || sessionMode !== 'youtube' || youtubeVideoId !== videoId || youtubePlayer?.getState() === 1 || youtubePlayer?.getState() === 3) return;
     if (!lastError) {
       playBlocked.classList.add('show');
-      lastError = 'Click once on this laptop to allow YouTube playback.';
+      lastError = 'Click once on this Device to allow YouTube playback.';
       postStatus();
     }
   }, 5000);
@@ -483,7 +508,7 @@ async function initYouTubePlayer(videoId, force = false) {
       },
       onAutoplayBlocked: () => {
         playBlocked.classList.add('show');
-        lastError = 'Click once on this laptop to allow YouTube playback.';
+        lastError = 'Click once on this Device to allow YouTube playback.';
         postStatus();
       },
       onError: (error) => {
@@ -497,7 +522,7 @@ async function initYouTubePlayer(videoId, force = false) {
           153: 'YouTube cannot verify this display. Reload the numbered display link in Chrome or Edge.',
         };
         const retryable = error === -1 || error === 5;
-        lastError = retryable && youtubeRetryCount < 3 ? 'YouTube is reconnecting on this laptop…' : messages[error] || 'YouTube could not load this video. Check the link and internet connection.';
+        lastError = retryable && youtubeRetryCount < 3 ? 'YouTube is reconnecting on this Device…' : messages[error] || 'YouTube could not load this video. Check the link and internet connection.';
         postStatus();
         if (retryable && youtubeRetryCount < 3) scheduleYouTubeRetry(videoId);
         else {
@@ -618,13 +643,17 @@ function seekTo(position) {
 }
 
 async function command(payload) {
+  if (payload.type === 'play' && currentState?.allReady !== true) return;
   const sequence = ++localControlSequence;
   const volumeRevision = payload.type === 'screen-audio' && 'volume' in payload ? ++localVolumeRevision : 0;
   if (currentState && ['play', 'pause', 'seek', 'restart'].includes(payload.type)) {
     const position = payload.type === 'restart' ? 0 : Number.isFinite(payload.position) ? payload.position : targetPosition(currentState);
-    const patch = { position, anchorTime: serverNow(), notBefore: 0, playing: payload.type === 'play' ? true : ['pause', 'restart'].includes(payload.type) ? false : currentState.playing };
+    const patch = { position, anchorTime: serverNow(), notBefore: Infinity, playing: payload.type === 'play' ? true : ['pause', 'restart'].includes(payload.type) ? false : currentState.playing };
     localPlaybackIntent = { sequence, patch, assetVersion: currentState.asset?.version, serverId: currentState.serverId };
-    execute({ ...currentState, ...patch, type: payload.type });
+    // Reflect the button instantly, but move/play the media only at the common
+    // server time. Starting this laptop optimistically creates speaker echo.
+    applyStateAppearance({ ...currentState, ...patch });
+    updateController();
   }
   const send = async () => {
     if (volumeRevision && volumeRevision !== localVolumeRevision) return;
@@ -659,15 +688,15 @@ async function playLocalMedia() {
         video.muted = true;
         try {
           await video.play();
-          playBlocked.textContent = sessionMode === 'audio' ? 'Click to enable this laptop’s sound' : 'Video is playing · Click to enable this laptop’s sound';
+          playBlocked.textContent = sessionMode === 'audio' ? 'Click to enable this Device’s sound' : 'Video is playing · Click to enable this Device’s sound';
           playBlocked.classList.add('show');
           lastError = '';
         } catch {
-          lastError = 'Click once on this laptop to allow playback.';
+          lastError = 'Click once on this Device to allow playback.';
           playBlocked.classList.add('show');
         }
       } else if (error.name !== 'AbortError') {
-        lastError = error.message || 'This laptop could not start the video.';
+        lastError = error.message || 'This Device could not start the video.';
       }
     }
   })();
@@ -679,6 +708,7 @@ async function execute(commandState) {
   applyStateAppearance(commandState);
   commandState = currentState;
   updateController();
+  if (localPlaybackIntent) return;
   if (!ready) return;
   if (commandState.type === 'identify') {
     $('#identify').textContent = screenNumber;
@@ -686,7 +716,7 @@ async function execute(commandState) {
     setTimeout(() => $('#identify').classList.remove('show'), 2400);
     return;
   }
-  if (sessionMode === 'presentation' || ['mode', 'screen-audio', 'mute-all', 'layout', 'session-mode', 'youtube-audio-mode', 'loop'].includes(commandState.type)) return;
+  if (sessionMode === 'presentation' || ['mode', 'screen-audio', 'mute-all', 'layout', 'session-mode', 'youtube-audio-mode', 'audio-output', 'loop'].includes(commandState.type)) return;
 
   const isYouTube = sessionMode === 'youtube';
   if (isYouTube && youtubePlayer && youtubeReady) {
@@ -699,7 +729,7 @@ async function execute(commandState) {
         verifyYouTubePlayback(commandState.asset?.videoId || youtubeVideoId);
         playBlocked.classList.remove('show');
       } catch {
-        lastError = 'Playback needs one click on this laptop.';
+        lastError = 'Playback needs one click on this Device.';
         playBlocked.classList.add('show');
         postStatus();
       }
@@ -730,11 +760,12 @@ function applyWhenReady(nextState) {
   else applyStateAppearance(nextState);
 }
 
-function correctDrift(playbackState) {
+function correctDrift(playbackState, updateAppearance = true) {
   if (currentState && playbackState.serverId === currentState.serverId && playbackState.commandId < currentState.commandId) return;
   if (Number(playbackState?.notBefore) > serverNow()) return;
-  applyStateAppearance(playbackState);
+  if (updateAppearance) applyStateAppearance(playbackState);
   playbackState = currentState;
+  if (Number(playbackState?.notBefore) > serverNow()) return;
   if (!ready || sessionMode === 'presentation') return;
 
   const isYouTube = sessionMode === 'youtube';
@@ -776,8 +807,9 @@ function correctDrift(playbackState) {
   if (Math.abs(drift) > 0.22) {
     seekTo(target);
     video.playbackRate = 1;
-  } else if (Math.abs(drift) > 0.045) {
-    video.playbackRate = drift > 0 ? 1.025 : 0.975;
+  } else if (Math.abs(drift) > 0.015) {
+    // Gentle continuous correction rather than repeated audible jumps.
+    video.playbackRate = 1 + Math.min(.015, Math.max(-.015, drift * .2));
   } else {
     video.playbackRate = 1;
   }
@@ -812,6 +844,8 @@ function updateController() {
   if (!scrubbing) $('#screenCurrentTime').textContent = formatTime(position);
   $('#screenDuration').textContent = duration ? formatTime(duration) : '--:--';
   $('#screenPlay').innerHTML = `<span class="fi">${currentState?.playing ? '&#xE769;' : '&#xE768;'}</span>`;
+  $('#screenPlay').disabled = !currentState?.asset || (!currentState.playing && currentState.allReady !== true);
+  $('#screenPlay').title = currentState?.playing ? 'Pause' : currentState?.allReady ? 'Play' : 'Waiting for every display';
   $('#screenPage').textContent = currentState?.page || 1;
   $('#screenPageTotal').textContent = `/ ${currentState?.asset?.pageCount || '--'}`;
   $('#screenPreviousPage').disabled = !currentState?.asset || currentState.page <= 1;
@@ -822,6 +856,25 @@ function togglePlayback() {
   if (!currentState?.asset || sessionMode === 'presentation') return;
   const currentPosition = sessionMode === 'youtube' && youtubeReady ? youtubePlayer.getCurrentTime() : video.currentTime;
   command(currentState.playing ? { type: 'pause' } : { type: 'play', position: currentPosition || targetPosition(currentState) });
+}
+
+function scheduleTransferRecovery(asset) {
+  if (!asset || asset.version !== currentAssetVersion) return;
+  lastError = 'Connection interrupted. Reconnecting… Keep the admin tab open and awake.';
+  $('#waitingTitle').textContent = 'Reconnecting playback';
+  $('#waitingCopy').textContent = lastError;
+  $('#decoderHelpLink').hidden = true;
+  waitingAsset.classList.add('show');
+  clearTimeout(mediaLoadTimer);
+  if (transferRecoveryAttempts < 8) {
+    const delay = Math.min(8000, 1000 * 2 ** transferRecoveryAttempts++);
+    mediaLoadTimer = setTimeout(() => {
+      if (currentState?.asset?.version === asset.version) loadMedia(asset, true);
+    }, delay);
+  } else {
+    $('#waitingCopy').textContent = 'Open the admin tab, then reload this display to reconnect.';
+  }
+  postStatus();
 }
 
 function seekRelative(seconds) {
@@ -858,7 +911,19 @@ function mediaIsReady() {
   if (!currentState?.asset) return false;
   if (sessionMode === 'presentation') return documentReady;
   if (sessionMode === 'youtube') return youtubeReady && !youtubePlayer?.lastError;
-  return Boolean(currentAssetVersion && !lastError && !video.error && !mediaRecoveryInFlight && Number.isFinite(video.duration) && video.readyState >= 1);
+  return Boolean(currentAssetVersion === currentState.asset.version && !lastError && !video.error && !mediaRecoveryInFlight && Number.isFinite(video.duration) && video.readyState >= 3 && (sessionMode === 'audio' || video.videoWidth > 0 && video.videoHeight > 0));
+}
+
+function loadingStatus() {
+  if (!currentState?.asset || currentAssetVersion !== currentState.asset.version) return { loadProgress: 0, bufferedSeconds: 0 };
+  let bufferedSeconds = 0;
+  const position = video.currentTime || 0;
+  for (let index = 0; index < (video.buffered?.length || 0); index++) {
+    if (video.buffered.start(index) <= position + .1 && video.buffered.end(index) >= position) bufferedSeconds = Math.max(bufferedSeconds, video.buffered.end(index) - position);
+  }
+  const target = Math.min(3, Math.max(.1, (Number.isFinite(video.duration) ? video.duration : 3) - position));
+  // Percentage is startup readiness; large movies are not fully cached.
+  return { loadProgress: mediaIsReady() ? 100 : Math.min(99, Math.round(bufferedSeconds / target * 100)), bufferedSeconds };
 }
 
 function checkVideoFrames(now = Date.now()) {
@@ -888,9 +953,9 @@ function checkVideoFrames(now = Date.now()) {
   if (now - videoFrameObservation.since < 4500 || (video.currentTime || 0) - videoFrameObservation.position < 2) return false;
   videoFrameObservation.failed = true;
   lastError = asset.codecs?.includes('V_MPEGH/ISO/HEVC')
-    ? 'The movie reached this laptop and its audio is playing, but Edge decoded no HEVC video frames. This laptop needs HEVC video support; the file stays on the admin laptop.'
-    : 'The movie reached this laptop and its audio is playing, but the browser decoded no video frames. Check this laptop’s video codec support.';
-  $('#waitingTitle').textContent = 'Video cannot be displayed on this laptop';
+    ? 'The movie reached this Device and its audio is playing, but Edge decoded no HEVC video frames. This Device needs HEVC video support; the file stays on the admin Device.'
+    : 'The movie reached this Device and its audio is playing, but the browser decoded no video frames. Check this Device’s video codec support.';
+  $('#waitingTitle').textContent = 'Video cannot be displayed on this Device';
   $('#waitingCopy').textContent = lastError;
   $('#decoderHelpLink').hidden = !asset.codecs?.includes('V_MPEGH/ISO/HEVC');
   waitingAsset.classList.add('show');
@@ -917,12 +982,13 @@ async function postStatus() {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         clientId, screen: screenNumber, build: CLIENT_BUILD, ready, mediaReady: mediaIsReady(),
+        assetVersion: sessionMode === 'presentation' ? (currentState?.asset?.version || '') : currentAssetVersion, ...loadingStatus(),
         fileName: isYouTube ? (youtubePlayer?.getVideoData()?.title || currentState?.asset?.name || '') : (currentState?.asset?.name || ''), fileSize: currentState?.asset?.size || 0,
         duration: videoDuration,
         playbackTime: playbackTime, page: currentState?.page || 0,
         paused: isYouTube ? youtubePlayer?.getState() !== 1 : video.paused,
         playerState: isYouTube ? youtubePlayer?.getState() : null,
-        buffering: isYouTube ? youtubePlayer?.getState() === 3 : video.readyState < 3,
+        buffering: sessionMode === 'presentation' ? !documentReady : isYouTube ? youtubePlayer?.getState() === 3 : video.readyState < 3,
         autoplayMuted: localAutoplayMuted,
         error: lastError,
       }),
@@ -971,6 +1037,7 @@ picker.addEventListener('click', (event) => {
 
 readyButton.addEventListener('click', async () => {
   ready = true;
+  const enteringFullscreen = enterPlayerFullscreen();
   lastError = '';
   setup.classList.add('hidden');
   waitingAsset.classList.toggle('show', !currentState?.asset);
@@ -999,7 +1066,7 @@ readyButton.addEventListener('click', async () => {
       if (!currentState?.playing) video.pause();
     } catch {}
   }
-  try { await document.documentElement.requestFullscreen(); } catch {}
+  await enteringFullscreen;
   if (currentState) correctDrift(currentState);
   postStatus();
   updateLabels();
@@ -1007,6 +1074,7 @@ readyButton.addEventListener('click', async () => {
 });
 
 playBlocked.addEventListener('click', async () => {
+  enterPlayerFullscreen();
   try {
     if (sessionMode === 'youtube' && youtubePlayer && youtubeReady) youtubePlayer.play();
     else {
@@ -1034,7 +1102,12 @@ video.addEventListener('loadedmetadata', () => {
   updateController();
 });
 video.addEventListener('canplay', postStatus);
+video.addEventListener('loadeddata', () => { postStatus(); updateController(); });
+video.addEventListener('progress', postStatus);
 video.addEventListener('playing', () => {
+  if (sessionMode === 'audio' || video.videoWidth > 0 && video.videoHeight > 0) mediaPlayedVersion = currentAssetVersion;
+  transferRecoveryAttempts = 0;
+  clearTimeout(mediaLoadTimer);
   videoFrameObservation = null;
   $('#decoderHelpLink').hidden = true;
   lastError = '';
@@ -1054,14 +1127,16 @@ video.addEventListener('error', async () => {
   if (!currentAssetVersion) return;
   const code = video.error?.code;
   const asset = currentState?.asset;
+  // A file that already decoded is not suddenly an unsupported format.
+  // Interrupted relay responses can surface as MEDIA_ERR_DECODE/SRC_NOT_SUPPORTED.
+  if (code === 2 || asset?.transport === 'relay' && (code === 4 || asset.version === mediaPlayedVersion && code === 3)) {
+    scheduleTransferRecovery(asset);
+    return;
+  }
   if (await recoverDirectMedia(asset, code)) return;
   if (!asset || currentAssetVersion !== asset.version) return;
   const decodeHelp = window.CineWallFilePeer?.playbackHelp?.(asset) || 'This browser cannot play this video. Use MP4 with H.264 video and AAC audio.';
-  lastError = code === 2 ? 'Video transfer failed. Reconnecting to the admin laptop…' : code === 3 || code === 4 ? decodeHelp : 'Video playback was interrupted.';
-  if (code === 2 && mediaLoadAttempts < 5) {
-    clearTimeout(mediaLoadTimer);
-    mediaLoadTimer = setTimeout(() => { if (currentState?.asset?.version === asset.version) loadMedia(asset, true); }, 1500);
-  }
+  lastError = code === 3 || code === 4 ? decodeHelp : 'Video playback was interrupted.';
   $('#waitingTitle').textContent = 'Playback needs attention';
   $('#waitingCopy').textContent = lastError;
   $('#decoderHelpLink').hidden = !(asset.codecs?.includes('V_MPEGH/ISO/HEVC') && [3, 4].includes(code));
@@ -1094,6 +1169,7 @@ window.addEventListener('online', () => {
   markConnectionReconnecting();
   postStatus();
   syncClock();
+  if (video.error && currentState?.asset && sessionMode !== 'youtube' && sessionMode !== 'presentation') { transferRecoveryAttempts = 0; scheduleTransferRecovery(currentState.asset); }
   if (sessionMode === 'youtube' && ready && !youtubeReady && currentState?.asset?.videoId) {
     youtubeRetryCount = 0;
     initYouTubePlayer(currentState.asset.videoId, true);
@@ -1109,10 +1185,12 @@ document.addEventListener('visibilitychange', () => {
 $('#screenPlay').addEventListener('click', togglePlayback);
 $('#screenBack').addEventListener('click', () => seekRelative(-10));
 $('#screenForward').addEventListener('click', () => seekRelative(10));
-$('#screenFullscreen').addEventListener('click', () => document.documentElement.requestFullscreen().catch(() => {}));
+$('#screenFullscreen').addEventListener('click', enterPlayerFullscreen);
+$('#enterPlayerFullscreen').addEventListener('click', enterPlayerFullscreen);
+document.addEventListener('fullscreenchange', updateFullscreenPrompt);
 $('#screenPreviousPage').addEventListener('click', () => command({ type: 'previous-page' }));
 $('#screenNextPage').addEventListener('click', () => command({ type: 'next-page' }));
-$('#screenPresentationFullscreen').addEventListener('click', () => document.documentElement.requestFullscreen().catch(() => {}));
+$('#screenPresentationFullscreen').addEventListener('click', enterPlayerFullscreen);
 $('#screenMute').addEventListener('click', () => command({ type: 'screen-audio', screen: screenNumber, muted: !audioSetting().muted }));
 $('#screenVolume').addEventListener('input', () => {
   const value = Number($('#screenVolume').value);
@@ -1143,16 +1221,19 @@ $('#screenGesture').addEventListener('dblclick', (event) => {
 document.addEventListener('mousemove', showControls);
 document.addEventListener('click', showControls);
 document.addEventListener('keydown', (event) => {
-  if (ready && event.key.toLowerCase() === 'f' && !event.target.matches('input, button, a')) {
-    document.documentElement.requestFullscreen().catch(() => {});
+  if (event.target.isContentEditable || event.target.matches('input, textarea, select, [contenteditable="true"]')) return;
+  const focusedAction = event.target.closest?.('button, a');
+  if (focusedAction && !['screenPlay', 'screenBack', 'screenForward', 'screenPreviousPage', 'screenNextPage'].includes(focusedAction.id)) return;
+  if (ready && event.key.toLowerCase() === 'f') {
+    enterPlayerFullscreen();
     return;
   }
-  if (screenNumber !== 1 || !ready || event.target.matches('input, button, a')) return;
+  if (screenNumber !== 1 || !ready) return;
   if (sessionMode === 'presentation') {
     if (event.code === 'ArrowLeft') { event.preventDefault(); command({ type: 'previous-page' }); }
     else if (event.code === 'ArrowRight') { event.preventDefault(); command({ type: 'next-page' }); }
   } else if (event.code === 'Space') {
-    event.preventDefault(); togglePlayback();
+    event.preventDefault(); if (!event.repeat) togglePlayback();
   } else if (event.code === 'ArrowLeft') {
     event.preventDefault(); seekRelative(-10);
   } else if (event.code === 'ArrowRight') {
@@ -1161,7 +1242,7 @@ document.addEventListener('keydown', (event) => {
   showControls();
 });
 document.querySelector('.wall-viewport').addEventListener('dblclick', () => {
-  if (ready && screenNumber !== 1) document.documentElement.requestFullscreen().catch(() => {});
+  if (ready && screenNumber !== 1) enterPlayerFullscreen();
 });
 
 const events = new EventSource('/events');
@@ -1179,6 +1260,9 @@ events.addEventListener('pulse', (event) => correctDrift(JSON.parse(event.data))
 setInterval(postStatus, 2000);
 setInterval(() => { if (!screenNumber || !currentState) fetchInitialState(); }, 3000);
 setInterval(syncClock, 30000);
-setInterval(updateController, 250);
+setInterval(() => {
+  updateController();
+  if (currentState?.playing && ready && ['video', 'audio'].includes(sessionMode) && !video.seeking && !video.error) correctDrift(currentState, false);
+}, 250);
 syncClock();
 fetchInitialState();

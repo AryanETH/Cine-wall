@@ -25,7 +25,7 @@ function run(file, args, timeout = 120000, options = {}) {
   return new Promise((resolve, reject) => {
     const child = execFile(file, args, { windowsHide: true, timeout, maxBuffer: 24 * 1024 * 1024, signal: options.signal }, (error, stdout, stderr) => {
       if (error) {
-        const failure = new Error(error.code === 'ENOENT' ? 'Download tools are missing. Run setup-download-tools.ps1 on the admin laptop.' : path.basename(file).startsWith('yt-dlp') ? downloadError(stderr || error.message) : String(stderr || error.message).trim().slice(-1200));
+        const failure = new Error(error.code === 'ENOENT' ? 'Download tools are missing. Run setup-download-tools.ps1 on the admin Device.' : path.basename(file).startsWith('yt-dlp') ? downloadError(stderr || error.message) : String(stderr || error.message).trim().slice(-1200));
         failure.causeText = String(stderr || error.message);
         reject(failure);
       }

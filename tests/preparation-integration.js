@@ -10,11 +10,12 @@ const { spawn, execFileSync } = require('node:child_process');
 const root = path.resolve(__dirname, '..');
 const temporary = fs.mkdtempSync(path.join(os.tmpdir(), 'cinewall-preparation-test-'));
 const base = 'http://localhost:4199';
+const identityHeaders = { 'X-CineWall-Device': require('node:crypto').randomUUID(), 'X-CineWall-Key': require('node:crypto').randomUUID() };
 const converter = path.join(root, 'tools', process.platform === 'win32' ? 'ffmpeg.exe' : 'ffmpeg');
 let server;
 const pause = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 async function json(route, body) {
-  const response = await fetch(base + route, body ? { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) } : {});
+  const response = await fetch(base + route, body ? { method: 'POST', headers: { 'Content-Type': 'application/json', ...identityHeaders }, body: JSON.stringify(body) } : {});
   return { status: response.status, data: await response.json() };
 }
 async function waitFor(predicate) {
@@ -29,7 +30,7 @@ async function waitFor(predicate) {
 function upload(data, name, partial = false) {
   let request;
   const done = new Promise((resolve, reject) => {
-    request = http.request(base + '/api/media?kind=video&reencode=1&name=' + encodeURIComponent(name), { method: 'POST', headers: { 'Content-Type': 'video/mp4', 'Content-Length': data.length } }, (response) => {
+    request = http.request(base + '/api/media?kind=video&reencode=1&name=' + encodeURIComponent(name), { method: 'POST', headers: { 'Content-Type': 'video/mp4', 'Content-Length': data.length, ...identityHeaders } }, (response) => {
       let output = '';
       response.on('data', (chunk) => { output += chunk; });
       response.on('end', () => { try { resolve({ status: response.statusCode, data: JSON.parse(output) }); } catch { reject(new Error(`Upload returned ${response.statusCode}: ${output || 'empty response'}`)); } });

@@ -2,7 +2,7 @@
   "name": "cinewall",
   "version": "1.0.0",
   "private": true,
-  "description": "A local-network studio for synchronized video, audio, and presentations across Windows laptops.",
+  "description": "A local-network studio for synchronized video, audio, and presentations across Windows Devices.",
   "scripts": {
     "start": "node server.js",
     "test": "node --test tests/*.test.js",

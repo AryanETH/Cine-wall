@@ -2,14 +2,15 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>CineWall Studio · Control Room</title>
   <script src="icons.js?v=20261002-icons-18"></script>
   <script src="theme.js"></script>
-  <script src="session.js"></script>
-  <script src="media-peer.js?v=20261002-mkv-17"></script>
+  <script src="session.js?v=20261003-sharing-19"></script>
+  <script src="media-peer.js?v=20261003-stream-20"></script>
   <script src="video-validation.js?v=20261002-mkv-17"></script>
-  <link rel="stylesheet" href="styles.css?v=20261002-icons-18">
+  <link rel="stylesheet" href="styles.css?v=20261003-room-22">
 </head>
 <body class="admin-body" data-session-mode="video">
   <main class="app-shell">
@@ -33,7 +34,7 @@
 
     <section id="overview" class="page-heading">
       <div>
-        <span id="sessionKicker" class="section-kicker">VIDEO SESSION</span>
+        <span id="sessionKicker" class="section-kicker">Welcome To</span>
         <h1 id="pageTitle">Video control room</h1>
       </div>
       <div class="heading-actions">
@@ -44,7 +45,7 @@
 
     <section id="screens" class="workspace-panel display-links-panel">
       <div class="workspace-header">
-        <div><span class="section-kicker">DISPLAY LINKS</span><h2 id="linksHeading">Displays, pre-assigned</h2></div>
+        <div><span class="section-kicker">DISPLAY LINKS</span><h2 id="linksHeading">Displays</h2></div>
         <div class="display-link-tools">
           <button id="addDisplay" class="button accent" type="button"><span class="fi">&#xE710;</span><span id="addDisplayLabel">Add display</span></button>
         </div>
@@ -54,7 +55,7 @@
 
     <section id="settings" class="settings-grid top-settings">
       <article id="framingPanel" class="workspace-panel compact-panel">
-        <div class="setting-title"><span class="setting-icon fi">&#xE8B0;</span><div><h3 id="framingHeading">Wall framing</h3></div></div>
+        <div class="setting-title"><span class="setting-icon fi">&#xE8B0;</span><div><h3 id="framingHeading">Display Ratio</h3></div></div>
         <div id="modeControls" class="segmented"><button data-mode="fit">Fit</button><button data-mode="crop">Cinema crop</button><button data-mode="stretch">Stretch</button></div>
       </article>
 
@@ -65,10 +66,10 @@
 
       <article id="audioMixerPanel" class="workspace-panel compact-panel mixer-panel">
         <div class="mixer-heading">
-          <div class="setting-title"><span class="setting-icon fi">&#xE767;</span><div><h3>Per-laptop audio</h3></div></div>
+          <div class="setting-title"><span class="setting-icon fi">&#xE767;</span><div><h3>Device audio</h3></div></div>
           <div class="mixer-actions">
-            <div id="youtubeAudioMode" class="segmented compact-segmented" hidden aria-label="YouTube audio output">
-              <button data-youtube-audio="admin">Admin only</button><button data-youtube-audio="all">All screens</button>
+            <div id="youtubeAudioMode" class="segmented compact-segmented" hidden aria-label="Audio output">
+              <button data-youtube-audio="admin" title="Avoid echo with one speaker">One speaker</button><button data-youtube-audio="all">All speakers</button>
             </div>
             <button id="muteAll" class="button subtle"><span class="fi">&#xE74F;</span>Mute all</button>
           </div>
@@ -80,7 +81,7 @@
     <section class="overview-grid">
       <article class="panel wall-panel">
         <div class="panel-heading">
-          <div><span id="screenMapKicker" class="section-kicker">DISPLAY MAP</span><h2 id="screenMapTitle">Live screen map</h2></div>
+          <div><span id="screenMapKicker" class="section-kicker">DISPLAY LIST</span><h2 id="screenMapTitle">Live screen map</h2></div>
           <span id="readyCount" class="count-chip">0/3 ready</span>
         </div>
         <div id="screenGrid" class="wall-map" aria-label="Connected displays"></div>
@@ -88,6 +89,7 @@
       </article>
 
       <article class="panel source-panel">
+        <fieldset id="sourceEditor" class="source-editor">
         <div class="panel-heading">
           <div><span class="section-kicker">ADMIN SOURCE</span><h2 id="sourceHeading">Video file</h2></div>
           <span id="sourceHeadingIcon" class="fi panel-heading-icon">&#xE8B7;</span>
@@ -102,17 +104,30 @@
           <div><strong id="assetTitle">Choose your video</strong><p id="assetStatus"></p></div>
           <button id="removeAsset" class="remove-asset-button" type="button" title="Remove loaded file" aria-label="Remove loaded file" hidden><span class="fi" aria-hidden="true">&#xE711;</span></button>
         </div>
+        <div id="sharingOptions" class="segmented source-selector" role="group" aria-label="File sharing">
+          <button type="button" class="active" data-sharing="instant" aria-pressed="true">Instant</button>
+          <button type="button" data-sharing="server" aria-pressed="false">Server</button>
+        </div>
+        <p id="sourceRole" class="source-role" role="status"></p>
         <div class="source-upload-row">
         <label id="fileSourceButton" class="file-button">
           <input id="adminAssetFile" type="file" accept=".mp4,.m4v,.webm,.mkv">
           <span class="fi">&#xE898;</span><span id="adminFileLabel">Choose video</span>
         </label>
+        <details id="videoFormatInfo" class="format-info" hidden>
+          <summary aria-label="Supported video formats" title="Supported video formats">i</summary>
+          <div class="format-info-card">
+            <strong>Videos that work</strong>
+            <p><b>MP4 / M4V:</b> H.264 video with AAC sound is the safest choice. Some VP9 and AV1 videos also work.</p>
+            <p><b>MKV:</b> Choose files with H.264 video and AAC sound. Other MKV types may not play.</p>
+          </div>
+        </details>
         </div>
         <section id="youtubeDownloadPanel" class="youtube-download-panel" hidden aria-label="Download a YouTube video">
           <div class="download-panel-heading"><h3>YouTube</h3><span id="downloadPanelCopy">Video &amp; audio downloads</span></div>
           <form id="youtubeDownloadForm">
             <label for="downloadYoutubeUrl">YouTube link</label>
-            <div class="download-link-row"><input id="downloadYoutubeUrl" type="url" placeholder="https://youtube.com/watch?v=…" required><button id="checkYoutubeFormats" class="button accent" type="submit">Find qualities</button></div>
+            <div class="download-link-row"><input id="downloadYoutubeUrl" type="url" placeholder="https://youtube.com/watch?v=…" required><button id="checkYoutubeFormats" class="button accent" type="submit">Search</button></div>
           </form>
           <div id="downloadSelection" hidden>
             <strong id="downloadVideoTitle" class="download-video-title"></strong>
@@ -150,7 +165,16 @@
         <div id="uploadProgressWrap" class="upload-progress-wrap" role="status" aria-live="polite" hidden>
           <div class="upload-copy"><span id="uploadCopy">Preparing file</span><strong id="uploadProgressText">0%</strong></div>
           <div class="upload-progress"><span id="uploadProgressBar"></span></div>
-          <button id="cancelPreparation" class="button subtle" type="button" hidden>Cancel preparation</button>
+          <button id="cancelPreparation" class="button subtle" type="button" hidden>Cancel</button>
+        </div>
+        </fieldset>
+        <div id="viewerSource" class="viewer-source" hidden>
+          <span class="source-icon fi" aria-hidden="true">&#xE7F4;</span>
+          <h2>Watch on this laptop</h2>
+          <p>Another laptop is admin.</p>
+          <label for="viewerScreenSelect">Your screen</label>
+          <select id="viewerScreenSelect" aria-label="Choose this laptop's screen"></select>
+          <button id="openViewerScreen" class="button accent" type="button"><span class="fi" aria-hidden="true">&#xE8A7;</span>Open screen</button>
         </div>
       </article>
     </section>
@@ -199,9 +223,9 @@
             <button id="previewFullscreen" class="control-button" title="Open Display 1 in a new tab" aria-label="Open Display 1 in a new tab"><span class="fi">&#xE8A7;</span></button>
           </div>
           <div class="admin-volume-row">
-            <button id="adminMute" class="mini-icon-button" aria-label="Mute admin laptop"><span class="fi">&#xE767;</span></button>
-            <span>Admin laptop</span>
-            <input id="adminVolume" type="range" min="0" max="1" value="1" step="0.05" aria-label="Admin laptop volume">
+            <button id="adminMute" class="mini-icon-button" aria-label="Mute admin Device"><span class="fi">&#xE767;</span></button>
+            <span>Admin Device</span>
+            <input id="adminVolume" type="range" min="0" max="1" value="1" step="0.05" aria-label="Admin Device volume">
             <output id="adminVolumeValue">100%</output>
           </div>
         </div>
@@ -220,7 +244,7 @@
     </section>
 
   </main>
-  <script src="admin.js?v=20261002-mkv-17"></script>
+  <script src="admin.js?v=20261003-room-22"></script>
   <script src="youtube-download.js?v=20261002-formats-15"></script>
 </body>
 </html>

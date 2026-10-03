@@ -6,7 +6,7 @@ CINEWALL STUDIO - START HERE
 4. Open the Start address printed in that window.
 5. Choose Video, Audio, Presentation, or YouTube.
 6. Add only the displays or speakers you need.
-7. Open each numbered link on its matching laptop. It joins automatically.
+7. Open each numbered link on its matching Device. It joins automatically.
    Click the sound button if audio is blocked; click Join to enter fullscreen.
 8. Choose the media/document on the dashboard.
 
@@ -17,10 +17,10 @@ The silent dashboard video preview stops after the first 10 seconds. Replay prev
 Server compatibility copy is optional: MKV repackaging preserves quality, while lossy codec conversion requires explicit permission.
 Railway hosting at watch.aitoyz.in uses private room links on the domain. See HOSTING.md and redeploy the changed project files.
 Presentation pages can be changed from the dashboard or Display 1 and stay synchronized.
-YouTube mode accepts watch, youtu.be, Shorts, Live, and embed links. Every laptop needs internet access.
+YouTube mode accepts watch, youtu.be, Shorts, Live, and embed links. Every Device needs internet access.
 Video dashboard: YouTube beside Local video offers available MP4/WebM qualities and MP3/M4A/WAV audio. After preparation, save the file or load its MP4 on the wall.
 Click the X beside a loaded file to remove it from the session and stop all displays; your original file and saved downloads stay intact.
-Download/conversion tools are in the tools folder. On another admin laptop, double-click SETUP DOWNLOADS.cmd once to install them.
+Download/conversion tools are in the tools folder. On another admin Device, double-click SETUP DOWNLOADS.cmd once to install them.
 Run SETUP DOWNLOADS.cmd again to update the downloader. Its cache stays in the CineWall folder.
 For MP3, you can also select MP3 from saved video and convert an already downloaded video without another YouTube request.
 

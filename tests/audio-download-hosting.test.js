@@ -13,6 +13,7 @@ const pause = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 test('ready audio downloads load into private audio sessions, retain bytes/MIME and reject other rooms or video mode', { timeout: 30000 }, async (t) => {
   const temporary = fs.mkdtempSync(path.join(os.tmpdir(), 'cinewall-audio-download-test-'));
   const room = randomUUID(), otherRoom = randomUUID(), jobs = [], bytes = Buffer.from('synthetic audio transport fixture');
+  const identityHeaders = { 'X-CineWall-Device': randomUUID(), 'X-CineWall-Key': randomUUID() };
   for (const [container, type] of [['mp3', 'audio/mpeg'], ['aac', 'audio/aac'], ['m4a', 'audio/mp4'], ['wav', 'audio/wav']]) {
     const id = randomUUID(), directory = path.join(temporary, 'downloads', id);
     fs.mkdirSync(directory, { recursive: true });
@@ -32,7 +33,7 @@ test('ready audio downloads load into private audio sessions, retain bytes/MIME 
   for (let i = 0; i < 100 && !output.includes(`http://localhost:${port}/`); i++) await pause(50);
   assert.ok(output.includes(`http://localhost:${port}/`), output);
   async function api(route, body, session = room) {
-    const response = await fetch(`${base}${route}${route.includes('?') ? '&' : '?'}room=${session}`, body === undefined ? {} : { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+    const response = await fetch(`${base}${route}${route.includes('?') ? '&' : '?'}room=${session}`, body === undefined ? {} : { method: 'POST', headers: { 'Content-Type': 'application/json', ...identityHeaders }, body: JSON.stringify(body) });
     return { status: response.status, data: await response.json() };
   }
   assert.equal((await api(`/api/youtube/downloads/${jobs[0].id}/load`, {})).status, 409, 'audio cannot load into the initial video session');
@@ -52,10 +53,12 @@ test('ready audio downloads load into private audio sessions, retain bytes/MIME 
     assert.deepEqual(Buffer.from(await download.arrayBuffer()), bytes);
     assert.ok(fs.existsSync(path.join(job.directory, `media.${job.container}`)), 'original saved audio survives loading/replacing the current track');
   }
+  const latest = (await api('/api/status')).data.state;
+  await api('/api/status', { clientId: 'speaker-test', screen: 1, ready: true, mediaReady: true, assetVersion: latest.asset.version });
   const playing = await api('/api/command', { type: 'play', position: 0 });
   assert.equal(playing.status, 200); assert.equal(playing.data.command.playing, true);
   assert.equal((await api('/api/status', undefined, otherRoom)).data.state.asset, null);
-  const upload = await fetch(`${base}/api/media?kind=audio&name=dropped.AAC&room=${room}`, { method: 'POST', headers: { 'Content-Type': 'application/octet-stream' }, body: bytes });
+  const upload = await fetch(`${base}/api/media?kind=audio&name=dropped.AAC&room=${room}`, { method: 'POST', headers: { 'Content-Type': 'application/octet-stream', ...identityHeaders }, body: bytes });
   assert.equal(upload.status, 200);
   assert.equal((await upload.json()).state.asset.type, 'audio/aac', 'missing MIME on a dropped audio file is normalized by extension');
 });
