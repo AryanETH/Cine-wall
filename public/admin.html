@@ -11,88 +11,46 @@
   <script src="media-peer.js?v=20261003-stream-20"></script>
   <script src="video-validation.js?v=20261002-mkv-17"></script>
   <link rel="stylesheet" href="styles.css?v=20261004-tutorial-23">
+  <link rel="stylesheet" href="studio.css?v=20261004-studio-25">
 </head>
-<body class="admin-body" data-session-mode="video">
+<body class="admin-body studio-body" data-session-mode="video">
   <main class="app-shell">
     <header class="app-nav">
       <a class="brand-lockup" href="/" aria-label="Choose another CineWall mode">
         <span class="brand-icon" aria-hidden="true"><img src="/assets/removed_background (24).png" alt="CineWall Logo"></span>
         <span><strong>CINEWALL</strong></span>
       </a>
-      <nav class="nav-pills" aria-label="Dashboard sections">
-        <a class="active" href="#overview"><span class="fi">&#xE80F;</span>Overview</a>
-        <a href="#player"><span id="navPlayerIcon" class="fi">&#xE768;</span>Controls</a>
-        <a href="#screens"><span class="fi">&#xE7F4;</span>Displays</a>
-        <a href="#settings"><span class="fi">&#xE713;</span>Setup</a>
-      </nav>
       <div class="nav-actions">
-        <button class="theme-toggle" data-theme-toggle type="button"><span class="fi" data-theme-icon>&#xE706;</span><span data-theme-label>Light</span></button>
         <a class="mode-switch" href="/" title="Switch mode"><span id="modeSwitchIcon" class="fi">&#xE714;</span><span id="modeSwitchLabel">Video</span></a>
+        <a id="tutorialLink" class="button subtle tutorial-link" href="https://www.youtube.com/watch?v=nKjiv6_XSN4" target="_blank" rel="noopener noreferrer" aria-label="Watch tutorial on YouTube (opens separately)"><span class="fi" aria-hidden="true">&#xE768;</span>Tutorial</a>
+        <button class="theme-toggle" data-theme-toggle type="button"><span class="fi" data-theme-icon>&#xE706;</span><span data-theme-label>Light</span></button>
         <div id="connection" class="connection-chip"><span class="status-dot"></span><span>Connecting</span></div>
       </div>
     </header>
 
     <section id="overview" class="page-heading">
       <div>
-        <span id="sessionKicker" class="section-kicker">Welcome To</span>
-        <h1 id="pageTitle">Video control room</h1>
-      </div>
-      <div class="heading-actions">
-        <a id="tutorialLink" class="button subtle tutorial-link" href="https://www.youtube.com/watch?v=nKjiv6_XSN4" target="_blank" rel="noopener noreferrer" aria-label="Watch tutorial on YouTube (opens separately)"><span class="fi" aria-hidden="true">&#xE768;</span>Tutorial</a>
-        <button id="identify" class="button subtle"><span class="fi">&#xE8B0;</span>Identify</button>
-        <button id="openAdminScreen" class="button accent"><span class="fi">&#xE7F4;</span>Open Display 1</button>
+        <h1 id="pageTitle">Video room</h1>
       </div>
     </section>
 
     <section id="screens" class="workspace-panel display-links-panel">
       <div class="workspace-header">
-        <div><span class="section-kicker">DISPLAY LINKS</span><h2 id="linksHeading">Displays</h2></div>
+        <h2 id="linksHeading" class="visually-hidden">Screens</h2>
         <div class="display-link-tools">
-          <button id="addDisplay" class="button accent" type="button"><span class="fi">&#xE710;</span><span id="addDisplayLabel">Add display</span></button>
+          <button id="addDisplay" class="button subtle" type="button"><span class="fi">&#xE710;</span><span id="addDisplayLabel">Add screen</span></button>
         </div>
       </div>
       <div id="screenLinks" class="screen-links"></div>
     </section>
 
-    <section id="settings" class="settings-grid top-settings">
-      <article id="framingPanel" class="workspace-panel compact-panel">
-        <div class="setting-title"><span class="setting-icon fi">&#xE8B0;</span><div><h3 id="framingHeading">Display Ratio</h3></div></div>
-        <div id="modeControls" class="segmented"><button data-mode="fit">Fit</button><button data-mode="crop">Cinema crop</button><button data-mode="stretch">Stretch</button></div>
-      </article>
-
-      <article id="presenterTips" class="workspace-panel compact-panel" hidden>
-        <div class="setting-title"><span class="setting-icon fi">&#xE7F4;</span><div><h3>Presenter controls</h3></div></div>
-        <div class="presenter-shortcuts"><span><kbd>←</kbd> Previous</span><span><kbd>→</kbd> Next</span><span><kbd>F</kbd> Fullscreen</span></div>
-      </article>
-
-      <article id="audioMixerPanel" class="workspace-panel compact-panel mixer-panel">
-        <div class="mixer-heading">
-          <div class="setting-title"><span class="setting-icon fi">&#xE767;</span><div><h3>Device audio</h3></div></div>
-          <div class="mixer-actions">
-            <div id="youtubeAudioMode" class="segmented compact-segmented" hidden aria-label="Audio output">
-              <button data-youtube-audio="admin" title="Avoid echo with one speaker">One speaker</button><button data-youtube-audio="all">All speakers</button>
-            </div>
-            <button id="muteAll" class="button subtle"><span class="fi">&#xE74F;</span>Mute all</button>
-          </div>
-        </div>
-        <div id="speakerGrid" class="speaker-grid"></div>
-      </article>
-    </section>
-
-    <section class="overview-grid">
-      <article class="panel wall-panel">
-        <div class="panel-heading">
-          <div><span id="screenMapKicker" class="section-kicker">DISPLAY LIST</span><h2 id="screenMapTitle">Live screen map</h2></div>
-          <span id="readyCount" class="count-chip">0/3 ready</span>
-        </div>
-        <div id="screenGrid" class="wall-map" aria-label="Connected displays"></div>
-        <div id="fileWarning" class="warning" role="alert"></div>
-      </article>
+    <div id="fileWarning" class="warning" role="alert"></div>
+    <div class="studio-workspace">
 
       <article class="panel source-panel">
         <fieldset id="sourceEditor" class="source-editor">
         <div class="panel-heading">
-          <div><span class="section-kicker">ADMIN SOURCE</span><h2 id="sourceHeading">Video file</h2></div>
+          <h2 id="sourceHeading">Video source</h2>
           <span id="sourceHeadingIcon" class="fi panel-heading-icon">&#xE8B7;</span>
         </div>
         <div id="videoSourceSelector" class="segmented source-selector">
@@ -101,13 +59,10 @@
         </div>
         <div class="source-state">
           <span id="sourceIcon" class="source-icon fi">&#xE714;</span>
+          <img id="sourcePoster" class="source-thumbnail" alt="" hidden>
           <img id="youtubeThumbnail" class="source-thumbnail" alt="YouTube video thumbnail" hidden>
           <div><strong id="assetTitle">Choose your video</strong><p id="assetStatus"></p></div>
           <button id="removeAsset" class="remove-asset-button" type="button" title="Remove loaded file" aria-label="Remove loaded file" hidden><span class="fi" aria-hidden="true">&#xE711;</span></button>
-        </div>
-        <div id="sharingOptions" class="segmented source-selector" role="group" aria-label="File sharing">
-          <button type="button" class="active" data-sharing="instant" aria-pressed="true">Instant</button>
-          <button type="button" data-sharing="server" aria-pressed="false">Server</button>
         </div>
         <p id="sourceRole" class="source-role" role="status"></p>
         <div class="source-upload-row">
@@ -147,9 +102,16 @@
             <button id="loadYoutubeDownload" class="button subtle" type="button" hidden><span class="fi" aria-hidden="true">&#xE714;</span>Use on video wall</button>
           </div>
         </section>
-        <div id="dropZone" class="drop-zone" hidden>
+        <div id="dropZone" class="drop-zone" role="button" tabindex="0" aria-label="Choose a file or drop it here" hidden>
           <span class="fi drop-zone-icon">&#xE714;</span>
           <strong>Drop your file here</strong>
+        </div>
+        <div id="sharingPanel" class="sharing-panel">
+          <h3>File sharing</h3>
+          <div id="sharingOptions" class="segmented source-selector" role="group" aria-label="File sharing">
+            <button type="button" class="active" data-sharing="instant" aria-pressed="true" title="Play directly from this laptop. Keep this tab open.">Instant</button>
+            <button type="button" data-sharing="server" aria-pressed="false" title="Upload a copy before playing.">Upload</button>
+          </div>
         </div>
         <label id="playlistButton" class="file-button playlist-button" hidden>
           <input id="playlistFiles" type="file" accept="audio/*,.flac,.m4a,.aac,.ogg" multiple>
@@ -177,8 +139,28 @@
           <select id="viewerScreenSelect" aria-label="Choose this laptop's screen"></select>
           <button id="openViewerScreen" class="button accent" type="button"><span class="fi" aria-hidden="true">&#xE8A7;</span>Open screen</button>
         </div>
+        <article id="audioMixerPanel" class="sound-panel">
+          <h3>Sound</h3>
+          <div id="youtubeAudioMode" class="segmented" hidden aria-label="Audio output">
+            <button data-youtube-audio="admin" title="Avoid echo with one speaker">This laptop</button><button data-youtube-audio="all">All screens</button>
+          </div>
+        </article>
+        <details id="settings" class="studio-settings">
+          <summary><span class="fi" aria-hidden="true">&#xE713;</span>Settings</summary>
+          <div id="framingPanel">
+            <h3 id="framingHeading">Picture fit</h3>
+            <div id="modeControls" class="segmented"><button data-mode="fit">Fit</button><button data-mode="crop">Crop</button><button data-mode="stretch">Stretch</button></div>
+          </div>
+          <div id="presenterTips" hidden><h3>Page controls</h3></div>
+          <div class="extra-controls">
+            <button id="identify" class="button subtle"><span class="fi">&#xE8B0;</span>Identify screens</button>
+            <button id="muteAll" class="button subtle"><span class="fi">&#xE74F;</span>Mute all</button>
+            <button id="restart" class="button subtle" title="Restart" aria-label="Restart" disabled><span class="fi">&#xE72C;</span>Restart</button>
+            <button id="loopButton" class="button subtle" title="Toggle loop" aria-label="Toggle loop playback" disabled><span class="fi">&#xE1CD;</span>Repeat</button>
+          </div>
+          <div id="shortcutHint" class="shortcut-hint"></div>
+        </details>
       </article>
-    </section>
 
     <section id="player" class="player-console">
       <div id="previewStage" class="preview-stage">
@@ -197,16 +179,12 @@
         <div id="previewEmpty" class="preview-empty"><span id="previewEmptyIcon" class="fi">&#xE768;</span><strong id="previewEmptyTitle">Preview monitor</strong><small id="previewEmptyCopy"></small></div>
         <button id="previewGesture" class="gesture-surface" aria-label="Double-click the left or right side to seek ten seconds" hidden></button>
         <div id="gestureFeedback" class="gesture-feedback" aria-live="polite"></div>
-        <div class="preview-badge"><span class="status-dot"></span><span id="previewBadgeText">ADMIN PREVIEW</span></div>
+        <div class="preview-badge"><span class="fi" aria-hidden="true">&#xE74F;</span><span id="previewBadgeText">10s preview</span></div>
         <button id="replayPreview" class="trailer-replay" type="button" hidden>↻ Replay 10s preview</button>
       </div>
 
       <div class="player-deck">
-        <div class="now-playing-row">
-          <div id="trackArt" class="track-art fi">&#xE8B2;</div>
-          <div class="track-copy"><span id="trackKicker">NOW PLAYING</span><strong id="trackTitle">No file loaded</strong></div>
-          <span id="playerState" class="state-pill">IDLE</span>
-        </div>
+        <span id="playerState" class="state-pill" role="status" aria-live="polite" hidden></span>
 
         <div id="mediaControls">
           <div class="timeline-row">
@@ -214,20 +192,19 @@
             <input id="timeline" type="range" min="0" max="100" value="0" step="0.1" aria-label="Playback position" disabled>
             <span id="duration">--:--</span>
           </div>
+          <div class="playback-bottom-row">
+          <button id="openAdminScreen" class="button subtle" type="button"><span class="fi">&#xE8A7;</span>Open my screen</button>
           <div class="transport" aria-label="Playback controls">
-            <button id="loopButton" class="control-button" title="Toggle loop" aria-label="Toggle loop playback" disabled><span class="fi">&#xE1CD;</span></button>
-            <button id="restart" class="control-button" title="Restart" aria-label="Restart" disabled><span class="fi">&#xE72C;</span></button>
             <button id="back" class="control-button seek-button" title="Back 10 seconds" aria-label="Back 10 seconds" disabled><span class="fi">&#xE892;</span><small>10</small></button>
             <button id="play" class="play-button" title="Play" aria-label="Play" disabled><span class="fi">&#xE768;</span></button>
             <button id="pause" class="play-button" title="Pause" aria-label="Pause" hidden><span class="fi">&#xE769;</span></button>
             <button id="forward" class="control-button seek-button" title="Forward 10 seconds" aria-label="Forward 10 seconds" disabled><span class="fi">&#xE893;</span><small>10</small></button>
-            <button id="previewFullscreen" class="control-button" title="Open Display 1 in a new tab" aria-label="Open Display 1 in a new tab"><span class="fi">&#xE8A7;</span></button>
           </div>
           <div class="admin-volume-row">
             <button id="adminMute" class="mini-icon-button" aria-label="Mute admin Device"><span class="fi">&#xE767;</span></button>
-            <span>Admin Device</span>
-            <input id="adminVolume" type="range" min="0" max="1" value="1" step="0.05" aria-label="Admin Device volume">
+            <input id="adminVolume" type="range" min="0" max="1" value="1" step="0.01" aria-label="This laptop volume">
             <output id="adminVolumeValue">100%</output>
+          </div>
           </div>
         </div>
 
@@ -240,12 +217,12 @@
           </div>
         </div>
 
-        <div id="shortcutHint" class="shortcut-hint"><span><kbd>Space</kbd> Play / pause</span><span><kbd>←</kbd><kbd>→</kbd> Seek 10s</span><span>Double-click left/right to seek</span></div>
       </div>
     </section>
+    </div>
 
   </main>
-  <script src="admin.js?v=20261003-room-22"></script>
-  <script src="youtube-download.js?v=20261002-formats-15"></script>
+  <script src="admin.js?v=20261004-studio-25"></script>
+  <script src="youtube-download.js?v=20261004-studio-25"></script>
 </body>
 </html>

@@ -1,0 +1,9 @@
+Use case: stylized-concept
+Asset type: independent cinematic sample frame for isolated dashboard design QA, not a UI screenshot or a production preview.
+Input image role: the supplied CineWall dashboard-option-1 screenshot is a composition and mood REFERENCE ONLY, not an edit target. Recreate only the movie scene visible inside its large preview, not the interface.
+Primary request: Generate a clean 16:9 cinematic landscape showing a child seen from behind sitting closely beside a fluffy golden-brown dog on a rocky hillside, looking over a broad valley toward a glowing sunset.
+Scene/backdrop: textured rocky foreground, forested valley, distant layered hills, a lake reflecting the sunset, vivid warm orange and golden clouds.
+Subject: child with tousled dark hair wearing a dark hoodie, one arm gently around the seated dog, both viewed from behind. Place the pair in the left half, with sunset and open valley on the right, matching the reference movie preview's composition.
+Style/medium: richly detailed cinematic realism with a gentle storybook atmosphere.
+Lighting/mood: warm golden-hour rim light, peaceful and expansive.
+Constraints: full-bleed standalone landscape image, 16:9 aspect ratio. No text, no UI, no laptops, no logos, no borders, no watermarks. Do not reproduce the surrounding dashboard.

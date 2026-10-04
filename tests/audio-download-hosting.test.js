@@ -59,6 +59,7 @@ test('ready audio downloads load into private audio sessions, retain bytes/MIME 
   assert.equal(playing.status, 200); assert.equal(playing.data.command.playing, true);
   assert.equal((await api('/api/status', undefined, otherRoom)).data.state.asset, null);
   const upload = await fetch(`${base}/api/media?kind=audio&name=dropped.AAC&room=${room}`, { method: 'POST', headers: { 'Content-Type': 'application/octet-stream', ...identityHeaders }, body: bytes });
-  assert.equal(upload.status, 200);
-  assert.equal((await upload.json()).state.asset.type, 'audio/aac', 'missing MIME on a dropped audio file is normalized by extension');
+  const uploaded = await upload.json();
+  assert.equal(upload.status, 200, JSON.stringify(uploaded));
+  assert.equal(uploaded.state.asset.type, 'audio/aac', 'missing MIME on a dropped audio file is normalized by extension');
 });

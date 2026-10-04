@@ -284,7 +284,7 @@ test('admin preview stops at ten seconds, stays muted and never follows full mov
     getAttribute: () => 'blob:movie', pause() { this.paused = true; }, play() { this.paused = false; return Promise.resolve(); }, addEventListener: (name, fn) => { handlers[name] = fn; },
   };
   const context = vm.createContext({ media, status: { state: { sessionMode: 'video', playing: true, position: 500 } }, Math, Number,
-    $: () => ({ addEventListener() {} }), localPreview: null, loadedMediaVersion: 'asset', trailerKey: '', scrubbing: false,
+    $: () => ({ addEventListener() {} }), captureSourcePoster() {}, localPreview: null, loadedMediaVersion: 'asset', trailerKey: '', scrubbing: false,
   });
   vm.runInContext(code.slice(code.indexOf("media.addEventListener('timeupdate'"), code.indexOf("media.addEventListener('error'")), context);
   handlers.timeupdate(); assert.equal(media.paused, true); assert.equal(media.currentTime, 10);

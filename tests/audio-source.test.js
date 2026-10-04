@@ -44,7 +44,7 @@ test('audio source tab stays open, offers audio-only formats and loads AAC into 
   const ui = audioDownloads(); await turn();
   ui.node('downloadYoutubeToggle').handlers.click();
   assert.equal(ui.node('youtubeDownloadPanel').hidden, false);
-  assert.equal(ui.node('localVideoSource').textContent, 'Local audio');
+  assert.equal(ui.node('localVideoSource').textContent, 'Local file');
   assert.equal(ui.node('fileSourceButton').hidden, true);
   assert.equal(ui.node('playlistButton').hidden, true);
   ui.node('downloadYoutubeUrl').value = 'https://youtu.be/YE7VzlLtp-4';
@@ -60,7 +60,7 @@ test('audio source tab stays open, offers audio-only formats and loads AAC into 
   assert.equal(ui.node('youtubeDownloadStatus').textContent, 'Audio loaded');
   ui.node('localVideoSource').handlers.click();
   assert.equal(ui.node('dropZone').hidden, false);
-  assert.equal(ui.node('playlistButton').hidden, false);
+  assert.equal(ui.node('playlistButton').hidden, true, 'unfinished playlist action stays hidden');
   ui.context.window.CineWallDownloadPanel.syncMode('video');
   assert.ok(ui.node('downloadContainer').children.some((option) => option.value === 'mp4'));
   assert.equal(ui.node('loadYoutubeDownload').hidden, true, 'audio must not load into a video session');
@@ -74,7 +74,7 @@ test('audio YouTube tab survives dashboard refreshes without video conversion co
   };
   $('#youtubeDownloadPanel').hidden = false;
   const context = vm.createContext({ $, window: {}, status: { state: { sessionMode: 'audio', asset: null } }, document: { body: { dataset: {} } },
-    uploadBusy: false, removeBusy: false, isPreparing: () => false, modeConfig: { audio: { label: 'Audio' }, video: { label: 'Video' }, presentation: { label: 'Presentation' } },
+    uploadBusy: false, removeBusy: false, isPreparing: () => false, sourceLocked: () => false, modeConfig: { audio: { label: 'Audio' }, video: { label: 'Video' }, presentation: { label: 'Presentation' } },
   });
   vm.runInContext(code.slice(code.indexOf('function renderModeShell('), code.indexOf('function renderScreens(')), context);
   vm.runInContext('renderModeShell(); renderModeShell()', context);

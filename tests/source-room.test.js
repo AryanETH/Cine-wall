@@ -138,7 +138,7 @@ test('hotspot room elects one source, blocks replacements, relays original range
   assert.equal(preparing.preparation.progress, 50); assert.equal(preparing.ownerId, other.id); assert.equal(preparing.allReady, false);
   assert.equal((await api('/api/source/claim', winner, {})).status, 423);
   upload.end(audio.subarray(100000));
-  const loaded = await completion; assert.equal(loaded.status, 200); assert.equal(loaded.data.state.asset.type, 'audio/mpeg');
+  const loaded = await completion; assert.equal(loaded.status, 200, JSON.stringify(loaded.data)); assert.equal(loaded.data.state.asset.type, 'audio/mpeg');
   const audioStream = await fetch(`${base}/api/media/stream?v=${loaded.data.state.asset.version}`);
   assert.deepEqual(Buffer.from(await audioStream.arrayBuffer()), audio);
 });

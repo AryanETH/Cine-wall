@@ -24,7 +24,7 @@ test('Play waits for readiness and never opens or navigates a copied audio link;
   context.status.state.ownerId = 'another-device';
   vm.runInContext('playOnAdminDisplay()', context); assert.equal(commands.length, 2);
   const html = read('admin.html');
-  assert.match(html, /data-sharing="instant"[^>]+>Instant/); assert.match(html, /data-sharing="server"[^>]+>Server/);
+  assert.match(html, /data-sharing="instant"[^>]+>Instant/); assert.match(html, /data-sharing="server"[^>]+>Upload/);
 });
 
 test('video readiness needs picture plus canplay, audio needs canplay but no picture; startup progress is bounded', () => {

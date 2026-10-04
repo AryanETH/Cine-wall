@@ -236,8 +236,10 @@ body[data-session-mode="audio"] .top-settings { grid-template-columns: 1fr; }
 .mode-body { min-height: 100vh; margin: 0; padding: 34px; background: var(--page); color: var(--ink); }
 .mode-shell { width: min(1360px, 100%); min-height: calc(100vh - 68px); margin: 0 auto; padding: 22px 26px 24px; border: 10px solid #070910; border-radius: 32px; background: var(--shell); box-shadow: var(--shadow); }
 .mode-nav { display: flex; align-items: center; justify-content: space-between; }
-.mode-hero { padding: clamp(70px, 10vh, 130px) 4px 42px; }
-.mode-hero h1 { max-width: 900px; margin: 0; font-size: clamp(3.3rem, 8vw, 7.5rem); font-weight: 550; letter-spacing: -.07em; line-height: .88; }
+.mode-hero { position: relative; isolation: isolate; display: flex; flex-direction: column; justify-content: center; min-height: 380px; margin: 32px 0 24px; padding: 48px 16px; overflow: hidden; border-radius: 24px; background: #fff; color: #080b12; }
+.mode-hero-photo { position: absolute; z-index: -1; inset: 0; width: 100%; height: 100%; object-fit: cover; object-position: right center; pointer-events: none; }
+.mode-hero .section-kicker { color: #1769ff; margin-bottom: 16px; }
+.mode-hero h1 { max-width: 43%; margin: 0; font-size: clamp(2.8rem, 5vw, 4.6rem); font-weight: 550; letter-spacing: -.07em; line-height: .98; text-wrap: balance; }
 .mode-hero p { max-width: 620px; margin: 24px 0 0; color: var(--muted); font-size: .95rem; line-height: 1.65; }
 .mode-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
 .mode-card { position: relative; min-height: 300px; padding: 22px; overflow: hidden; border: 1px solid var(--line); border-radius: 24px; background: var(--surface); color: var(--ink); text-align: left; }
@@ -495,8 +497,9 @@ body[data-session-mode="audio"] .top-settings { grid-template-columns: 1fr; }
   .audio-panel { grid-column: auto; }
   .mode-body { padding: 0; }
   .mode-shell { min-height: 100vh; padding: 18px 14px; border: 0; border-radius: 0; }
-  .mode-hero { padding: 72px 2px 34px; }
-  .mode-hero h1 { font-size: clamp(3rem, 15vw, 5rem); }
+  .mode-hero { justify-content: flex-start; min-height: 0; margin-top: 28px; padding: 32px 12px calc(58vw + 30px); }
+  .mode-hero-photo { inset: auto 0 0 auto; width: 165%; height: auto; object-fit: contain; }
+  .mode-hero h1 { max-width: 100%; font-size: clamp(2.6rem, 12vw, 4.8rem); }
   .mode-grid { grid-template-columns: 1fr; }
   .mode-card, .mode-card:last-child { grid-column: auto; min-height: 270px; }
   .mode-footer { align-items: flex-start; flex-direction: column; }

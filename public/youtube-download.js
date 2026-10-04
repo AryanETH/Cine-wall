@@ -92,7 +92,7 @@
     el('downloadYoutubeToggle').setAttribute('aria-expanded', String(open));
     el('fileSourceButton').hidden = open;
     el('dropZone').hidden = open;
-    el('playlistButton').hidden = open || !audioOnly();
+    el('playlistButton').hidden = true;
     if (open) el('downloadYoutubeUrl').focus();
   }
   el('downloadYoutubeToggle').addEventListener('click', () => chooseSource(true));
@@ -101,7 +101,7 @@
   function syncMode(mode) {
     if (mode === currentMode) return;
     currentMode = mode;
-    el('localVideoSource').textContent = audioOnly() ? 'Local audio' : 'Local video';
+    el('localVideoSource').textContent = 'Local file';
     el('downloadPanelCopy').textContent = audioOnly() ? 'MP3 · AAC · M4A audio' : 'Video & audio downloads';
     el('youtubeDownloadPanel').setAttribute('aria-label', audioOnly() ? 'Download YouTube audio' : 'Download a YouTube video');
     el('downloadYoutubeUrl').placeholder = audioOnly() ? 'Drop or paste a YouTube link…' : 'https://youtube.com/watch?v=…';
