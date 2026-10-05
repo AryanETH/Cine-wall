@@ -101,7 +101,7 @@
     const list = document.querySelector('#audioQueueList');
     const count = document.querySelector('#audioQueueCount');
     const input = document.querySelector('#playlistFiles');
-    let draggedId = '', touchDrag = null;
+    let draggedId = '', touchDrag = null, renderKey = '';
     const queue = new AudioQueue({ ...options, changed: () => { render(); options.changed?.(); } });
     function button(text, action, label, disabled) {
       const node = document.createElement('button'); node.type = 'button';
@@ -110,12 +110,16 @@
       return node;
     }
     function render() {
+      const blocked = options.blocked();
       panel.hidden = options.state().sessionMode !== 'audio' || options.locked();
-      input.disabled = queue.busy || options.blocked() || queue.items.length >= 10;
+      input.disabled = queue.busy || blocked || queue.items.length >= 10;
       count.textContent = `${queue.items.length} / 10`;
+      const key = JSON.stringify([queue.items.map(item => item.id), queue.currentId, queue.busy, blocked]);
+      if (key === renderKey) return;
+      renderKey = key;
       list.replaceChildren();
       queue.items.forEach((item, index) => {
-        const disabled = queue.busy || options.blocked(), current = item.id === queue.currentId;
+        const disabled = queue.busy || blocked, current = item.id === queue.currentId;
         const row = document.createElement('li'); row.dataset.songId = item.id;
         row.className = current ? 'audio-queue-song current' : 'audio-queue-song'; row.draggable = !disabled;
         const handle = document.createElement('span'); handle.className = 'queue-drag-handle';

@@ -8,6 +8,7 @@
 .studio-body .nav-actions { flex-wrap: wrap; justify-content: flex-end; gap: 12px; }
 .studio-body .button, .studio-body .theme-toggle, .studio-body .mode-switch { min-height: 40px; font-size: 14px; border-radius: 9px; font-weight: 600; }
 .studio-body .tutorial-link { border: 0; background: transparent; padding-inline: 14px; }
+.studio-body .guide-launch { padding-inline: 14px; }
 .studio-body .theme-toggle { border: 0; background: transparent; }
 .studio-body .theme-toggle [data-theme-label] { display: none; }
 .studio-body .connection-chip { padding: 0; border: 0; background: transparent; }
@@ -137,6 +138,18 @@
 .studio-body .presentation-page-row + .transport { margin-top: 20px; }
 .studio-body button:focus-visible, .studio-body a:focus-visible, .studio-body summary:focus-visible, .studio-body [role='button']:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
 
+.guide-backdrop { position: fixed; inset: 0; z-index: 1000; background: rgba(8, 15, 27, .68); }
+.studio-body .guide-focus { position: relative; z-index: 1001; pointer-events: none; outline: 3px solid var(--accent); outline-offset: 5px; border-radius: 10px; box-shadow: 0 0 0 9px color-mix(in srgb, var(--accent) 20%, transparent); }
+.guide-card { position: fixed; z-index: 1002; width: min(360px, calc(100vw - 32px)); padding: 20px; border: 1px solid var(--line); border-radius: 14px; background: var(--surface); color: var(--ink); box-shadow: 0 24px 70px rgba(0, 0, 0, .32); }
+.guide-top, .guide-actions { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.guide-progress { color: var(--accent); font-size: 12px; font-weight: 700; letter-spacing: .04em; }
+.guide-skip { border: 0; padding: 6px 2px; background: transparent; color: var(--muted); font: inherit; font-size: 13px; cursor: pointer; }
+.guide-skip:hover { color: var(--ink); }
+.guide-card h2 { margin: 18px 0 7px; font-size: 20px; line-height: 1.2; }
+.guide-card p { margin: 0 0 22px; color: var(--muted); font-size: 14px; line-height: 1.5; }
+.guide-card .button { min-width: 88px; }
+.guide-card button:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+
 @media (max-width: 1200px) {
   .studio-body .screen-link-card { gap: 10px; }
   .studio-body .screen-role-icon { display: none; }
@@ -167,6 +180,7 @@
   .studio-body .brand-icon { width: 36px; }
   .studio-body .brand-lockup strong { font-size: 18px; }
   .studio-body .tutorial-link { padding-inline: 6px; font-size: 12px; }
+  .studio-body .guide-launch { padding-inline: 9px; font-size: 12px; }
   .studio-body .page-heading { margin: 24px 0 20px; }
   .studio-body .display-links-panel { flex-direction: column; }
   .studio-body .screen-links { grid-template-columns: 1fr !important; }
@@ -183,4 +197,5 @@
   .studio-body .screen-volume .mini-icon-button, .studio-body .link-actions button, .studio-body .link-actions a { min-height: 36px; }
   .studio-body .preview-stage video { min-height: 0; }
   .studio-body .connection-chip { display: none; }
+  .guide-card { padding: 16px; }
 }

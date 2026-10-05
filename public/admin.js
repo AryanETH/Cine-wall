@@ -1342,6 +1342,7 @@ async function bootstrap() {
     await command({ type: 'session-mode', sessionMode: requestedMode });
   }
   render();
+  window.CineWallGuide?.autoStart();
 }
 
 bootstrap();

@@ -11,7 +11,7 @@
   <script src="media-peer.js?v=20261005-feedback-28"></script>
   <script src="video-validation.js?v=20261002-mkv-17"></script>
   <link rel="stylesheet" href="styles.css?v=20261005-feedback-28">
-  <link rel="stylesheet" href="studio.css?v=20261005-queue-29">
+  <link rel="stylesheet" href="studio.css?v=20261005-guide-33">
 </head>
 <body class="admin-body studio-body" data-session-mode="video">
   <main class="app-shell">
@@ -22,6 +22,7 @@
       </a>
       <div class="nav-actions">
         <a class="mode-switch" href="/" title="Switch mode"><span id="modeSwitchIcon" class="fi">&#xE714;</span><span id="modeSwitchLabel">Video</span></a>
+        <button id="openDashboardGuide" class="button subtle guide-launch" type="button" aria-label="Open dashboard guide">Guide</button>
         <a id="tutorialLink" class="button subtle tutorial-link" href="https://www.youtube.com/watch?v=nKjiv6_XSN4" target="_blank" rel="noopener noreferrer" aria-label="Watch tutorial on YouTube (opens separately)"><span class="fi" aria-hidden="true">&#xE768;</span>Tutorial</a>
         <button class="theme-toggle" data-theme-toggle type="button"><span class="fi" data-theme-icon>&#xE706;</span><span data-theme-label>Light</span></button>
         <div id="connection" class="connection-chip"><span class="status-dot"></span><span>Connecting</span></div>
@@ -221,8 +222,16 @@
     </div>
 
   </main>
+  <div id="guideBackdrop" class="guide-backdrop" aria-hidden="true" hidden></div>
+  <section id="dashboardGuide" class="guide-card" role="dialog" aria-modal="true" aria-labelledby="guideTitle" aria-describedby="guideCopy" hidden>
+    <div class="guide-top"><span id="guideProgress" class="guide-progress"></span><button id="guideSkip" class="guide-skip" type="button">Skip</button></div>
+    <h2 id="guideTitle"></h2>
+    <p id="guideCopy"></p>
+    <div class="guide-actions"><button id="guideBack" class="button subtle" type="button">Back</button><button id="guideNext" class="button accent" type="button">Next</button></div>
+  </section>
   <script src="audio-queue.js?v=20261005-queue-29"></script>
-  <script src="admin.js?v=20261005-queue-29"></script>
+  <script src="dashboard-guide.js?v=20261005-guide-33"></script>
+  <script src="admin.js?v=20261005-guide-33"></script>
   <script src="youtube-download.js?v=20261004-studio-25"></script>
 </body>
 </html>

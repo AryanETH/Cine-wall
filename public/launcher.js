@@ -5,6 +5,14 @@ const supportModal = document.querySelector('#supportModal');
 const supportForm = document.querySelector('#supportForm');
 const supportQrResult = document.querySelector('#supportQrResult');
 const supportAmount = document.querySelector('#supportAmount');
+const heroVideo = document.querySelector('.mode-hero-photo');
+const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
+function syncHeroMotion() {
+  if (reducedMotion.matches) heroVideo.pause();
+  else heroVideo.play().catch(() => {});
+}
+reducedMotion.addEventListener('change', syncHeroMotion);
+syncHeroMotion();
 
 function closeSupport() {
   supportModal.hidden = true;
