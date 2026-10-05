@@ -192,7 +192,7 @@ function broadcast(event, payload) {
 function modeLimits(sessionMode = state.sessionMode) {
   if (sessionMode === 'audio') return { min: 1, max: 5, initial: 1 };
   if (sessionMode === 'presentation') return { min: 1, max: 3, initial: 1 };
-  return { min: 2, max: 3, initial: 2 };
+  return { min: 1, max: 3, initial: 2 };
 }
 
 function extractYouTubeId(value) {
@@ -856,7 +856,7 @@ async function handle(req, res, url) {
       removeCurrentAsset();
       state = { ...state, playing: false, position: 0, anchorTime: Date.now(), commandId: ++commandSequence,
         asset: { name: String(body.name || 'Local movie').slice(0, 220), size: body.size, originalSize: body.size, duration: Number(body.duration) || 0,
-          type: String(body.type || 'video/mp4').slice(0, 100), kind: state.sessionMode, renderType: 'media', source: 'peer', transport: body.relay ? 'relay' : 'webrtc', peerId: body.peerId,
+          type: String(body.type || 'video/mp4').slice(0, 100), kind: state.sessionMode, renderType: 'media', source: 'peer', transport: body.localOnly === true ? 'hotspot' : body.relay ? 'relay' : 'webrtc', peerId: body.peerId,
           fingerprint: body.fingerprint, codecs: Array.isArray(body.codecs) ? body.codecs.filter((codec) => typeof codec === 'string' && /^(V|A)_[A-Z0-9/_-]{1,60}$/.test(codec)).slice(0, 8) : [], version: require('node:crypto').randomUUID() } };
       for (const screen of screens.values()) Object.assign(screen, { mediaReady: false, duration: 0, playbackTime: 0, error: '' });
       saveSession(); broadcast('state', snapshot()); json(res, 200, { state: snapshot() }); return;
@@ -943,6 +943,7 @@ async function handle(req, res, url) {
       return;
     }
     if ((req.method === 'GET' || req.method === 'HEAD') && (url.pathname === '/api/media/stream' || url.pathname === '/api/movie/stream')) {
+      if (state.asset?.transport === 'hotspot') { json(res, 409, { error: 'Instant shares over your hotspot, not this server. Open the numbered screen link, or choose Upload.' }); return; }
       if (state.asset?.source === 'peer') await serveInstantAsset(req, res, url);
       else if (url.searchParams.get('v') && url.searchParams.get('v') !== state.asset?.version) json(res, 409, { error: 'The selected file changed.' });
       else serveAsset(req, res);
@@ -976,6 +977,7 @@ async function handle(req, res, url) {
         ready: Boolean(body.ready),
         mediaReady: Boolean(body.mediaReady),
         assetVersion: String(body.assetVersion || '').slice(0, 100),
+        instantConnection: ['idle', 'local', 'searching', 'connected', 'disconnected'].includes(body.instantConnection) ? body.instantConnection : 'idle',
         loadProgress: Math.min(100, Math.max(0, Number(body.loadProgress) || 0)),
         bufferedSeconds: Math.max(0, Number(body.bufferedSeconds) || 0),
         fileName: String(body.fileName || '').slice(0, 220),
@@ -984,6 +986,7 @@ async function handle(req, res, url) {
         playbackTime: Number(body.playbackTime) || 0,
         page: Number(body.page) || 0,
         paused: Boolean(body.paused),
+        ended: Boolean(body.ended) && body.assetVersion === state.asset?.version,
         playerState: Number(body.playerState),
         buffering: Boolean(body.buffering),
         autoplayMuted: Boolean(body.autoplayMuted),

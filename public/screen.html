@@ -8,8 +8,8 @@
   <script src="icons.js?v=20261002-icons-18"></script>
   <script src="theme.js"></script>
   <script src="session.js?v=20261003-sharing-19"></script>
-  <script src="media-peer.js?v=20261003-stream-20"></script>
-  <link rel="stylesheet" href="styles.css?v=20261003-room-22">
+  <script src="media-peer.js?v=20261005-feedback-28"></script>
+  <link rel="stylesheet" href="styles.css?v=20261005-feedback-28">
 </head>
 <body class="screen-body" data-session-mode="video">
   <div class="wall-viewport">
@@ -49,7 +49,7 @@
     <a id="decoderHelpLink" href="https://apps.microsoft.com/detail/9nmzlz57r3t7" target="_blank" rel="noopener" hidden>Windows HEVC extension</a>
   </div>
 
-  <section id="screenControls" class="screen-controls" aria-label="Admin display controls">
+  <section id="screenControls" class="screen-controls" aria-label="Admin display controls" hidden>
     <div id="screenMediaControls">
       <div class="screen-control-track">
         <span id="screenCurrentTime">0:00</span>
@@ -77,6 +77,11 @@
     <span id="screenShortcuts" class="screen-shortcuts">Space · Play/Pause &nbsp; ← → · Seek &nbsp; F · Fullscreen</span>
   </section>
 
+  <section id="removedScreen" class="removed-screen" role="status" aria-live="polite" hidden>
+    <span class="fi" aria-hidden="true">&#xE7F4;</span>
+    <h1>Screen removed</h1>
+    <p>The admin can add this screen again.</p>
+  </section>
   <div id="identify" class="identify"></div>
   <button id="enterPlayerFullscreen" class="fullscreen-prompt" type="button" hidden><span class="fi" aria-hidden="true">&#xE740;</span>Enter fullscreen</button>
   <div id="connectionLost" class="connection-lost"><span class="fi">&#xEB55;</span><strong>Trying to reconnect</strong><small>Keep the admin tab open.</small></div>
@@ -101,6 +106,6 @@
     </div>
   </section>
   <script src="youtube-provider.js?v=20261001-playback-5"></script>
-  <script src="screen.js?v=20261003-room-22"></script>
+  <script src="screen.js?v=20261005-queue-29"></script>
 </body>
 </html>

@@ -15,9 +15,13 @@ function player(screen, mode = 'video', peer = null, fullscreen = async () => {}
     const item = { hidden: false, value: 0, innerHTML: '', textContent: '', duration: 300, videoWidth: 1280, videoHeight: 720, currentTime: 0, paused: true, readyState: 4, muted: false, ended: false,
       style: { setProperty() {} }, dataset: {}, handlers: {},
       classList: { add: (...names) => names.forEach((name) => classes.add(name)), remove: (...names) => names.forEach((name) => classes.delete(name)), contains: (name) => classes.has(name), toggle(name, flag) { if (flag) classes.add(name); else classes.delete(name); } },
-      addEventListener(name, callback) { this.handlers[name] = callback; },
+      addEventListener(name, callback) {
+        const previous = this.handlers[name];
+        this.handlers[name] = previous ? (...args) => Promise.all([previous(...args), callback(...args)]) : callback;
+      },
       querySelector: (name) => node(`${selector} ${name}`), querySelectorAll: () => [],
       getAttribute(name) { return this[name]; }, removeAttribute(name) { delete this[name]; },
+      setAttribute(name, value) { this[name] = value; },
       load() { delete this.error; }, pause() { this.paused = true; }, async play() { if (!this.muted) throw Object.assign(new Error('User gesture required'), { name: 'NotAllowedError' }); this.paused = false; },
     };
     nodes.set(selector, item);
@@ -98,6 +102,22 @@ test('native speaker drift uses small speed corrections without repeatedly seeki
   client.evaluate('correctDrift(currentState, false)'); assert.ok(video.playbackRate < 1 && video.playbackRate >= .985);
 });
 
+test('speaker waves freeze on native pause, buffering, ending and errors, and resume only with actual playback', async () => {
+  const client = player(2, 'audio'); await new Promise(setImmediate);
+  const video = client.nodes.get('#video'), stage = client.nodes.get('#speakerStage');
+  client.evaluate('currentState.playing = true; currentState.notBefore = 0');
+  video.paused = false; await video.handlers.playing();
+  assert.equal(stage.classList.contains('playing'), true);
+  video.paused = true; await video.handlers.pause();
+  assert.equal(stage.classList.contains('playing'), false);
+  video.paused = false; await video.handlers.waiting();
+  assert.equal(stage.classList.contains('playing'), false);
+  await video.handlers.playing(); assert.equal(stage.classList.contains('playing'), true);
+  video.ended = true; client.evaluate('updateAudioWaves()'); assert.equal(stage.classList.contains('playing'), false);
+  video.ended = false; video.error = { code: 3 }; client.evaluate('updateAudioWaves()'); assert.equal(stage.classList.contains('playing'), false);
+  video.error = null; video.readyState = 2; client.evaluate('updateAudioWaves()'); assert.equal(stage.classList.contains('playing'), false);
+});
+
 test('a relay interruption after successful playback reconnects without blaming codecs, and successful recovery resets retries', async () => {
   const opened = [];
   const client = player(2, 'video', { clear() {}, open(asset, options) { opened.push(options); return Promise.resolve(`/api/media/stream?v=${asset.version}&retry=${options?.retry || 0}`); } });
@@ -116,6 +136,20 @@ test('a relay interruption after successful playback reconnects without blaming 
     assert.equal(client.evaluate('lastError'), '');
     assert.ok(video.currentTime >= 12, 'rejoins the shared timeline instead of restarting');
   }
+});
+
+test('a hotspot connection failure stays visible during retry instead of becoming a codec error', async () => {
+  const help = 'Instant needs all laptops on the same hotspot or Wi-Fi.';
+  const peer = { clear() {}, lastConnectionError: help, async open() { return '/__cinewall_peer__/test'; } };
+  const client = player(2, 'video', peer); await new Promise(setImmediate);
+  client.evaluate("currentState.asset.transport = 'hotspot'");
+  const video = client.nodes.get('#video'); video.error = { code: 4 };
+  await video.handlers.error();
+  assert.equal(client.evaluate('lastError'), help);
+  client.timers.at(-1).handler(); await new Promise(setImmediate);
+  assert.equal(client.evaluate('lastError'), help, 'keep the network warning while a new connection is opening');
+  video.handlers.loadedmetadata();
+  assert.equal(client.evaluate('lastError'), '');
 });
 
 test('Space and arrow keys match the player controls, work after focusing controls, and ignore typing or held Space', async () => {
@@ -165,6 +199,33 @@ test('a third display is restored when the admin adds the third link', async () 
   client.evaluate('setLayout(3)');
   assert.equal(client.evaluate('screenNumber'), 3);
   assert.equal(client.evaluate('ready'), true);
+});
+
+test('removing a playing screen stops media and hides admin controls; adding it back preserves its number', async () => {
+  for (const mode of ['video', 'audio', 'presentation', 'youtube']) {
+    const client = player(2, mode); await new Promise(setImmediate);
+    const video = client.nodes.get('#video'), controls = client.nodes.get('#screenControls');
+    video.paused = false; controls.classList.add('visible', 'available');
+    client.evaluate('applyStateAppearance({ ...currentState, screenCount: 1, commandId: 8 })');
+    assert.equal(client.evaluate('ready'), false, mode);
+    assert.equal(client.evaluate('screenNumber'), 0);
+    assert.equal(video.paused, true);
+    assert.equal(controls.hidden, true);
+    assert.equal(controls.classList.contains('visible'), false);
+    assert.equal(controls.classList.contains('available'), false);
+    assert.equal(client.nodes.get('#removedScreen').hidden, false);
+    assert.equal(client.nodes.get('#setup').classList.contains('hidden'), true);
+    client.evaluate('selectScreen(1)'); await client.nodes.get('#readyButton').handlers.click();
+    assert.equal(client.evaluate('screenNumber'), 0, 'removed screen cannot take the admin slot');
+    const commandsBefore = client.statuses.filter(item => item.type).length;
+    await client.evaluate("command({ type: 'pause' })");
+    assert.equal(client.statuses.filter(item => item.type).length, commandsBefore);
+    client.evaluate('applyStateAppearance({ ...currentState, screenCount: 2, commandId: 9 })');
+    assert.equal(client.evaluate('screenNumber'), 2);
+    assert.equal(client.evaluate('ready'), true);
+    assert.equal(client.nodes.get('#removedScreen').hidden, true);
+    assert.equal(controls.hidden, true, 'restored remote screen is still not admin');
+  }
 });
 
 test('screen 1 performs synchronized movie looping, independent of the ten-second dashboard preview', async () => {
@@ -451,6 +512,23 @@ test('a local preview that failed before direct publishing completes is released
   assert.equal(dashboard.evaluate('loadedMediaVersion'), 'direct-ready');
   assert.equal(dashboard.nodes.get('#mediaPreview').src, 'blob:direct-ready');
   assert.equal(dashboard.requests.length, 0);
+});
+
+test('online Instant selects hotspot sharing for video and audio, while local Instant keeps LAN forwarding', async () => {
+  const code = fs.readFileSync(path.join(__dirname, '../public/admin.js'), 'utf8');
+  for (const hosted of [true, false]) for (const sessionMode of ['video', 'audio']) {
+    const dashboard = uploadDashboard(), calls = [];
+    dashboard.context.window.CineWallSession = { hosted };
+    dashboard.evaluate(`modeConfig.audio = { icon: 'audio', label: 'Audio' }; status.state.sessionMode = '${sessionMode}'`);
+    dashboard.context.filePeer = { async publish(file, duration, options) {
+      calls.push(options);
+      return { sessionMode, asset: { name: file.name, version: 'ready', source: 'peer', transport: hosted ? 'hotspot' : 'relay' } };
+    }, async open() { return 'blob:selected-file'; } };
+    vm.runInContext(code.slice(code.indexOf('async function shareLocalFile('), code.indexOf('// Shared upload function')), dashboard.context);
+    await dashboard.evaluate("shareLocalFile({name:'supported.mp4',size:1000,type:'video/mp4'})");
+    assert.equal(calls.length, 1); assert.equal(calls[0].localOnly, hosted); assert.equal(calls[0].relay, !hosted);
+    assert.equal(dashboard.requests.length, 0);
+  }
 });
 
 test('dashboard MKV retries preserve the direct asset and are bounded just like Display 1', async () => {

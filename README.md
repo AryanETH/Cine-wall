@@ -28,9 +28,10 @@ If port 4173 is busy, CineWall automatically chooses the next free port. Always 
 ## Video wall
 
 1. Start with the two preset links; add the third only when needed.
+   Removing the last remote display leaves the admin playing on one full screen. Removed displays stop playback and show **Screen removed**; adding them back restores their numbered link, not the admin controls.
 2. Choose the movie once on the dashboard.
    CineWall checks the container, tracks and browser playback before accepting it. MP4/M4V supports H.264, VP9 and AV1 video with AAC audio; WebM supports VP8/VP9 with Opus audio. MKV supports H.264 video with AAC audio (including HE-AAC and multiple language tracks). The current browser must also decode a frame before sharing starts. Unsupported tracks, including HEVC/Dolby MKV, are rejected with an H.264/AAC MP4 suggestion; CineWall does not convert movies.
-   **Instant** starts sharing the selected original file without waiting for a full upload. Keep the source dashboard open; laptops request small byte ranges through it. **Server** uploads a full copy, with progress shown on the dashboard. Neither option converts the movie. The silent preview plays only the opening ten seconds.
+   **Instant** starts sharing the selected original file without waiting for a full upload. On the online website, movie/audio bytes go directly between browsers over the same hotspot or Wi-Fi. Keep the source dashboard open and its laptop awake. **Upload** sends a full copy to the server, with progress shown on the dashboard. Neither option converts the movie. The silent preview plays only the opening ten seconds.
 3. **Stretch** is the default wall framing. Fit and Cinema crop remain available.
 4. Selecting a file opens Display 1 in a separate tab (if your browser allows it); otherwise use **Open Display 1**. Play is enabled only after every selected display reports the current file ready. Play does not reload an already-open display. A browser may still need a click on each laptop to enable sound.
 5. Play, pause, seek, double-click ±10 seconds, and per-Device audio changes synchronize across the wall.
@@ -38,6 +39,21 @@ If port 4173 is busy, CineWall automatically chooses the next free port. Always 
 Sharing preserves the original bytes. Every Device still needs a browser that supports the selected tracks. DRM streaming services such as Netflix and Prime Video are not supported.
 
 Laptops opening the same local CineWall server share its hotspot room. The first laptop to select a file becomes admin; other laptops see **Open screen** instead of source controls until that admin removes the file. On a public website, share the admin's numbered display links to join the same room. Being on the same Wi-Fi alone does not identify a room online. Display percentages describe startup readiness, not a complete movie download on each device.
+
+### Online Instant over a hotspot
+
+1. Connect all laptops to the same hotspot or Wi-Fi and open the HTTPS website in current Chrome or Edge.
+2. Choose **Instant** on the source laptop, then choose the video/audio file there only.
+3. Open that dashboard's numbered screen links on the other laptops. They must include the same room ID.
+4. Allow local-network access if the browser asks. Keep the admin dashboard open. Play becomes available when every screen is ready.
+
+Instant speaker/screen cards show the actual sharing connection: **Searching for hotspot…**, **Hotspot / Wi-Fi connected**, or **Connection lost · retrying**. The source display says **On this laptop** because it does not need a network transfer. Before a file is selected, the cards wait instead of claiming to detect a hotspot. Upload mode hides this indicator. Audio waves pause with playback and buffering, on both the dashboard and player.
+
+The website exchanges room, connection and playback messages, but does not receive movie bytes in this mode. Browser data channels transfer bounded original-file ranges on the local network. Hotspot mode uses no STUN/TURN servers, rejects public/relayed candidates, and checks the selected local route before sending file data. Its server-stream endpoint is disabled: it never silently falls back to forwarding the movie through the hosting server. If a hotspot isolates connected devices or a firewall blocks them, join a network that allows device-to-device communication or explicitly choose **Upload**. Internet is still needed for the online website and its controls; this is not a fully offline online-site mode.
+
+The browser cannot identify a Wi-Fi name or distinguish a hotspot from another reachable private network/VPN. Hotspot mode verifies a direct private/local route, not the network's name. A site deployment must update both the server and the dashboard/display scripts; reload all tabs after deployment.
+
+When running CineWall locally over plain HTTP, Instant keeps the existing local-server forwarding path. Those bytes stay on your LAN, and the other laptops do not need their own copy of the file.
 
 ## YouTube downloads
 

@@ -79,10 +79,10 @@ function peerPage({ secure = true, worker = false } = {}) {
   const events = [], sent = [], errors = [], broadcasts = [], blobs = [], revoked = [], registrations = [], workerHandlers = [];
   class Events { constructor() { this.handlers = {}; events.push(this); } addEventListener(name, handler) { this.handlers[name] = handler; } }
   class Broadcast { constructor() { broadcasts.push(this); } postMessage(data) { queueMicrotask(() => { for (const other of broadcasts) if (other !== this) other.onmessage?.({ data }); }); } }
-  const window = { isSecureContext: secure, CineWallSession: { room, link: (value) => `https://watch.aitoyz.in${value}?room=${room}` }, dispatchEvent: (event) => errors.push(event.detail) };
+  const window = { isSecureContext: secure, CineWallSession: { room, link: (value) => `https://watch.aitoyz.in${value}?room=${room}` }, dispatchEvent: (event) => { if (event.type === 'cinewall-peer-error') errors.push(event.detail); } };
   const context = vm.createContext({ window, crypto: crypto.webcrypto, Uint8Array, Int32Array, DataView, TextEncoder, Map, Promise, Number, Math, JSON, Date,
     URL: { createObjectURL: (blob) => { blobs.push(blob); return 'blob:local-movie'; }, revokeObjectURL: (url) => revoked.push(url) }, BroadcastChannel: Broadcast, EventSource: Events,
-    navigator: worker ? { serviceWorker: { controller: {}, ready: Promise.resolve(), async register(...args) { registrations.push(args); }, addEventListener(name, handler) { workerHandlers.push(handler); } } } : {}, CustomEvent: class { constructor(type, options) { this.detail = options.detail; } }, setTimeout, clearTimeout,
+    navigator: worker ? { serviceWorker: { controller: {}, ready: Promise.resolve(), async register(...args) { registrations.push(args); }, addEventListener(name, handler) { workerHandlers.push(handler); } } } : {}, CustomEvent: class { constructor(type, options) { this.type = type; this.detail = options.detail; } }, setTimeout, clearTimeout,
     fetch: async (route, options) => {
       if (options?.body) {
         const body = JSON.parse(options.body); sent.push({ route, body });
@@ -230,6 +230,78 @@ test('parallel signaling creates one peer; intentional source cleanup does not r
   assert.equal(receiver.connectionTasks.size, 0);
 });
 
+test('hotspot publishing requires a secure browser and sends only metadata, never enabling relay', async () => {
+  const client = peerPage({ worker: true }), owner = new client.api.FilePeer();
+  client.context.RTCPeerConnection = class {};
+  await owner.publish(virtualFile(), 60, { localOnly: true, relay: true });
+  assert.equal(client.sent[0].body.localOnly, true); assert.equal(client.sent[0].body.relay, false);
+  assert.equal(client.sent.length, 1);
+  owner.clear();
+  const insecure = peerPage({ secure: false });
+  await assert.rejects(new insecure.api.FilePeer().publish(virtualFile(), 60, { localOnly: true }), /HTTPS/);
+  assert.equal(insecure.sent.length, 0);
+});
+
+test('hotspot candidates/SDP accept private IPs and mDNS, never public, STUN or TURN routes', () => {
+  const { api } = peerPage();
+  const line = (address, type = 'host') => `candidate:1 1 udp 2122260223 ${address} 50000 typ ${type}`;
+  for (const address of ['192.168.137.2', '10.0.0.2', '172.31.4.2', '169.254.1.2', '127.0.0.1', 'fe80::1234', 'fd12::3', 'abcd-1234.local']) assert.equal(api.hotspotCandidate({ candidate: line(address) }), true, address);
+  for (const address of ['8.8.8.8', '172.32.1.2', '192.168.999.1', '2001:db8::1', 'example.com']) assert.equal(api.hotspotCandidate(line(address)), false, address);
+  for (const type of ['srflx', 'relay', 'prflx']) assert.equal(api.hotspotCandidate(line('192.168.137.2', type)), false);
+  const description = api.hotspotDescription({ type: 'offer', sdp: `v=0\r\na=${line('192.168.137.2')}\r\na=${line('8.8.8.8', 'relay')}\r\na=${line('192.168.137.3', 'srflx')}\r\n` });
+  assert.match(description.sdp, /192\.168\.137\.2/); assert.doesNotMatch(description.sdp, /8\.8\.8\.8|srflx|relay/);
+});
+
+test('hotspot negotiation ignores configured ICE servers and filters candidates both ways', async () => {
+  const client = peerPage(), receiver = new client.api.FilePeer(), configurations = [], incoming = [];
+  client.context.fetch = async () => { throw new Error('Hotspot must not fetch STUN/TURN configuration'); };
+  receiver.request = async (route, body) => { client.sent.push({ route, body }); return {}; };
+  client.context.RTCPeerConnection = class {
+    constructor(configuration) { configurations.push(configuration); this.connectionState = 'new'; this.remoteDescription = null; }
+    close() { this.connectionState = 'closed'; this.onconnectionstatechange?.(); }
+    async setRemoteDescription(description) { this.remoteDescription = description; }
+    async addIceCandidate(candidate) { incoming.push(candidate); }
+  };
+  receiver.asset = { transport: 'hotspot' };
+  const peer = await receiver.getPeer(room, false);
+  assert.equal(configurations[0].iceServers.length, 0);
+  await receiver.onSignal({ from: room, description: { type: 'answer', sdp: 'v=0\r\n' } });
+  const local = { candidate: 'candidate:1 1 udp 1 192.168.137.2 40000 typ host' };
+  const relay = { candidate: 'candidate:1 1 udp 1 8.8.8.8 40000 typ relay' };
+  peer.pc.onicecandidate({ candidate: relay }); peer.pc.onicecandidate({ candidate: local }); await turn();
+  assert.equal(client.sent.length, 1); assert.equal(client.sent[0].body.candidate.candidate, local.candidate);
+  await receiver.onSignal({ from: room, candidate: relay }); await receiver.onSignal({ from: room, candidate: local });
+  assert.equal(incoming.length, 1); receiver.clear();
+});
+
+function routeStats(localType = 'host', remoteType = 'host', address = '192.168.137.2') {
+  return new Map([
+    ['transport', { type: 'transport', selectedCandidatePairId: 'pair' }],
+    ['pair', { type: 'candidate-pair', state: 'succeeded', nominated: true, localCandidateId: 'local', remoteCandidateId: 'remote' }],
+    ['local', { candidateType: localType, address: '192.168.137.1' }], ['remote', { candidateType: remoteType, address }],
+  ]);
+}
+
+test('hotspot validates the selected route before transferring bytes and never answers a server range', async () => {
+  const client = peerPage(), owner = new client.api.FilePeer(), file = virtualFile(), packets = [];
+  owner.asset = (await owner.publish(file)).asset; owner.asset.transport = 'hotspot';
+  const peer = { localOnly: true, queued: 0, queue: Promise.resolve(), pc: { getStats: async () => routeStats('host', 'relay') }, channel: { readyState: 'open', send: packet => packets.push(packet) } };
+  const reads = file.reads.length;
+  owner.onData(peer, JSON.stringify({ type: 'range', id: 1, version: owner.asset.version, start: 0, end: 1024 }));
+  await peer.queue;
+  assert.equal(file.reads.length, reads, 'blocked route cannot even read movie bytes');
+  assert.equal(JSON.parse(packets[0]).type, 'error'); assert.match(JSON.parse(packets[0]).error, /same hotspot/);
+  await client.events[0].handlers['source-range']({ data: JSON.stringify({ id: 'test', version: owner.asset.version, start: 0, end: 1023 }) });
+  assert.equal(client.sent.length, 1, 'no source-range POST');
+  for (const [local, remote, address] of [['srflx', 'host', '192.168.137.2'], ['host', 'host', '8.8.8.8']]) {
+    await assert.rejects(owner.checkHotspotRoute({ localOnly: true, pc: { getStats: async () => routeStats(local, remote, address) } }), /same hotspot/);
+  }
+  await owner.checkHotspotRoute({ localOnly: true, pc: { getStats: async () => routeStats() } });
+  const hiddenAddresses = routeStats(); delete hiddenAddresses.get('local').address; delete hiddenAddresses.get('remote').address;
+  await owner.checkHotspotRoute({ localOnly: true, pc: { getStats: async () => hiddenAddresses } });
+  owner.clear();
+});
+
 function workerPage(file) {
   const handlers = {}, requests = [];
   const self = { addEventListener: (name, callback) => { handlers[name] = callback; }, clients: { async get(id) {
@@ -247,6 +319,29 @@ function workerPage(file) {
     return response;
   } };
 }
+
+test('Instant feedback requires an open verified local route and reflects failed/reconnecting channels', () => {
+  const client = peerPage(), receiver = new client.api.FilePeer(), notices = [];
+  client.window.dispatchEvent = event => { if (event.type === 'cinewall-peer-status') notices.push(event.detail); };
+  receiver.asset = { source: 'peer', transport: 'hotspot', peerId: 'source', version: 'current' };
+  assert.equal(receiver.connectionStatus(), 'searching');
+  const peer = { pc: { connectionState: 'connected' }, channel: { readyState: 'open' }, localOnly: true, hotspotVerified: false };
+  receiver.connections.set('source', peer);
+  assert.equal(receiver.connectionStatus(), 'searching', 'unverified data channel must not claim a hotspot');
+  peer.hotspotVerified = true;
+  assert.equal(receiver.connectionStatus(), 'connected');
+  receiver.notifyConnectionStatus(); receiver.notifyConnectionStatus();
+  assert.equal(notices.length, 1, 'unchanged connection status does not create status loops');
+  peer.pc.connectionState = 'disconnected';
+  assert.equal(receiver.connectionStatus(), 'disconnected'); receiver.notifyConnectionStatus();
+  assert.equal(notices.length, 2);
+  peer.pc.connectionState = 'connected'; peer.channel.readyState = 'closed';
+  assert.equal(receiver.connectionStatus(), 'disconnected');
+  receiver.localSource = 'same-device-tab';
+  assert.equal(receiver.connectionStatus(), 'local', 'same-device playback is not proof of a hotspot connection');
+  receiver.connections.clear(); receiver.clear();
+  assert.equal(receiver.connectionStatus(), 'idle');
+});
 
 test('service worker serves bounded seek/suffix ranges for a 12 GB source and handles HEAD', async () => {
   const file = virtualFile(), worker = workerPage(file);
@@ -284,7 +379,7 @@ test('admin preview stops at ten seconds, stays muted and never follows full mov
     getAttribute: () => 'blob:movie', pause() { this.paused = true; }, play() { this.paused = false; return Promise.resolve(); }, addEventListener: (name, fn) => { handlers[name] = fn; },
   };
   const context = vm.createContext({ media, status: { state: { sessionMode: 'video', playing: true, position: 500 } }, Math, Number,
-    $: () => ({ addEventListener() {} }), captureSourcePoster() {}, localPreview: null, loadedMediaVersion: 'asset', trailerKey: '', scrubbing: false,
+    $: () => ({ addEventListener() {} }), captureSourcePoster() {}, updateAudioWaves() {}, localPreview: null, loadedMediaVersion: 'asset', trailerKey: '', scrubbing: false,
   });
   vm.runInContext(code.slice(code.indexOf("media.addEventListener('timeupdate'"), code.indexOf("media.addEventListener('error'")), context);
   handlers.timeupdate(); assert.equal(media.paused, true); assert.equal(media.currentTime, 10);

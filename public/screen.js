@@ -1,6 +1,6 @@
 'use strict';
 
-const CLIENT_BUILD = '2026.10.03-room-22';
+const CLIENT_BUILD = '2026.10.05-queue-29';
 const filePeer = window.CineWallFilePeer ? new window.CineWallFilePeer.FilePeer() : null;
 const $ = (selector) => document.querySelector(selector);
 const video = $('#video');
@@ -27,11 +27,13 @@ let screenNumber = [1, 2, 3, 4, 5].includes(requestedScreen) ? requestedScreen :
 let wallScreens = 3;
 let sessionMode = 'video';
 let ready = false;
+let removedScreenNumber = 0;
 let defaultFullscreenAttempted = false;
 let fullscreenRequest = null;
 let serverOffset = 0;
 let currentState = null;
 let currentAssetVersion = '';
+let mediaElementVersion = '';
 let documentKey = '';
 let documentReady = false;
 let pdfModulePromise = null;
@@ -58,6 +60,7 @@ let youtubeStartCheckTimer = null;
 let youtubeLastSeek = 0;
 let localAutoplayMuted = false;
 let playbackAttempt = null;
+let audioWaiting = false;
 let wallMode = 'crop';
 let disconnectTimer = null;
 let lastServerContact = Date.now();
@@ -122,6 +125,7 @@ function renderScreenChoices() {
 }
 
 function selectScreen(value) {
+  if (removedScreenNumber) return;
   const next = Number(value);
   if (!Number.isInteger(next) || next < 1 || next > wallScreens) return;
   screenNumber = next;
@@ -143,13 +147,16 @@ function setLayout(count) {
   youtubeWall.style.setProperty('--wall-screens', wallScreens);
   documentWall.style.setProperty('--wall-screens', wallScreens);
   if (screenNumber > wallScreens) {
+    removedScreenNumber = screenNumber;
     screenNumber = 0;
     ready = false;
     localStorage.removeItem('cinewall-screen');
-    setup.classList.remove('hidden');
+    setup.classList.add('hidden');
   }
-  if (!screenNumber && requestedScreen && requestedScreen <= wallScreens) {
-    screenNumber = requestedScreen;
+  const assignedScreen = removedScreenNumber || requestedScreen;
+  if (!screenNumber && assignedScreen >= 1 && assignedScreen <= wallScreens) {
+    screenNumber = assignedScreen;
+    removedScreenNumber = 0;
     ready = true;
     localStorage.setItem('cinewall-screen', String(screenNumber));
     setup.classList.add('hidden');
@@ -181,6 +188,7 @@ function enterPlayerFullscreen() {
 }
 
 function updateLabels() {
+  $('#removedScreen').hidden = !removedScreenNumber;
   updateFullscreenPrompt();
   if (ready && !defaultFullscreenAttempted) { defaultFullscreenAttempted = true; enterPlayerFullscreen(); }
   const details = modeDetails[sessionMode];
@@ -200,7 +208,11 @@ function updateLabels() {
   $('#screenPresentationControls').hidden = sessionMode !== 'presentation';
   $('#screenShortcuts').textContent = sessionMode === 'presentation' ? '← → · Change page   F · Fullscreen' : ['video', 'youtube'].includes(sessionMode) ? 'Space · Play/Pause   ← → · Seek   Double-click sides · 10s   F · Fullscreen' : 'Space · Play/Pause   ← → · Seek   F · Fullscreen';
   $('#screenGesture').hidden = !(['video', 'youtube'].includes(sessionMode) && screenNumber === 1 && ready && currentState?.asset);
-  screenControls.classList.toggle('available', screenNumber === 1 && ready);
+  const canControl = screenNumber === 1 && ready && !removedScreenNumber;
+  screenControls.hidden = !canControl;
+  screenControls.setAttribute('aria-hidden', String(!canControl));
+  screenControls.classList.toggle('available', canControl);
+  if (!canControl) { clearTimeout(controlsTimer); screenControls.classList.remove('visible'); }
 }
 
 function updateReadyButton() {
@@ -401,6 +413,7 @@ function loadMedia(asset, force = false) {
   if (!asset) {
     if (!currentAssetVersion && !video.getAttribute('src')) return;
     currentAssetVersion = '';
+    mediaElementVersion = '';
     mediaPlayedVersion = '';
     transferRecoveryAttempts = 0;
     mediaRecoveryAttempts = 0;
@@ -416,15 +429,17 @@ function loadMedia(asset, force = false) {
   if (asset.version === currentAssetVersion && !force) return;
   if (asset.version !== currentAssetVersion) { mediaPlayedVersion = ''; transferRecoveryAttempts = 0; clearTimeout(mediaLoadTimer); mediaLoadAttempts = 0; mediaRecoveryAttempts = 0; mediaRecoveryInFlight = ''; videoFrameObservation = null; }
   currentAssetVersion = asset.version;
+  mediaElementVersion = '';
   mediaLoadAttempts += 1;
-  lastError = '';
+  if (!force) lastError = '';
   video.pause();
   if (asset.source === 'peer' && filePeer) {
     const version = asset.version;
-    filePeer.open(asset, force ? { retry: mediaLoadAttempts } : undefined).then((url) => { if (currentAssetVersion === version) { video.src = url; video.load(); postStatus(); } }).catch((error) => { if (currentAssetVersion !== version) return; lastError = error.message; scheduleTransferRecovery(asset); });
+    filePeer.open(asset, force ? { retry: mediaLoadAttempts } : undefined).then((url) => { if (currentAssetVersion === version) { video.src = url; mediaElementVersion = version; video.load(); postStatus(); } }).catch((error) => { if (currentAssetVersion !== version) return; lastError = error.message; scheduleTransferRecovery(asset); });
     return;
   }
   video.src = window.CineWallSession?.link(`/api/media/stream?v=${encodeURIComponent(asset.version)}&screen=${screenNumber}&attempt=${mediaLoadAttempts}`) || `/api/media/stream?v=${encodeURIComponent(asset.version)}&screen=${screenNumber}&attempt=${mediaLoadAttempts}`;
+  mediaElementVersion = asset.version;
   video.load();
   postStatus();
   clearTimeout(mediaLoadTimer);
@@ -559,6 +574,23 @@ function applyStateAppearance(nextState) {
   setWallMode(nextState.mode || 'crop');
   applyAudioSettings();
 
+  if (removedScreenNumber) {
+    // Keep the original numbered link, never replace it with the admin slot.
+    // Stop media reads/audio and leave only a passive removal message.
+    video.pause();
+    filePeer?.clear();
+    loadMedia(null);
+    loadPresentation(null);
+    clearTimeout(youtubeRetryTimer);
+    clearTimeout(youtubeStartCheckTimer);
+    if (youtubePlayer) { try { youtubePlayer.destroy(); } catch {} }
+    youtubePlayer = null; youtubeReady = false; youtubeVideoId = null;
+    stage.hidden = youtubeViewport.hidden = speakerStage.hidden = documentWall.hidden = true;
+    playBlocked.classList.remove('show'); waitingAsset.classList.remove('show');
+    setup.classList.add('hidden');
+    return;
+  }
+
   const hasAsset = Boolean(nextState.asset);
   const isYouTube = sessionMode === 'youtube';
   stage.hidden = sessionMode !== 'video';
@@ -568,7 +600,7 @@ function applyStateAppearance(nextState) {
   documentFrame.hidden = sessionMode !== 'presentation' || !hasAsset || nextState.asset.renderType !== 'html';
   documentImage.hidden = sessionMode !== 'presentation' || !hasAsset || nextState.asset.renderType !== 'image';
   pdfCanvas.hidden = sessionMode !== 'presentation' || !hasAsset || nextState.asset.renderType !== 'pdf';
-  speakerStage.classList.toggle('playing', Boolean(nextState.playing));
+  updateAudioWaves();
   $('#speakerTitle').textContent = nextState.asset?.name || 'Waiting for audio';
   $('#speakerSubtitle').textContent = nextState.playing ? `Playing on Speaker ${screenNumber}` : nextState.asset ? 'Paused by the admin' : 'The admin controls playback and volume.';
 
@@ -643,6 +675,7 @@ function seekTo(position) {
 }
 
 async function command(payload) {
+  if (removedScreenNumber || !screenNumber || !ready) return;
   if (payload.type === 'play' && currentState?.allReady !== true) return;
   const sequence = ++localControlSequence;
   const volumeRevision = payload.type === 'screen-audio' && 'volume' in payload ? ++localVolumeRevision : 0;
@@ -827,6 +860,7 @@ function showControls() {
 }
 
 function updateController() {
+  updateAudioWaves();
   const isYouTube = sessionMode === 'youtube';
   let duration = 0;
   let position = 0;
@@ -860,7 +894,7 @@ function togglePlayback() {
 
 function scheduleTransferRecovery(asset) {
   if (!asset || asset.version !== currentAssetVersion) return;
-  lastError = 'Connection interrupted. Reconnecting… Keep the admin tab open and awake.';
+  lastError = asset.transport === 'hotspot' ? (filePeer?.lastConnectionError || window.CineWallFilePeer?.HOTSPOT_HELP || 'Reconnect all laptops to the same hotspot and keep the admin tab open.') : 'Connection interrupted. Reconnecting… Keep the admin tab open and awake.';
   $('#waitingTitle').textContent = 'Reconnecting playback';
   $('#waitingCopy').textContent = lastError;
   $('#decoderHelpLink').hidden = true;
@@ -911,7 +945,7 @@ function mediaIsReady() {
   if (!currentState?.asset) return false;
   if (sessionMode === 'presentation') return documentReady;
   if (sessionMode === 'youtube') return youtubeReady && !youtubePlayer?.lastError;
-  return Boolean(currentAssetVersion === currentState.asset.version && !lastError && !video.error && !mediaRecoveryInFlight && Number.isFinite(video.duration) && video.readyState >= 3 && (sessionMode === 'audio' || video.videoWidth > 0 && video.videoHeight > 0));
+  return Boolean(currentAssetVersion === currentState.asset.version && mediaElementVersion === currentAssetVersion && !lastError && !video.error && !mediaRecoveryInFlight && Number.isFinite(video.duration) && video.readyState >= 3 && (sessionMode === 'audio' || video.videoWidth > 0 && video.videoHeight > 0));
 }
 
 function loadingStatus() {
@@ -963,6 +997,20 @@ function checkVideoFrames(now = Date.now()) {
   return true;
 }
 
+function updateAudioWaves() {
+  const playing = sessionMode === 'audio' && ready && !removedScreenNumber && currentState?.playing &&
+    Number(currentState.notBefore || 0) <= serverNow() && !video.paused && !video.ended && !video.error && video.readyState >= 3 && !video.seeking && !audioWaiting;
+  speakerStage.classList.toggle('playing', Boolean(playing));
+}
+
+function instantConnectionStatus() {
+  if (currentState?.asset?.source !== 'peer' || filePeer?.asset?.version !== currentState.asset.version) return 'idle';
+  const connection = filePeer.connectionStatus?.() || 'idle';
+  if (connection !== 'relay') return connection;
+  if (transferRecoveryAttempts && lastError) return 'disconnected';
+  return video.readyState >= 1 && !video.error ? 'connected' : 'searching';
+}
+
 async function postStatus() {
   if (!screenNumber) return;
   const isYouTube = sessionMode === 'youtube';
@@ -983,12 +1031,14 @@ async function postStatus() {
       body: JSON.stringify({
         clientId, screen: screenNumber, build: CLIENT_BUILD, ready, mediaReady: mediaIsReady(),
         assetVersion: sessionMode === 'presentation' ? (currentState?.asset?.version || '') : currentAssetVersion, ...loadingStatus(),
+        instantConnection: instantConnectionStatus(),
         fileName: isYouTube ? (youtubePlayer?.getVideoData()?.title || currentState?.asset?.name || '') : (currentState?.asset?.name || ''), fileSize: currentState?.asset?.size || 0,
         duration: videoDuration,
         playbackTime: playbackTime, page: currentState?.page || 0,
         paused: isYouTube ? youtubePlayer?.getState() !== 1 : video.paused,
+        ended: sessionMode === 'audio' && mediaElementVersion === currentAssetVersion && video.ended,
         playerState: isYouTube ? youtubePlayer?.getState() : null,
-        buffering: sessionMode === 'presentation' ? !documentReady : isYouTube ? youtubePlayer?.getState() === 3 : video.readyState < 3,
+        buffering: sessionMode === 'presentation' ? !documentReady : isYouTube ? youtubePlayer?.getState() === 3 : video.readyState < 3 || sessionMode === 'audio' && audioWaiting,
         autoplayMuted: localAutoplayMuted,
         error: lastError,
       }),
@@ -1036,6 +1086,7 @@ picker.addEventListener('click', (event) => {
 });
 
 readyButton.addEventListener('click', async () => {
+  if (removedScreenNumber || !screenNumber || screenNumber > wallScreens) return;
   ready = true;
   const enteringFullscreen = enterPlayerFullscreen();
   lastError = '';
@@ -1105,6 +1156,7 @@ video.addEventListener('canplay', postStatus);
 video.addEventListener('loadeddata', () => { postStatus(); updateController(); });
 video.addEventListener('progress', postStatus);
 video.addEventListener('playing', () => {
+  if (removedScreenNumber) { video.pause(); return; }
   if (sessionMode === 'audio' || video.videoWidth > 0 && video.videoHeight > 0) mediaPlayedVersion = currentAssetVersion;
   transferRecoveryAttempts = 0;
   clearTimeout(mediaLoadTimer);
@@ -1119,6 +1171,15 @@ video.addEventListener('ended', () => {
   postStatus();
 });
 video.addEventListener('timeupdate', () => { updateController(); checkVideoFrames(); });
+for (const name of ['playing', 'pause', 'ended', 'waiting', 'stalled', 'seeking', 'seeked', 'canplay', 'error', 'emptied']) {
+  video.addEventListener(name, () => {
+    if (['waiting', 'seeking'].includes(name)) audioWaiting = true;
+    else if (['playing', 'canplay', 'seeked', 'emptied'].includes(name)) audioWaiting = false;
+    updateAudioWaves();
+    if (['waiting', 'stalled', 'seeked'].includes(name)) postStatus();
+  });
+}
+window.addEventListener('cinewall-peer-status', () => postStatus());
 window.addEventListener('cinewall-peer-error', (event) => {
   if (currentState?.asset?.source !== 'peer') return;
   lastError = event.detail; $('#decoderHelpLink').hidden = true; $('#waitingTitle').textContent = 'Connection to the admin source failed'; $('#waitingCopy').textContent = event.detail; waitingAsset.classList.add('show'); postStatus();
@@ -1129,7 +1190,7 @@ video.addEventListener('error', async () => {
   const asset = currentState?.asset;
   // A file that already decoded is not suddenly an unsupported format.
   // Interrupted relay responses can surface as MEDIA_ERR_DECODE/SRC_NOT_SUPPORTED.
-  if (code === 2 || asset?.transport === 'relay' && (code === 4 || asset.version === mediaPlayedVersion && code === 3)) {
+  if (code === 2 || asset?.transport === 'hotspot' && filePeer?.lastConnectionError || asset?.transport === 'relay' && (code === 4 || asset.version === mediaPlayedVersion && code === 3)) {
     scheduleTransferRecovery(asset);
     return;
   }

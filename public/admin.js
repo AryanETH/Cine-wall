@@ -12,7 +12,7 @@ const modeConfig = {
   video: {
     label: 'Video', icon: '&#xE714;', title: 'Video room',
     source: 'Video source',
-    choose: 'Choose your video', button: 'Choose video', accept: '.mp4,.m4v,.webm,.mkv', min: 2, max: 3,
+    choose: 'Choose your video', button: 'Choose video', accept: '.mp4,.m4v,.webm,.mkv', min: 1, max: 3,
     preview: '10s preview',
   },
   audio: {
@@ -30,7 +30,7 @@ const modeConfig = {
   youtube: {
     label: 'YouTube', icon: '&#xE768;', title: 'YouTube room',
     source: 'YouTube source',
-    choose: 'Paste a YouTube link', button: 'Load YouTube', accept: '', min: 2, max: 3,
+    choose: 'Paste a YouTube link', button: 'Load YouTube', accept: '', min: 1, max: 3,
     preview: 'Preview',
   },
 };
@@ -86,7 +86,7 @@ function renderSharing() {
     button.setAttribute('aria-pressed', String(button.dataset.sharing === sharingMode));
     button.disabled = uploadBusy || isPreparing() || sourceLocked();
   });
-  $('#sourceRole').textContent = status.state.ownerId && status.state.asset?.source === 'peer' && !sourceLocked() ? 'Keep this tab open' : '';
+  $('#sourceRole').textContent = status.state.ownerId && status.state.asset?.source === 'peer' && !sourceLocked() ? (status.state.asset.transport === 'hotspot' ? 'Same Wi-Fi · Keep this tab open' : 'Keep this tab open') : '';
   $('#sourceRole').hidden = !$('#sourceRole').textContent;
   $('#adminAssetFile').disabled = sourceLocked() || uploadBusy || removeBusy || isPreparing();
   $('#removeAsset').disabled = sourceLocked() || uploadBusy || removeBusy || isPreparing();
@@ -313,9 +313,9 @@ function renderModeShell() {
   $('#sourceIcon').innerHTML = config.icon;
   $('#previewBadgeText').textContent = config.preview;
   $('#adminAssetFile').accept = config.accept;
-  $('#adminFileLabel').textContent = state.asset ? `Change ${config.label.toLowerCase()}` : config.button;
+  $('#adminAssetFile').multiple = state.sessionMode === 'audio';
+  $('#adminFileLabel').textContent = state.sessionMode === 'audio' ? 'Add songs' : state.asset ? `Change ${config.label.toLowerCase()}` : config.button;
   $('#framingPanel').hidden = state.sessionMode === 'audio';
-  $('#audioMixerPanel').hidden = state.sessionMode === 'presentation';
   $('#presenterTips').hidden = state.sessionMode !== 'presentation';
   $('#mediaControls').hidden = state.sessionMode === 'presentation';
   $('#presentationControls').hidden = state.sessionMode !== 'presentation';
@@ -357,15 +357,6 @@ function renderModeShell() {
   $('#removeAsset').disabled = uploadBusy || isPreparing() || removeBusy;
   $('#removeAsset').title = `Remove ${config.label.toLowerCase()}`;
   $('#removeAsset').setAttribute('aria-label', `Remove loaded ${config.label.toLowerCase()}`);
-  $('#youtubeAudioMode').hidden = state.sessionMode === 'presentation';
-  $('#youtubeAudioMode').querySelectorAll('[data-youtube-audio]').forEach((button) => {
-    const allSpeakers = Array.from({ length: state.screenCount }, (_, index) => audioSetting(index + 1)).every((setting) => !setting.muted);
-    const oneSpeaker = !audioSetting(1).muted && Array.from({ length: Math.max(0, state.screenCount - 1) }, (_, index) => audioSetting(index + 2)).every((setting) => setting.muted);
-    const active = button.dataset.youtubeAudio === 'all' ? allSpeakers && state.screenCount > 1 : oneSpeaker;
-    button.classList.toggle('active', active);
-    button.setAttribute('aria-pressed', String(active));
-    button.disabled = sourceLocked();
-  });
 
   $('#framingHeading').textContent = state.sessionMode === 'presentation' ? 'Page fit' : 'Picture fit';
   const framingLabels = state.sessionMode === 'presentation'
@@ -386,6 +377,20 @@ function renderModeShell() {
   }
 }
 
+function instantFeedback(screen) {
+  const state = status.state, asset = state.asset;
+  const visible = ['video', 'audio'].includes(state.sessionMode) && (asset ? asset.source === 'peer' : sharingMode === 'instant');
+  if (!visible) return { hidden: true };
+  const result = (kind, text) => ({ hidden: false, kind, text });
+  if (!screen.ready) return result('waiting', 'Open screen to connect');
+  if (!asset) return result('waiting', 'Choose a file to check');
+  if (screen.assetVersion !== asset.version) return result('searching', 'Searching for hotspot…');
+  if (screen.instantConnection === 'local') return result('local', 'On this laptop');
+  if (screen.instantConnection === 'disconnected') return result('disconnected', 'Connection lost · retrying');
+  if (screen.instantConnection === 'connected') return result('connected', asset.transport === 'hotspot' ? 'Hotspot / Wi-Fi connected' : 'Local network connected');
+  return result('searching', 'Searching for hotspot…');
+}
+
 function renderScreens() {
   const state = status.state;
   const screens = logicalScreens();
@@ -395,7 +400,7 @@ function renderScreens() {
     const fullyReady = isFullyReady(screen);
     const progress = isPreparing() ? Math.round(state.preparation.progress || 0) : fullyReady ? 100 : Math.round(screen.loadProgress || 0);
     const stateLabel = screen.error ? 'Needs attention' : !screen.ready ? 'Waiting' : isPreparing() ? `Sending ${progress}%` : !state.asset ? 'Connected' : screen.buffering ? 'Buffering' : !fullyReady ? `Loading ${progress}%` : screen.autoplayMuted ? 'Tap for sound' : 'Ready';
-    const outdated = screen.build && screen.build !== '2026.10.03-room-22';
+    const outdated = screen.build && screen.build !== '2026.10.05-feedback-28';
     const badge = card.querySelector('[data-screen-state]');
     badge.querySelector('span:last-child').textContent = stateLabel;
     card.classList.toggle('ready', fullyReady);
@@ -406,6 +411,16 @@ function renderScreens() {
     const loading = card.querySelector('progress');
     loading.value = progress;
     loading.hidden = !isPreparing() && (!state.asset || fullyReady || !screen.ready);
+    const connection = card.querySelector('[data-instant-state]');
+    if (connection) {
+      const feedback = instantFeedback(screen);
+      connection.hidden = feedback.hidden;
+      if (!feedback.hidden) {
+        connection.dataset.connection = feedback.kind;
+        connection.querySelector('[data-instant-label]').textContent = feedback.text;
+        connection.title = 'Instant sharing connection. All laptops need the same hotspot or Wi-Fi and room link.';
+      }
+    }
   });
 }
 
@@ -438,6 +453,7 @@ function renderLinks() {
     return `<article class="screen-link-card" data-speaker="${number}">
       <div class="screen-identity"><span class="screen-role-icon fi">&#xE7F4;</span><span class="display-number">${number}</span><div><strong>${noun === 'speaker' ? 'Speaker' : 'Screen'} ${number}</strong><small>${escapeHtml(device)}</small></div></div>
       <span class="screen-status" data-screen-state><span class="status-dot"></span><span>Waiting</span></span>
+      <span class="instant-status" data-instant-state role="status" hidden><span class="status-dot" aria-hidden="true"></span><span data-instant-label></span></span>
       <div class="link-actions"><a href="${escapeHtml(url)}" target="_blank" rel="noopener" aria-label="Open ${noun} ${number}"><span class="fi">&#xE8A7;</span>Open</a><button data-copy-link="${escapeHtml(url)}" title="Copy link" aria-label="Copy ${noun} ${number} link"><span class="fi">&#xE8C8;</span></button></div>
       <div class="screen-volume"${state.sessionMode === 'presentation' ? ' hidden' : ''}><button data-mute-screen="${number}" class="mini-icon-button" aria-label="Mute ${noun} ${number}"><span class="fi">&#xE767;</span></button><input data-volume-screen="${number}" type="range" min="0" max="1" step="0.01" value="1" aria-label="${noun} ${number} volume"><output class="visually-hidden">100%</output></div>
       ${removable ? `<button class="remove-screen-button" data-remove-display="${number}" title="Remove ${noun}" aria-label="Remove ${noun} ${number}"><span class="fi">&#xE711;</span></button>` : ''}
@@ -661,7 +677,15 @@ function applyPreviewVolume() {
   media.muted = true;
 }
 
+function updateAudioWaves() {
+  const state = status.state;
+  const playing = state.sessionMode === 'audio' && Boolean(state.asset && state.playing) && Number(state.notBefore || 0) <= Date.now() + serverOffset &&
+    logicalScreens().some(screen => isFullyReady(screen) && screen.paused === false && !screen.buffering);
+  $('#audioPreview').classList.toggle('playing', playing);
+}
+
 function syncPreview() {
+  updateAudioWaves();
   const state = status.state;
   if (state.sessionMode === 'video') return;
   // A selected local file is a silent still preview, never a second playback instance.
@@ -691,6 +715,8 @@ function render() {
   renderMixer();
   renderPlayer();
   renderPreparation();
+  audioQueue.render();
+  audioQueue.queue.observe(status.state, status.screens);
 }
 
 function showGestureFeedback(direction) {
@@ -757,10 +783,6 @@ $('#addDisplay').addEventListener('click', () => {
 $('#modeControls').addEventListener('click', (event) => {
   const button = event.target.closest('[data-mode]');
   if (button) command({ type: 'mode', mode: button.dataset.mode });
-});
-$('#youtubeAudioMode').addEventListener('click', (event) => {
-  const button = event.target.closest('[data-youtube-audio]');
-  if (button) command({ type: 'audio-output', output: button.dataset.youtubeAudio === 'all' ? 'all' : 'single' });
 });
 
 timeline.addEventListener('pointerdown', () => { scrubbing = true; });
@@ -832,18 +854,33 @@ screenLinks.addEventListener('click', (event) => {
 });
 
 $('#adminAssetFile').addEventListener('change', () => {
-  const file = $('#adminAssetFile').files[0];
-  if (!file) return;
-  uploadFile(file);
+  const files = Array.from($('#adminAssetFile').files);
+  $('#adminAssetFile').value = '';
+  if (!files.length) return;
+  if (status.state.sessionMode === 'audio') void audioQueue.queue.add(files);
+  else void uploadFile(files[0]);
 });
 
 $('#playlistFiles').addEventListener('change', () => {
   const files = Array.from($('#playlistFiles').files);
-  if (files.length === 0) return;
-  warning.classList.remove('show');
-  warning.textContent = `Playlist feature coming soon! Selected ${files.length} file(s). For now, use "Choose audio" to play one file at a time.`;
-  warning.classList.add('show');
   $('#playlistFiles').value = '';
+  if (files.length) void audioQueue.queue.add(files);
+});
+
+const audioQueue = window.CineWallAudioQueue.attach({
+  state: () => status.state,
+  locked: sourceLocked,
+  blocked: () => sourceLocked() || uploadBusy || removeBusy || isPreparing() || status.state.sessionMode !== 'audio',
+  validate: (file) => window.CineWallVideoFile.validateAudio(file),
+  load: (file) => uploadFile(file, { validated: true }),
+  removeCurrent: async () => {
+    if (!status.state.asset) return true;
+    const removed = await command({ type: 'clear-asset', assetVersion: status.state.asset.version });
+    if (removed) { filePeer?.clear(); releaseLocalPreview(); return true; }
+    return false;
+  },
+  play: async (version) => status.state.asset?.version === version ? command({ type: 'play', position: 0 }) : null,
+  error: (message) => { warning.textContent = message; warning.classList.add('show'); },
 });
 
 $('#removeAsset').addEventListener('click', async () => {
@@ -853,6 +890,7 @@ $('#removeAsset').addEventListener('click', async () => {
   try {
     const result = await command({ type: 'clear-asset', assetVersion: status.state.asset.version });
     if (result) {
+      audioQueue.queue.clear();
       filePeer?.clear();
       $('#adminAssetFile').value = '';
       $('#youtubeUrl').value = '';
@@ -886,7 +924,8 @@ async function shareLocalFile(file) {
   previewLocalFile(file, status.state.sessionMode);
   render();
   try {
-    const state = await filePeer.publish(file, Number.isFinite(media.duration) ? media.duration : 0, { relay: true });
+    const localOnly = Boolean(window.CineWallSession?.hosted);
+    const state = await filePeer.publish(file, Number.isFinite(media.duration) ? media.duration : 0, { relay: !localOnly, localOnly });
     status.state = state;
     if (localPreview) {
       localPreview.pending = false;
@@ -897,13 +936,15 @@ async function shareLocalFile(file) {
     }
     updateServerTime(state);
     $('#adminAssetFile').value = '';
+    return state;
   } catch (error) {
     releaseLocalPreview(); warning.textContent = error.message; warning.classList.add('show');
+    return null;
   } finally { uploadBusy = false; render(); }
 }
 
 // Shared upload function
-async function uploadFile(file) {
+async function uploadFile(file, { validated = false } = {}) {
   if (!file || uploadBusy || removeBusy) return;
   if (sourceLocked()) { warning.textContent = 'Wait until the admin removes its file.'; warning.classList.add('show'); return; }
   if (isPreparing()) { renderPreparation(); return; }
@@ -926,7 +967,7 @@ async function uploadFile(file) {
     warning.classList.remove('show');
     try {
       if (!window.CineWallVideoFile) throw new Error('Reload CineWall and choose the file again.');
-      await window.CineWallVideoFile[kind === 'video' ? 'validate' : 'validateAudio'](file);
+      if (!validated) await window.CineWallVideoFile[kind === 'video' ? 'validate' : 'validateAudio'](file);
     }
     catch (error) {
       warning.textContent = error.message || VIDEO_FORMAT_HELP;
@@ -938,7 +979,7 @@ async function uploadFile(file) {
     if (status.state.sessionMode !== kind) return;
   }
   const needsNetworkCopy = sharingMode === 'server';
-  if (['video', 'audio'].includes(kind) && filePeer && !needsNetworkCopy) { shareLocalFile(file); return; }
+  if (['video', 'audio'].includes(kind) && filePeer && !needsNetworkCopy) return shareLocalFile(file);
   uploadBusy = true;
   clearTimeout(uploadHideTimer);
   previewLocalFile(file, kind);
@@ -950,6 +991,7 @@ async function uploadFile(file) {
   $('#uploadCopy').textContent = kind === 'presentation' ? 'Opening document' : 'Sending file to screens';
   warning.classList.remove('show');
 
+  return new Promise((resolve) => {
   const request = new XMLHttpRequest();
   request.open('POST', `/api/media?kind=${encodeURIComponent(kind)}&name=${encodeURIComponent(file.name)}`);
   request.setRequestHeader('Content-Type', file.type || 'application/octet-stream');
@@ -974,6 +1016,7 @@ async function uploadFile(file) {
     warning.textContent = message;
     warning.classList.add('show');
     $('#adminAssetFile').value = '';
+    resolve(null);
   };
   request.addEventListener('load', () => {
     let result;
@@ -986,6 +1029,7 @@ async function uploadFile(file) {
       $('#adminAssetFile').value = '';
       render();
       renderPreparation();
+      resolve(null);
       return;
     }
     if (request.status < 200 || request.status >= 300 || !result.state?.asset) {
@@ -1008,10 +1052,12 @@ async function uploadFile(file) {
     uploadHideTimer = setTimeout(() => { $('#uploadProgressWrap').hidden = true; }, 1800);
     $('#adminAssetFile').value = '';
     render();
+    resolve(result.state);
   });
   request.addEventListener('error', () => failUpload('The file transfer failed. Keep the CineWall server open and try again.'));
   request.addEventListener('abort', () => failUpload('Upload cancelled. Choose the file again to retry.'));
   request.send(file);
+  });
 }
 
 // Drag and Drop functionality
@@ -1063,6 +1109,7 @@ function handleFileDrop(file) {
 
 // Highlight drop zone when file is dragged over the source panel
 sourcePanel.addEventListener('dragenter', (e) => {
+  if (Array.from(e.dataTransfer?.types || []).includes('text/x-cinewall-song')) return;
   if (sourceLocked() || status.state.sessionMode === 'youtube' || uploadBusy || isPreparing()) return;
   sourcePanel.classList.add('drag-active');
   dropZone.classList.add('drag-over');
@@ -1076,6 +1123,7 @@ sourcePanel.addEventListener('dragleave', (e) => {
 });
 
 sourcePanel.addEventListener('dragover', (e) => {
+  if (Array.from(e.dataTransfer?.types || []).includes('text/x-cinewall-song')) return;
   if (sourceLocked() || status.state.sessionMode === 'youtube' || uploadBusy || isPreparing()) return;
   e.dataTransfer.dropEffect = 'copy';
 });
@@ -1089,7 +1137,8 @@ sourcePanel.addEventListener('drop', (e) => {
   const files = e.dataTransfer.files;
   if (files.length > 0) {
     window.CineWallDownloadPanel?.chooseSource(false);
-    handleFileDrop(files[0]);
+    if (status.state.sessionMode === 'audio') void audioQueue.queue.add(files);
+    else handleFileDrop(files[0]);
   } else if (['video', 'audio'].includes(status.state.sessionMode)) {
     const link = (e.dataTransfer.getData('text/uri-list') || e.dataTransfer.getData('text/plain')).trim();
     try {

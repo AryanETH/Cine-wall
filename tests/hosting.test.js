@@ -72,8 +72,14 @@ test('hosted server separates sessions, signals only within a room, and stores n
   assert.equal((await api('/api/status', roomA)).data.state.asset, null);
   const mkv = await api('/api/local-source', roomA, { ...metadata, name: 'compatible.mkv', type: 'video/x-matroska', codecs: ['V_MPEG4/ISO/AVC', 'A_AAC'] });
   assert.equal(mkv.status, 200); assert.equal(mkv.data.state.asset.type, 'video/x-matroska');
-  const published = await api('/api/local-source', roomA, metadata);
+  const published = await api('/api/local-source', roomA, { ...metadata, localOnly: true, relay: true });
   assert.equal(published.status, 200); assert.equal(published.data.state.asset.source, 'peer'); assert.equal(published.data.state.asset.size, metadata.size);
+  assert.equal(published.data.state.asset.transport, 'hotspot', 'local-only takes precedence over relay');
+  for (const route of ['/api/media/stream', '/api/movie/stream']) {
+    const url = `${base}${route}?room=${roomA}&v=${published.data.state.asset.version}`;
+    for (const method of ['GET', 'HEAD']) assert.equal((await fetch(url, { method })).status, 409, 'hotspot files cannot be forwarded through the host');
+  }
+  assert.equal((await api('/api/source/range?id=never-relayed', roomA, {})).status, 409);
   const listing = fs.readdirSync(path.join(temporary, 'rooms', roomA));
   assert.deepEqual(listing, ['session.json']);
   assert.ok(fs.statSync(path.join(temporary, 'rooms', roomA, 'session.json')).size < 10000);

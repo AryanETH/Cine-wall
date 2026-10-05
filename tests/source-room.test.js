@@ -116,10 +116,18 @@ test('hotspot room elects one source, blocks replacements, relays original range
   assert.equal((await play()).status, 409);
   await joined(2, assetVersion, { buffering: true }); assert.equal((await play()).status, 409);
   await joined(2); assert.equal((await play()).status, 200);
+  await joined(2, assetVersion, { instantConnection: 'connected' });
+  assert.equal((await api('/api/status')).data.screens.find(screen => screen.screen === 2).instantConnection, 'connected');
+  await joined(2, assetVersion, { instantConnection: '<script>not a valid state</script>' });
+  assert.equal((await api('/api/status')).data.screens.find(screen => screen.screen === 2).instantConnection, 'idle');
   assert.equal((await api('/api/status')).data.screens.find((screen) => screen.screen === 2).deviceId, other.id);
   await api('/api/command', winner, { type: 'pause' });
   await api('/api/command', winner, { type: 'layout', screenCount: 3 }); assert.equal((await play()).status, 409);
   await joined(3); assert.equal((await play()).status, 200);
+  const soloLayout = await api('/api/command', winner, { type: 'layout', screenCount: 1 });
+  assert.equal(soloLayout.status, 200); assert.equal(soloLayout.data.command.screenCount, 1);
+  assert.equal(soloLayout.data.command.playing, true, 'removing remote displays preserves admin playback');
+  assert.equal((await play()).status, 200, 'removed screens no longer gate admin readiness');
   await api('/api/command', winner, { type: 'clear-asset', assetVersion });
   assert.equal((await api('/api/status')).data.state.ownerId, '');
   const nextClaim = await api('/api/source/claim', other, {}); assert.equal(nextClaim.status, 200);

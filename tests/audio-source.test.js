@@ -97,6 +97,7 @@ test('audio file and YouTube link drops handle missing MIME and mixed-case exten
   };
   const context = vm.createContext({ $, warning: $('#fileWarning'), status: { state: { sessionMode: 'audio' } }, uploadBusy: false, isPreparing: () => false, sourceLocked: () => false,
     document: { body: { addEventListener() {} } }, uploadFile: (file) => loaded.push(file.name), URL,
+    audioQueue: { queue: { add: (files) => loaded.push(...Array.from(files).filter(file => /\.(mp3|aac|wav|m4a|flac|oga)$/i.test(file.name)).map(file => file.name)) } },
     window: { CineWallDownloadPanel: { chooseSource: (open) => sources.push(open) } },
   });
   vm.runInContext(code.slice(code.indexOf('// Drag and Drop functionality'), code.indexOf("$('#youtubeSourceForm').addEventListener")), context);

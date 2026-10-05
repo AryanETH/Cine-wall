@@ -8,17 +8,17 @@
   <script src="icons.js?v=20261002-icons-18"></script>
   <script src="theme.js"></script>
   <script src="session.js?v=20261003-sharing-19"></script>
-  <script src="media-peer.js?v=20261003-stream-20"></script>
+  <script src="media-peer.js?v=20261005-feedback-28"></script>
   <script src="video-validation.js?v=20261002-mkv-17"></script>
-  <link rel="stylesheet" href="styles.css?v=20261004-tutorial-23">
-  <link rel="stylesheet" href="studio.css?v=20261004-studio-25">
+  <link rel="stylesheet" href="styles.css?v=20261005-feedback-28">
+  <link rel="stylesheet" href="studio.css?v=20261005-queue-29">
 </head>
 <body class="admin-body studio-body" data-session-mode="video">
   <main class="app-shell">
     <header class="app-nav">
       <a class="brand-lockup" href="/" aria-label="Choose another CineWall mode">
         <span class="brand-icon" aria-hidden="true"><img src="/assets/removed_background (24).png" alt="CineWall Logo"></span>
-        <span><strong>CINEWALL</strong></span>
+        <span><strong>CINEWALL</strong><small>Multi-screen studio</small></span>
       </a>
       <div class="nav-actions">
         <a class="mode-switch" href="/" title="Switch mode"><span id="modeSwitchIcon" class="fi">&#xE714;</span><span id="modeSwitchLabel">Video</span></a>
@@ -109,7 +109,7 @@
         <div id="sharingPanel" class="sharing-panel">
           <h3>File sharing</h3>
           <div id="sharingOptions" class="segmented source-selector" role="group" aria-label="File sharing">
-            <button type="button" class="active" data-sharing="instant" aria-pressed="true" title="Play directly from this laptop. Keep this tab open.">Instant</button>
+            <button type="button" class="active" data-sharing="instant" aria-pressed="true" title="Share over the same hotspot or Wi-Fi. Keep this tab open.">Instant</button>
             <button type="button" data-sharing="server" aria-pressed="false" title="Upload a copy before playing.">Upload</button>
           </div>
         </div>
@@ -117,6 +117,11 @@
           <input id="playlistFiles" type="file" accept="audio/*,.flac,.m4a,.aac,.ogg" multiple>
           <span class="fi">&#xE90B;</span><span>Add to playlist</span>
         </label>
+        <section id="audioQueue" class="audio-queue" aria-label="Songs" hidden>
+          <div class="audio-queue-heading"><h3>Songs</h3><span id="audioQueueCount">0 / 10</span></div>
+          <p class="audio-queue-hint">Drag songs to change the order.</p>
+          <ol id="audioQueueList" aria-label="Song order"></ol>
+        </section>
         <form id="youtubeSourceForm" class="youtube-source-form" hidden>
           <label for="youtubeUrl">YouTube URL</label>
           <div class="youtube-url-row">
@@ -139,12 +144,6 @@
           <select id="viewerScreenSelect" aria-label="Choose this laptop's screen"></select>
           <button id="openViewerScreen" class="button accent" type="button"><span class="fi" aria-hidden="true">&#xE8A7;</span>Open screen</button>
         </div>
-        <article id="audioMixerPanel" class="sound-panel">
-          <h3>Sound</h3>
-          <div id="youtubeAudioMode" class="segmented" hidden aria-label="Audio output">
-            <button data-youtube-audio="admin" title="Avoid echo with one speaker">This laptop</button><button data-youtube-audio="all">All screens</button>
-          </div>
-        </article>
         <details id="settings" class="studio-settings">
           <summary><span class="fi" aria-hidden="true">&#xE713;</span>Settings</summary>
           <div id="framingPanel">
@@ -222,7 +221,8 @@
     </div>
 
   </main>
-  <script src="admin.js?v=20261004-studio-25"></script>
+  <script src="audio-queue.js?v=20261005-queue-29"></script>
+  <script src="admin.js?v=20261005-queue-29"></script>
   <script src="youtube-download.js?v=20261004-studio-25"></script>
 </body>
 </html>

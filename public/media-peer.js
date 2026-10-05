@@ -1,6 +1,22 @@
 'use strict';
 (() => {
   const uuid = () => crypto.randomUUID?.() || '10000000-1000-4000-8000-100000000000'.replace(/[018]/g, (c) => (c ^ crypto.getRandomValues(new Uint8Array(1))[0] & 15 >> c / 4).toString(16));
+  const HOTSPOT_HELP = 'Instant needs all laptops on the same hotspot or Wi-Fi. Keep the admin tab open. Allow local network access if asked, or choose Upload instead.';
+  function localAddress(address) {
+    const value = String(address || '').toLowerCase().replace(/^\[|\]$/g, '');
+    if (/^[a-z0-9-]+\.local\.?$/.test(value) || value === '::1') return true;
+    if (/^(fc|fd)[a-f0-9]{2}:/.test(value) || /^fe[89ab][a-f0-9]:/.test(value)) return true;
+    const octets = value.split('.').map(Number);
+    return /^\d+\.\d+\.\d+\.\d+$/.test(value) && octets.every(n => n >= 0 && n <= 255) &&
+      (octets[0] === 10 || octets[0] === 127 || octets[0] === 192 && octets[1] === 168 || octets[0] === 172 && octets[1] >= 16 && octets[1] <= 31 || octets[0] === 169 && octets[1] === 254);
+  }
+  function hotspotCandidate(candidate) {
+    const fields = String(candidate?.candidate || candidate || '').trim().replace(/^a=/, '').split(/\s+/);
+    return fields[7] === 'host' && fields[6] === 'typ' && localAddress(fields[4]);
+  }
+  function hotspotDescription(description) {
+    return { type: description.type, sdp: description.sdp.split(/\r?\n/).filter(line => !line.startsWith('a=candidate:') || hotspotCandidate(line)).join('\r\n') };
+  }
   const mediaTypes = { mkv: 'video/x-matroska', mp4: 'video/mp4', mov: 'video/quicktime', m4v: 'video/mp4', webm: 'video/webm', mp3: 'audio/mpeg', wav: 'audio/wav', m4a: 'audio/mp4', aac: 'audio/aac', ogg: 'audio/ogg', oga: 'audio/ogg', flac: 'audio/flac' };
   function mediaType(file) {
     // Windows file associations can label MKV as video/mkv or application/octet-stream.
@@ -82,17 +98,18 @@
       this.id = uuid(); this.file = null; this.asset = null; this.connections = new Map(); this.connectionTasks = new Map(); this.waiting = new Map(); this.sequence = 0; this.generation = 0;
       this.fileUrls = new Map(); this.localSource = ''; this.playbackType = null;
       this.sourceReplies = new Set();
+      this.lastConnectionError = '';
       this.local = new BroadcastChannel(`cinewall-file-${window.CineWallSession?.room || 'lan'}`);
       this.local.onmessage = (event) => this.onLocal(event.data);
       this.events = new EventSource(`/events?peer=${this.id}`);
       this.events.addEventListener('state', (event) => {
         const asset = JSON.parse(event.data).asset;
-        if (this.file && asset?.peerId === this.id && asset.fingerprint === this.publishingFingerprint) this.asset = asset;
+        if (this.file && asset?.peerId === this.id && asset.fingerprint === this.publishingFingerprint) { this.asset = asset; this.notifyConnectionStatus(); }
       });
       this.events.addEventListener('peer-signal', (event) => this.onSignal(JSON.parse(event.data)).catch((error) => this.report(error)));
       this.events.addEventListener('source-range', async (event) => {
         const request = JSON.parse(event.data);
-        if (!this.file || request.version !== this.asset?.version || !Number.isSafeInteger(request.start) || !Number.isSafeInteger(request.end) || request.start < 0 || request.end < request.start || request.end >= this.file.size || request.end - request.start >= 512 * 1024) return;
+        if (this.asset?.transport !== 'relay' || !this.file || request.version !== this.asset?.version || !Number.isSafeInteger(request.start) || !Number.isSafeInteger(request.end) || request.start < 0 || request.end < request.start || request.end >= this.file.size || request.end - request.start >= 512 * 1024) return;
         if (this.sourceReplies.has(request.id)) return;
         this.sourceReplies.add(request.id);
         try {
@@ -117,14 +134,29 @@
         }).then((data) => port.postMessage(data, data.buffer ? [data.buffer] : [])).catch((error) => { if (event.data.version === this.asset?.version) this.report(error); port.postMessage({ error: error.message }); });
       });
     }
-    report(error) { window.dispatchEvent(new CustomEvent('cinewall-peer-error', { detail: error.message })); }
+    connectionStatus() {
+      if (!this.asset) return 'idle';
+      if (this.file || this.localSource) return 'local';
+      const peer = this.connections.get(this.asset.peerId);
+      if (peer && !peer.closed && peer.pc.connectionState === 'connected' && peer.channel?.readyState === 'open' && (!peer.localOnly || peer.hotspotVerified)) return 'connected';
+      if (this.lastConnectionError || peer && (peer.closed || ['disconnected', 'failed', 'closed'].includes(peer.pc.connectionState) || peer.channel?.readyState === 'closed')) return 'disconnected';
+      return this.asset.transport === 'relay' ? 'relay' : 'searching';
+    }
+    notifyConnectionStatus() {
+      const state = this.connectionStatus(), version = this.asset?.version || '', key = `${version}:${state}`;
+      if (this.connectionStatusKey === key) return;
+      this.connectionStatusKey = key;
+      window.dispatchEvent(new CustomEvent('cinewall-peer-status', { detail: { state, version } }));
+    }
+    report(error) { this.lastConnectionError = error.message; this.notifyConnectionStatus(); window.dispatchEvent(new CustomEvent('cinewall-peer-error', { detail: error.message })); }
     async request(route, body) { const response = await fetch(route, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }); const data = await response.json(); if (!response.ok) throw new Error(data.error); return data; }
-    async publish(file, duration = 0, { relay = false } = {}) {
+    async publish(file, duration = 0, { relay = false, localOnly = false } = {}) {
+      if (localOnly && (!window.isSecureContext || !navigator.serviceWorker || typeof RTCPeerConnection !== 'function')) throw new Error('Open CineWall using HTTPS in Chrome or Edge for Instant sharing. You can also choose Upload.');
       this.clear(); this.file = file; this.fileUrl = this.localUrl();
       this.publishingFingerprint = await fingerprint(file);
       const codecs = await inspectCodecs(file);
-      const result = await this.request('/api/local-source', { peerId: this.id, name: file.name, size: file.size, type: mediaType(file), duration, codecs, fingerprint: this.publishingFingerprint, relay });
-      this.asset = result.state.asset; return result.state;
+      const result = await this.request('/api/local-source', { peerId: this.id, name: file.name, size: file.size, type: mediaType(file), duration, codecs, fingerprint: this.publishingFingerprint, relay: localOnly ? false : relay, localOnly });
+      this.asset = result.state.asset; this.notifyConnectionStatus(); return result.state;
     }
     localUrl(type = mediaType(this.file)) {
       if (!this.fileUrls.has(type)) this.fileUrls.set(type, URL.createObjectURL(mediaBlob(this.file, type)));
@@ -139,6 +171,7 @@
       for (const url of this.fileUrls.values()) URL.revokeObjectURL(url);
       this.fileUrls.clear(); this.localSource = ''; this.playbackType = null;
       this.fileUrl = ''; this.file = null; this.asset = null; this.publishingFingerprint = '';
+      this.lastConnectionError = '';
     }
     async open(asset, { ranged = false, type = mediaType(asset), retry = 0 } = {}) {
       if (this.asset?.version !== asset.version) { this.clear(); this.asset = asset; }
@@ -157,7 +190,7 @@
         const route = `/api/media/stream?v=${encodeURIComponent(asset.version)}&retry=${retry}`;
         return window.CineWallSession?.link(route) || route;
       }
-      if (!navigator.serviceWorker || !window.isSecureContext) throw new Error('Reload the dashboard and choose the file again to send it to this screen.');
+      if (!navigator.serviceWorker || !window.isSecureContext) throw new Error(this.asset?.transport === 'hotspot' ? 'Open this screen using the HTTPS room link in Chrome or Edge, or ask the admin to choose Upload.' : 'Reload the dashboard and choose the file again to send it to this screen.');
       const registration = await navigator.serviceWorker.register('/media-worker.js', { updateViaCache: 'none' });
       const incoming = registration?.installing || registration?.waiting;
       if (incoming && incoming.state !== 'activated') await new Promise((resolve, reject) => {
@@ -176,6 +209,12 @@
         navigator.serviceWorker.addEventListener('controllerchange', changed); changed();
       });
       if (generation !== this.generation) throw new Error('The selected movie changed');
+      // Fail before assigning a media URL when the hotspot cannot connect, so a
+      // network failure is never misreported as an unsupported movie format.
+      if (!this.file && !this.localSource && asset.transport === 'hotspot') {
+        try { await this.connect(asset.peerId); this.lastConnectionError = ''; this.notifyConnectionStatus(); }
+        catch (error) { if (generation === this.generation) this.report(error); throw error; }
+      }
       const route = `/__cinewall_peer__/${asset.version}?attempt=${retry}`;
       return window.CineWallSession?.link(route) || route;
     }
@@ -217,8 +256,8 @@
       if (generation !== this.generation) throw new Error('The selected movie changed');
       const id = ++this.sequence;
       return new Promise((resolve, reject) => {
-        const timer = setTimeout(() => { this.waiting.delete(`rtc-${id}`); reject(new Error('The connection to the admin source timed out. Keep the admin tab open and check network access between the Devices.')); }, 20000);
-        this.waiting.set(`rtc-${id}`, { resolve, reject, timer, chunks: [], expected: end - start, received: 0 });
+        const timer = setTimeout(() => { this.waiting.delete(`rtc-${id}`); reject(new Error(asset.transport === 'hotspot' ? HOTSPOT_HELP : 'The connection to the admin source timed out. Keep the admin tab open and check network access between the Devices.')); }, 20000);
+        this.waiting.set(`rtc-${id}`, { resolve, reject, timer, peerId: asset.peerId, chunks: [], expected: end - start, received: 0 });
         try { peer.channel.send(JSON.stringify({ type: 'range', id, version: asset.version, start, end })); }
         catch (error) { clearTimeout(timer); this.waiting.delete(`rtc-${id}`); reject(error); }
       });
@@ -226,16 +265,40 @@
     async makePeer(id, offer) {
       const generation = this.generation;
       if (this.connections.size + this.connectionTasks.size > 8) throw new Error('Too many file connections');
-      const info = await fetch('/api/info').then((r) => r.json());
+      const localOnly = this.asset?.transport === 'hotspot';
+      const info = localOnly ? {} : await fetch('/api/info').then((r) => r.json());
       if (generation !== this.generation) throw new Error('The selected movie changed');
-      const pc = new RTCPeerConnection({ iceServers: info.iceServers || [] });
-      const peer = { pc, channel: null, candidates: [], queue: Promise.resolve(), queued: 0, closed: false }; this.connections.set(id, peer);
-      pc.onicecandidate = (event) => { if (event.candidate && !peer.closed) this.request('/api/peer-signal', { from: this.id, to: id, candidate: event.candidate }).catch((error) => { if (!peer.closed) this.report(error); }); };
-      pc.onconnectionstatechange = () => { if (!peer.closed && ['failed', 'closed'].includes(pc.connectionState)) { this.connections.delete(id); this.report(new Error('Connection to the admin source was lost. Keep the admin tab open and check network access between the Devices.')); } };
-      const bind = (channel) => { peer.channel = channel; channel.binaryType = 'arraybuffer'; channel.bufferedAmountLowThreshold = 128 * 1024; channel.onmessage = (event) => this.onData(peer, event.data); };
+      // Hotspot media must never use a STUN public route or a TURN relay.
+      const pc = new RTCPeerConnection({ iceServers: localOnly ? [] : info.iceServers || [], iceCandidatePoolSize: 0 });
+      const peer = { pc, localOnly, channel: null, candidates: [], queue: Promise.resolve(), queued: 0, closed: false }; this.connections.set(id, peer);
+      pc.onicecandidate = (event) => { if (event.candidate && !peer.closed && (!localOnly || hotspotCandidate(event.candidate))) this.request('/api/peer-signal', { from: this.id, to: id, candidate: event.candidate }).catch((error) => { if (!peer.closed) this.report(error); }); };
+      pc.onconnectionstatechange = () => { if (!peer.closed && ['failed', 'closed'].includes(pc.connectionState)) {
+        this.dropPeer(id, peer);
+        this.report(new Error(localOnly ? HOTSPOT_HELP : 'Connection to the admin source was lost. Keep the admin tab open and check network access between the Devices.'));
+      } this.notifyConnectionStatus(); };
+      const bind = (channel) => { peer.channel = channel; channel.binaryType = 'arraybuffer'; channel.bufferedAmountLowThreshold = 128 * 1024; channel.onmessage = (event) => this.onData(peer, event.data); channel.onopen = channel.onclose = () => this.notifyConnectionStatus(); };
       pc.ondatachannel = (event) => bind(event.channel);
-      if (offer) { bind(pc.createDataChannel('movie-ranges', { ordered: true })); await pc.setLocalDescription(await pc.createOffer()); await this.request('/api/peer-signal', { from: this.id, to: id, description: pc.localDescription }); }
+      if (offer) { bind(pc.createDataChannel('movie-ranges', { ordered: true })); await pc.setLocalDescription(await pc.createOffer()); await this.request('/api/peer-signal', { from: this.id, to: id, description: localOnly ? hotspotDescription(pc.localDescription) : pc.localDescription }); }
+      this.notifyConnectionStatus();
       return peer;
+    }
+    dropPeer(id, peer) {
+      peer.closed = true; peer.pc.close();
+      if (this.connections.get(id) === peer) this.connections.delete(id);
+      for (const [key, item] of this.waiting) if (item.peerId === id) { clearTimeout(item.timer); this.waiting.delete(key); item.reject(new Error(peer.localOnly ? HOTSPOT_HELP : 'Display disconnected')); }
+    }
+    async checkHotspotRoute(peer) {
+      if (!peer.localOnly) return;
+      const stats = await peer.pc.getStats();
+      const transport = [...stats.values()].find(item => item.type === 'transport' && item.selectedCandidatePairId);
+      const pair = transport ? stats.get(transport.selectedCandidatePairId) : [...stats.values()].find(item => item.type === 'candidate-pair' && item.state === 'succeeded' && item.nominated);
+      if (!pair) throw new Error(HOTSPOT_HELP);
+      const candidates = [stats.get(pair.localCandidateId), stats.get(pair.remoteCandidateId)];
+      // Browsers can hide mDNS addresses in stats. The host type must still be
+      // present; when an address is exposed, require a local-network address.
+      if (candidates.some(item => !item || item.candidateType !== 'host' || item.address && !localAddress(item.address))) throw new Error(HOTSPOT_HELP);
+      peer.hotspotVerified = true;
+      this.notifyConnectionStatus();
     }
     async getPeer(id, offer) {
       if (this.connections.has(id)) return this.connections.get(id);
@@ -248,7 +311,8 @@
     async connect(id) {
       const peer = await this.getPeer(id, true);
       const deadline = Date.now() + 15000;
-      while (peer.channel?.readyState !== 'open') { if (Date.now() > deadline || ['failed', 'closed'].includes(peer.pc.connectionState)) throw new Error('Direct connection to the admin source is unavailable. Keep the admin tab open and check network access between the Devices.'); await new Promise((resolve) => setTimeout(resolve, 50)); }
+      while (peer.channel?.readyState !== 'open') { if (Date.now() > deadline || peer.closed || ['failed', 'closed'].includes(peer.pc.connectionState)) { this.dropPeer(id, peer); throw new Error(peer.localOnly ? HOTSPOT_HELP : 'Direct connection to the admin source is unavailable. Keep the admin tab open and check network access between the Devices.'); } await new Promise((resolve) => setTimeout(resolve, 50)); }
+      try { await this.checkHotspotRoute(peer); } catch (error) { this.dropPeer(id, peer); throw error; }
       return peer;
     }
     async onSignal(data) {
@@ -256,10 +320,10 @@
       const peer = await this.getPeer(data.from, false);
       peer.signalQueue = (peer.signalQueue || Promise.resolve()).then(async () => {
       if (data.description) {
-        await peer.pc.setRemoteDescription(data.description);
+        await peer.pc.setRemoteDescription(peer.localOnly ? hotspotDescription(data.description) : data.description);
         for (const candidate of peer.candidates.splice(0)) await peer.pc.addIceCandidate(candidate);
-        if (data.description.type === 'offer') { await peer.pc.setLocalDescription(await peer.pc.createAnswer()); await this.request('/api/peer-signal', { from: this.id, to: data.from, description: peer.pc.localDescription }); }
-      } else if (data.candidate) { if (peer.pc.remoteDescription) await peer.pc.addIceCandidate(data.candidate); else if (peer.candidates.length < 128) peer.candidates.push(data.candidate); }
+        if (data.description.type === 'offer') { await peer.pc.setLocalDescription(await peer.pc.createAnswer()); await this.request('/api/peer-signal', { from: this.id, to: data.from, description: peer.localOnly ? hotspotDescription(peer.pc.localDescription) : peer.pc.localDescription }); }
+      } else if (data.candidate && (!peer.localOnly || hotspotCandidate(data.candidate))) { if (peer.pc.remoteDescription) await peer.pc.addIceCandidate(data.candidate); else if (peer.candidates.length < 128) peer.candidates.push(data.candidate); }
       });
       return peer.signalQueue;
     }
@@ -272,7 +336,7 @@
         if (message.type === 'range') {
           if (peer.queued >= 8) throw new Error('Too many pending ranges');
           peer.queued++;
-          peer.queue = peer.queue.then(() => this.sendRange(peer.channel, message)).catch((error) => { if (peer.channel.readyState === 'open') peer.channel.send(JSON.stringify({ type: 'error', id: message.id, error: error.message })); }).finally(() => { peer.queued--; });
+          peer.queue = peer.queue.then(async () => { await this.checkHotspotRoute(peer); await this.sendRange(peer.channel, message); }).catch((error) => { if (peer.channel.readyState === 'open') peer.channel.send(JSON.stringify({ type: 'error', id: message.id, error: error.message })); }).finally(() => { peer.queued--; });
         }
         if (message.type === 'end' || message.type === 'error') {
           const item = this.waiting.get(`rtc-${message.id}`); if (!item) return; clearTimeout(item.timer); this.waiting.delete(`rtc-${message.id}`);
@@ -304,5 +368,5 @@
       channel.send(JSON.stringify({ type: 'end', id: request.id }));
     }
   }
-  window.CineWallFilePeer = { FilePeer, fingerprint, sha256, mediaType, mediaBlob, matroskaCodecs, inspectCodecs, codecSummary, playbackHelp };
+  window.CineWallFilePeer = { FilePeer, fingerprint, sha256, mediaType, mediaBlob, matroskaCodecs, inspectCodecs, codecSummary, playbackHelp, localAddress, hotspotCandidate, hotspotDescription, HOTSPOT_HELP };
 })();
