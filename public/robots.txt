@@ -1,5 +1,5 @@
 # CineWall - Multi-Screen Video Wall Studio
-# https://cine-wall-production.railway.app/
+# https://watch.aitoyz.in/
 
 User-agent: *
 Allow: /
@@ -12,4 +12,4 @@ Disallow: /.cinema-cache/
 Crawl-delay: 1
 
 # Sitemap
-Sitemap: https://cine-wall-production.railway.app/sitemap.xml
+Sitemap: https://watch.aitoyz.in/sitemap.xml
