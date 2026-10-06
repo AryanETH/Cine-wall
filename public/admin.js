@@ -39,7 +39,7 @@ let status = {
   screens: [],
   state: {
     sessionMode: 'video', playing: false, position: 0, anchorTime: Date.now(), mode: 'crop',
-    screenCount: 3, audioSettings: {}, asset: null, page: 1, commandId: 0,
+    screenCount: 3, audioMode: 'personal', audioSettings: {}, asset: null, page: 1, commandId: 0,
   },
 };
 let connectionInfo = null;
@@ -316,6 +316,15 @@ function renderModeShell() {
   $('#adminAssetFile').multiple = state.sessionMode === 'audio';
   $('#adminFileLabel').textContent = state.sessionMode === 'audio' ? 'Add songs' : state.asset ? `Change ${config.label.toLowerCase()}` : config.button;
   $('#framingPanel').hidden = state.sessionMode === 'audio';
+  $('#audioModePanel').hidden = !['video', 'audio'].includes(state.sessionMode);
+  $('#audioModeControls').querySelectorAll('[data-audio-mode]').forEach((button) => {
+    const active = button.dataset.audioMode === (state.audioMode || 'personal');
+    button.classList.toggle('active', active);
+    button.setAttribute('aria-pressed', String(active));
+  });
+  $('#audioModeHint').textContent = state.audioMode === '3d'
+    ? state.screenCount < 2 ? 'Add another laptop for 3D sound.' : 'Left and right sound is shared across your laptops.'
+    : 'Full sound on every laptop.';
   $('#presenterTips').hidden = state.sessionMode !== 'presentation';
   $('#mediaControls').hidden = state.sessionMode === 'presentation';
   $('#presentationControls').hidden = state.sessionMode !== 'presentation';
@@ -400,7 +409,7 @@ function renderScreens() {
     const fullyReady = isFullyReady(screen);
     const progress = isPreparing() ? Math.round(state.preparation.progress || 0) : fullyReady ? 100 : Math.round(screen.loadProgress || 0);
     const stateLabel = screen.error ? 'Needs attention' : !screen.ready ? 'Waiting' : isPreparing() ? `Sending ${progress}%` : !state.asset ? 'Connected' : screen.buffering ? 'Buffering' : !fullyReady ? `Loading ${progress}%` : screen.autoplayMuted ? 'Tap for sound' : 'Ready';
-    const outdated = screen.build && screen.build !== '2026.10.05-feedback-28';
+    const outdated = screen.build && screen.build !== '2026.10.05-audio-37';
     const badge = card.querySelector('[data-screen-state]');
     badge.querySelector('span:last-child').textContent = stateLabel;
     card.classList.toggle('ready', fullyReady);
@@ -440,7 +449,7 @@ function renderLinks() {
   $('#addDisplay').disabled = state.screenCount >= config.max;
   $('#addDisplay').title = state.screenCount >= config.max ? `Maximum ${config.max} ${noun}s reached` : `Add another ${noun}`;
   $('#addDisplay').hidden = state.screenCount >= config.max;
-  const key = `${state.sessionMode}:${state.screenCount}:${location.origin}:${baseRemote}:${window.CineWallSession?.room || ''}`;
+  const key = `${state.sessionMode}:${state.screenCount}:${state.audioMode}:${location.origin}:${baseRemote}:${window.CineWallSession?.room || ''}`;
   if (screenLinks.cinewallLinksKey === key) return;
   screenLinks.cinewallLinksKey = key;
   screenLinks.style.gridTemplateColumns = `repeat(${Math.min(state.screenCount, 3)}, 1fr)`;
@@ -449,9 +458,11 @@ function renderLinks() {
     const url = window.CineWallSession?.link(`/screen.html?screen=${number}`, origin) || `${origin}/screen.html?screen=${number}`;
     const role = screenRole(number, state.screenCount, state.sessionMode);
     const device = number === 1 ? 'This laptop' : role;
+    const soundRole = state.audioMode === '3d' && ['video', 'audio'].includes(state.sessionMode) && state.screenCount >= 2
+      ? ` · ${window.CineWallAudioLayout?.roleForScreen(state.screenCount, number) || '3D'} sound` : '';
     const removable = number === state.screenCount && state.screenCount > config.min;
     return `<article class="screen-link-card" data-speaker="${number}">
-      <div class="screen-identity"><span class="screen-role-icon fi">&#xE7F4;</span><span class="display-number">${number}</span><div><strong>${noun === 'speaker' ? 'Speaker' : 'Screen'} ${number}</strong><small>${escapeHtml(device)}</small></div></div>
+      <div class="screen-identity"><span class="screen-role-icon fi">&#xE7F4;</span><span class="display-number">${number}</span><div><strong>${noun === 'speaker' ? 'Speaker' : 'Screen'} ${number}</strong><small>${escapeHtml(device + soundRole)}</small></div></div>
       <span class="screen-status" data-screen-state><span class="status-dot"></span><span>Waiting</span></span>
       <span class="instant-status" data-instant-state role="status" hidden><span class="status-dot" aria-hidden="true"></span><span data-instant-label></span></span>
       <div class="link-actions"><a href="${escapeHtml(url)}" target="_blank" rel="noopener" aria-label="Open ${noun} ${number}"><span class="fi">&#xE8A7;</span>Open</a><button data-copy-link="${escapeHtml(url)}" title="Copy link" aria-label="Copy ${noun} ${number} link"><span class="fi">&#xE8C8;</span></button></div>
@@ -607,6 +618,8 @@ function renderPlayer() {
   $('#replayPreview').hidden = state.sessionMode !== 'video' || !(hasAsset || localPreview);
   if (hasAsset && state.asset.source === 'peer' && state.asset.duration && !duration) duration = state.asset.duration;
   $('#assetTitle').textContent = localPreview?.file.name || state.asset?.name || config.choose;
+  $('#audioVisualTitle').textContent = state.sessionMode === 'audio' && state.asset?.name
+    ? state.asset.name.replace(/\.[^.]+$/, '') : 'Speaker room';
   $('#assetStatus').textContent = state.asset ? (isYouTube ? 'Ready' : formatBytes(state.asset.size)) : '';
   if (localPreview?.pending) $('#assetStatus').textContent = formatBytes(localPreview.file.size);
 
@@ -619,15 +632,18 @@ function renderPlayer() {
     $('#previousPage').disabled = !hasAsset || state.page <= 1;
     $('#nextPage').disabled = !hasAsset || (state.asset.pageCount && state.page >= state.asset.pageCount);
   } else {
-    $('#playerState').textContent = state.playing ? 'PLAYING' : hasAsset ? 'PAUSED' : 'IDLE';
+    const replay = videoFinished();
+    $('#playerState').textContent = state.playing ? 'PLAYING' : replay ? 'ENDED' : hasAsset ? 'PAUSED' : 'IDLE';
     $('#play').hidden = Boolean(state.playing);
     $('#pause').hidden = !state.playing;
+    $('#play').innerHTML = `<span class="fi">${replay ? '&#xE72C;' : '&#xE768;'}</span>`;
+    $('#play').setAttribute('aria-label', replay ? 'Replay video' : 'Play');
     ['#restart', '#back', '#play', '#pause', '#forward', '#loopButton'].forEach((selector) => { $(selector).disabled = !hasAsset || uploadBusy || isPreparing(); });
     $('#play').disabled = !hasAsset || !playbackReady();
-    $('#play').title = !hasAsset ? 'Choose a file' : sourceLocked() ? 'Controlled by the admin' : !playbackReady() ? 'Waiting for every display' : 'Play';
+    $('#play').title = !hasAsset ? 'Choose a file' : sourceLocked() ? 'Controlled by the admin' : !playbackReady() ? 'Waiting for every display' : replay ? 'Replay video' : 'Play';
     if (hasAsset && !state.playing && !playbackReady()) $('#playerState').textContent = sourceLocked() ? 'VIEWER' : 'WAITING FOR DISPLAYS';
-    $('#playerState').hidden = !hasAsset || state.playing || playbackReady();
-    if (!$('#playerState').hidden) $('#playerState').textContent = sourceLocked() ? 'Controlled by another laptop' : 'Waiting for screens';
+    $('#playerState').hidden = !replay && (!hasAsset || state.playing || playbackReady());
+    if (!$('#playerState').hidden) $('#playerState').textContent = replay ? 'ENDED' : sourceLocked() ? 'Controlled by another laptop' : 'Waiting for screens';
     loopEnabled = Boolean(state.loop);
     $('#loopButton').classList.toggle('active', loopEnabled);
     timeline.disabled = !hasAsset || uploadBusy || isPreparing();
@@ -733,6 +749,13 @@ function seekRelative(seconds) {
   command({ type: 'seek', position: next });
 }
 
+function videoFinished() {
+  const state = status.state;
+  if (state.sessionMode !== 'video' || !state.asset || state.playing) return false;
+  const adminScreen = status.screens.find((screen) => screen.screen === 1 && screen.assetVersion === state.asset.version);
+  return Boolean(adminScreen?.ended || duration > 0 && Number(state.position) >= duration - 0.35);
+}
+
 function openDisplayOne() {
   if (!adminDisplayWindow || adminDisplayWindow.closed) {
     adminDisplayWindow = window.open(window.CineWallSession?.link('/screen.html?screen=1') || '/screen.html?screen=1', `cinewall-display-1-${window.CineWallSession?.room || 'lan'}`);
@@ -745,7 +768,7 @@ function playOnAdminDisplay() {
   // An already-ready display may have been opened using its copied link.
   // Do not navigate/reload it just as the synchronized play command arrives.
   if (adminDisplayWindow && !adminDisplayWindow.closed) adminDisplayWindow.focus();
-  command({ type: 'play', position: positionNow() });
+  command({ type: 'play', position: videoFinished() ? 0 : positionNow() });
 }
 
 $('#sharingOptions')?.addEventListener('click', (event) => {
@@ -783,6 +806,12 @@ $('#addDisplay').addEventListener('click', () => {
 $('#modeControls').addEventListener('click', (event) => {
   const button = event.target.closest('[data-mode]');
   if (button) command({ type: 'mode', mode: button.dataset.mode });
+});
+$('#audioModeControls').addEventListener('click', (event) => {
+  const button = event.target.closest('[data-audio-mode]');
+  if (button && ['video', 'audio'].includes(status.state.sessionMode)) {
+    command({ type: 'audio-mode', audioMode: button.dataset.audioMode });
+  }
 });
 
 timeline.addEventListener('pointerdown', () => { scrubbing = true; });

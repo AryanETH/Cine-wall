@@ -44,8 +44,8 @@
 .studio-body .theme-toggle .fi { font-size: 20px; }
 .studio-body .studio-settings summary .fi { font-size: 18px; }
 .screen-volume input { flex: 1; min-width: 40px; }
-.studio-body .remove-screen-button { width: 28px; height: 28px; border: 0; background: transparent; color: var(--muted); border-radius: 6px; }
-.studio-body .remove-screen-button:hover { background: color-mix(in srgb, var(--danger) 12%, transparent); color: var(--danger); }
+.studio-body .remove-screen-button { width: 30px; height: 30px; border: 1px solid color-mix(in srgb, var(--danger) 45%, var(--line)); background: color-mix(in srgb, var(--danger) 12%, var(--surface)); color: var(--danger); border-radius: 8px; }
+.studio-body .remove-screen-button:hover { border-color: var(--danger); background: color-mix(in srgb, var(--danger) 23%, var(--surface)); color: var(--danger); }
 .screen-notice { flex-basis: 100%; margin: 0; color: var(--danger); font-size: 12px; line-height: 1.5; }
 .screen-load-progress { flex-basis: 100%; width: 100%; height: 4px; accent-color: var(--accent); }
 .studio-body .warning { margin: 0 0 16px; font-size: 14px; line-height: 1.5; color: var(--ink); background: color-mix(in srgb, var(--warning) 10%, var(--surface)); }
@@ -95,6 +95,10 @@
 .studio-body .viewer-source h2 { font-size: 20px; }
 .studio-body .viewer-source p { font-size: 14px; }
 .studio-body .studio-settings { margin-top: auto; padding-top: 26px; }
+.studio-body .audio-mode-panel { margin-top: 20px; padding-top: 18px; border-top: 1px solid var(--line); }
+.studio-body .audio-mode-panel .segmented { margin: 0; }
+.studio-body .audio-mode-panel .segmented button { flex: 1; }
+.studio-body .audio-mode-panel p { margin: 10px 0 0; color: var(--muted); font-size: 13px; line-height: 1.45; }
 .studio-settings summary { display: flex; align-items: center; justify-content: flex-end; gap: 8px; padding: 10px 0; color: var(--accent); font-size: 14px; font-weight: 550; cursor: pointer; list-style: none; }
 .studio-settings summary::-webkit-details-marker { display: none; }
 .studio-settings[open] summary { margin-bottom: 12px; }
@@ -133,7 +137,7 @@
 .studio-body .presentation-frame, .studio-body .presentation-image { min-height: 0; }
 .studio-body .youtube-preview { height: 100%; }
 .studio-body .youtube-preview img { max-height: 70%; width: auto; max-width: 100%; }
-.studio-body .audio-visual strong { font-size: 20px; }
+.studio-body .audio-visual strong { max-width: min(620px, 90%); font-size: clamp(21px, 2.4vw, 30px); line-height: 1.2; overflow-wrap: anywhere; }
 .studio-body .presentation-page-row { margin-top: 22px; }
 .studio-body .presentation-page-row + .transport { margin-top: 20px; }
 .studio-body button:focus-visible, .studio-body a:focus-visible, .studio-body summary:focus-visible, .studio-body [role='button']:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }

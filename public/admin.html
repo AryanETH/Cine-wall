@@ -10,8 +10,8 @@
   <script src="session.js?v=20261003-sharing-19"></script>
   <script src="media-peer.js?v=20261005-feedback-28"></script>
   <script src="video-validation.js?v=20261002-mkv-17"></script>
-  <link rel="stylesheet" href="styles.css?v=20261005-feedback-28">
-  <link rel="stylesheet" href="studio.css?v=20261005-guide-33">
+  <link rel="stylesheet" href="styles.css?v=20261005-audio-37">
+  <link rel="stylesheet" href="studio.css?v=20261005-audio-37">
 </head>
 <body class="admin-body studio-body" data-session-mode="video">
   <main class="app-shell">
@@ -151,6 +151,14 @@
             <h3 id="framingHeading">Picture fit</h3>
             <div id="modeControls" class="segmented"><button data-mode="fit">Fit</button><button data-mode="crop">Crop</button><button data-mode="stretch">Stretch</button></div>
           </div>
+          <div id="audioModePanel" class="audio-mode-panel">
+            <h3>Sound mode</h3>
+            <div id="audioModeControls" class="segmented" role="group" aria-label="Sound mode">
+              <button type="button" data-audio-mode="personal" aria-pressed="true">Personal</button>
+              <button type="button" data-audio-mode="3d" aria-pressed="false">3D mode</button>
+            </div>
+            <p id="audioModeHint">Full sound on every laptop.</p>
+          </div>
           <div id="presenterTips" hidden><h3>Page controls</h3></div>
           <div class="extra-controls">
             <button id="identify" class="button subtle"><span class="fi">&#xE8B0;</span>Identify screens</button>
@@ -231,7 +239,8 @@
   </section>
   <script src="audio-queue.js?v=20261005-queue-29"></script>
   <script src="dashboard-guide.js?v=20261005-guide-33"></script>
-  <script src="admin.js?v=20261005-guide-33"></script>
+  <script src="audio-layout.js?v=20261005-audio-37"></script>
+  <script src="admin.js?v=20261005-audio-37"></script>
   <script src="youtube-download.js?v=20261004-studio-25"></script>
 </body>
 </html>

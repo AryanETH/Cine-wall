@@ -1,9 +1,10 @@
 'use strict';
 
-const CLIENT_BUILD = '2026.10.05-queue-29';
+const CLIENT_BUILD = '2026.10.05-audio-37';
 const filePeer = window.CineWallFilePeer ? new window.CineWallFilePeer.FilePeer() : null;
 const $ = (selector) => document.querySelector(selector);
 const video = $('#video');
+const audioRouter = window.CineWallAudioLayout?.createRouter(video);
 const stage = $('#wallStage');
 const youtubeViewport = $('#youtubeViewport');
 const youtubeWall = $('#youtubeWall');
@@ -33,6 +34,7 @@ let fullscreenRequest = null;
 let serverOffset = 0;
 let currentState = null;
 let currentAssetVersion = '';
+let endedAssetVersion = '';
 let mediaElementVersion = '';
 let documentKey = '';
 let documentReady = false;
@@ -69,6 +71,7 @@ let localControlsQueue = Promise.resolve();
 let localPlaybackIntent = null;
 let localVolumeTimer = null;
 let localVolumeRevision = 0;
+let soundPromptTimer = null;
 const generatedId = globalThis.crypto?.randomUUID?.() || `screen-${Date.now()}-${Math.random().toString(36).slice(2)}`;
 // A new tab can inherit its opener's sessionStorage. Never let two numbered
 // displays overwrite each other's status by inheriting the same client ID.
@@ -266,6 +269,7 @@ function applyAudioSettings() {
   } else {
     video.volume = Math.min(1, Math.max(0, Number(setting.volume) || 0));
     video.muted = sessionMode === 'presentation' || localAutoplayMuted || Boolean(setting.muted);
+    audioRouter?.set(currentState?.asset ? currentState.audioMode : 'personal', wallScreens, screenNumber, currentState?.asset?.version);
   }
 
   $('#screenMute').innerHTML = `<span class="fi">${setting.muted ? '&#xE74F;' : '&#xE767;'}</span>`;
@@ -427,7 +431,7 @@ function loadMedia(asset, force = false) {
     return;
   }
   if (asset.version === currentAssetVersion && !force) return;
-  if (asset.version !== currentAssetVersion) { mediaPlayedVersion = ''; transferRecoveryAttempts = 0; clearTimeout(mediaLoadTimer); mediaLoadAttempts = 0; mediaRecoveryAttempts = 0; mediaRecoveryInFlight = ''; videoFrameObservation = null; }
+  if (asset.version !== currentAssetVersion) { mediaPlayedVersion = ''; endedAssetVersion = ''; transferRecoveryAttempts = 0; clearTimeout(mediaLoadTimer); mediaLoadAttempts = 0; mediaRecoveryAttempts = 0; mediaRecoveryInFlight = ''; videoFrameObservation = null; }
   currentAssetVersion = asset.version;
   mediaElementVersion = '';
   mediaLoadAttempts += 1;
@@ -564,6 +568,7 @@ async function initYouTubePlayer(videoId, force = false) {
 
 function applyStateAppearance(nextState) {
   if (currentState && nextState.serverId === currentState.serverId && nextState.commandId < currentState.commandId) return;
+  const previousAudioMode = currentState?.audioMode;
   if (localPlaybackIntent) {
     if (localPlaybackIntent.assetVersion === nextState.asset?.version && localPlaybackIntent.serverId === nextState.serverId) nextState = { ...nextState, ...localPlaybackIntent.patch };
     else localPlaybackIntent = null;
@@ -573,11 +578,14 @@ function applyStateAppearance(nextState) {
   setLayout(nextState.screenCount);
   setWallMode(nextState.mode || 'crop');
   applyAudioSettings();
+  if (previousAudioMode !== nextState.audioMode && nextState.playing && ready) resumeRoutedAudio();
 
   if (removedScreenNumber) {
     // Keep the original numbered link, never replace it with the admin slot.
     // Stop media reads/audio and leave only a passive removal message.
     video.pause();
+    clearTimeout(soundPromptTimer);
+    audioRouter?.set('personal', 1, 1, '');
     filePeer?.clear();
     loadMedia(null);
     loadPresentation(null);
@@ -601,8 +609,10 @@ function applyStateAppearance(nextState) {
   documentImage.hidden = sessionMode !== 'presentation' || !hasAsset || nextState.asset.renderType !== 'image';
   pdfCanvas.hidden = sessionMode !== 'presentation' || !hasAsset || nextState.asset.renderType !== 'pdf';
   updateAudioWaves();
-  $('#speakerTitle').textContent = nextState.asset?.name || 'Waiting for audio';
-  $('#speakerSubtitle').textContent = nextState.playing ? `Playing on Speaker ${screenNumber}` : nextState.asset ? 'Paused by the admin' : 'The admin controls playback and volume.';
+  $('#speakerTitle').textContent = nextState.asset?.name?.replace(/\.[^.]+$/, '') || 'Waiting for audio';
+  const soundPosition = nextState.audioMode === '3d' && wallScreens >= 2
+    ? `${window.CineWallAudioLayout?.roleForScreen(wallScreens, screenNumber) || '3D'} sound · ` : '';
+  $('#speakerSubtitle').textContent = nextState.playing ? `${soundPosition}Playing on Speaker ${screenNumber}` : nextState.asset ? `${soundPosition}Paused` : 'The admin controls playback and volume.';
 
   if (!hasAsset) {
     filePeer?.clear();
@@ -677,6 +687,7 @@ function seekTo(position) {
 async function command(payload) {
   if (removedScreenNumber || !screenNumber || !ready) return;
   if (payload.type === 'play' && currentState?.allReady !== true) return;
+  if (['play', 'seek', 'restart'].includes(payload.type)) endedAssetVersion = '';
   const sequence = ++localControlSequence;
   const volumeRevision = payload.type === 'screen-audio' && 'volume' in payload ? ++localVolumeRevision : 0;
   if (currentState && ['play', 'pause', 'seek', 'restart'].includes(payload.type)) {
@@ -715,6 +726,7 @@ async function playLocalMedia() {
     try {
       await video.play();
       if (!localAutoplayMuted) playBlocked.classList.remove('show');
+      resumeRoutedAudio();
     } catch (error) {
       if (error.name === 'NotAllowedError') {
         localAutoplayMuted = true;
@@ -736,6 +748,19 @@ async function playLocalMedia() {
   try { await playbackAttempt; } finally { playbackAttempt = null; }
 }
 
+function resumeRoutedAudio() {
+  if (!audioRouter || audioRouter.state() === 'native') return;
+  void audioRouter.resume();
+  clearTimeout(soundPromptTimer);
+  soundPromptTimer = setTimeout(() => {
+    if (audioRouter.state() === 'suspended' && currentState?.playing) {
+      playBlocked.textContent = 'Click to enable sound on this laptop';
+      playBlocked.classList.add('show');
+      postStatus();
+    }
+  }, 350);
+}
+
 async function execute(commandState) {
   if (currentState && (commandState.serverId !== currentState.serverId || commandState.commandId < currentState.commandId)) return;
   applyStateAppearance(commandState);
@@ -749,7 +774,7 @@ async function execute(commandState) {
     setTimeout(() => $('#identify').classList.remove('show'), 2400);
     return;
   }
-  if (sessionMode === 'presentation' || ['mode', 'screen-audio', 'mute-all', 'layout', 'session-mode', 'youtube-audio-mode', 'audio-output', 'loop'].includes(commandState.type)) return;
+  if (sessionMode === 'presentation' || ['mode', 'audio-mode', 'screen-audio', 'mute-all', 'layout', 'session-mode', 'youtube-audio-mode', 'audio-output', 'loop'].includes(commandState.type)) return;
 
   const isYouTube = sessionMode === 'youtube';
   if (isYouTube && youtubePlayer && youtubeReady) {
@@ -877,19 +902,26 @@ function updateController() {
   screenTimeline.max = duration || 100;
   if (!scrubbing) $('#screenCurrentTime').textContent = formatTime(position);
   $('#screenDuration').textContent = duration ? formatTime(duration) : '--:--';
-  $('#screenPlay').innerHTML = `<span class="fi">${currentState?.playing ? '&#xE769;' : '&#xE768;'}</span>`;
+  const replay = videoFinished();
+  $('#screenPlay').innerHTML = `<span class="fi">${currentState?.playing ? '&#xE769;' : replay ? '&#xE72C;' : '&#xE768;'}</span>`;
   $('#screenPlay').disabled = !currentState?.asset || (!currentState.playing && currentState.allReady !== true);
-  $('#screenPlay').title = currentState?.playing ? 'Pause' : currentState?.allReady ? 'Play' : 'Waiting for every display';
+  $('#screenPlay').title = currentState?.playing ? 'Pause' : currentState?.allReady ? replay ? 'Replay video' : 'Play' : 'Waiting for every display';
+  $('#screenPlay').setAttribute('aria-label', $('#screenPlay').title);
   $('#screenPage').textContent = currentState?.page || 1;
   $('#screenPageTotal').textContent = `/ ${currentState?.asset?.pageCount || '--'}`;
   $('#screenPreviousPage').disabled = !currentState?.asset || currentState.page <= 1;
   $('#screenNextPage').disabled = !currentState?.asset || (currentState.asset.pageCount && currentState.page >= currentState.asset.pageCount);
 }
 
+function videoFinished() {
+  if (sessionMode !== 'video' || !currentState?.asset || currentState.playing) return false;
+  return endedAssetVersion === currentAssetVersion || video.ended || Number.isFinite(video.duration) && video.duration > 0 && Number(currentState.position) >= video.duration - 0.35;
+}
+
 function togglePlayback() {
   if (!currentState?.asset || sessionMode === 'presentation') return;
   const currentPosition = sessionMode === 'youtube' && youtubeReady ? youtubePlayer.getCurrentTime() : video.currentTime;
-  command(currentState.playing ? { type: 'pause' } : { type: 'play', position: currentPosition || targetPosition(currentState) });
+  command(currentState.playing ? { type: 'pause' } : { type: 'play', position: videoFinished() ? 0 : currentPosition || targetPosition(currentState) });
 }
 
 function scheduleTransferRecovery(asset) {
@@ -945,7 +977,8 @@ function mediaIsReady() {
   if (!currentState?.asset) return false;
   if (sessionMode === 'presentation') return documentReady;
   if (sessionMode === 'youtube') return youtubeReady && !youtubePlayer?.lastError;
-  return Boolean(currentAssetVersion === currentState.asset.version && mediaElementVersion === currentAssetVersion && !lastError && !video.error && !mediaRecoveryInFlight && Number.isFinite(video.duration) && video.readyState >= 3 && (sessionMode === 'audio' || video.videoWidth > 0 && video.videoHeight > 0));
+  const replayableEnd = endedAssetVersion === currentAssetVersion && mediaPlayedVersion === currentAssetVersion;
+  return Boolean(currentAssetVersion === currentState.asset.version && mediaElementVersion === currentAssetVersion && !lastError && !video.error && !mediaRecoveryInFlight && Number.isFinite(video.duration) && (video.readyState >= 3 || replayableEnd) && (sessionMode === 'audio' || video.videoWidth > 0 && video.videoHeight > 0));
 }
 
 function loadingStatus() {
@@ -1036,10 +1069,10 @@ async function postStatus() {
         duration: videoDuration,
         playbackTime: playbackTime, page: currentState?.page || 0,
         paused: isYouTube ? youtubePlayer?.getState() !== 1 : video.paused,
-        ended: sessionMode === 'audio' && mediaElementVersion === currentAssetVersion && video.ended,
+        ended: ['audio', 'video'].includes(sessionMode) && mediaElementVersion === currentAssetVersion && endedAssetVersion === currentAssetVersion,
         playerState: isYouTube ? youtubePlayer?.getState() : null,
-        buffering: sessionMode === 'presentation' ? !documentReady : isYouTube ? youtubePlayer?.getState() === 3 : video.readyState < 3 || sessionMode === 'audio' && audioWaiting,
-        autoplayMuted: localAutoplayMuted,
+        buffering: sessionMode === 'presentation' ? !documentReady : isYouTube ? youtubePlayer?.getState() === 3 : !video.ended && endedAssetVersion !== currentAssetVersion && (video.readyState < 3 || sessionMode === 'audio' && audioWaiting),
+        autoplayMuted: localAutoplayMuted || audioRouter?.state() === 'suspended',
         error: lastError,
       }),
     });
@@ -1093,6 +1126,7 @@ readyButton.addEventListener('click', async () => {
   setup.classList.add('hidden');
   waitingAsset.classList.toggle('show', !currentState?.asset);
   applyAudioSettings();
+  void audioRouter?.resume();
   if (sessionMode === 'youtube' && youtubePlayer && youtubeReady) {
     const target = targetPosition(currentState);
     youtubePlayer.seek(target, true);
@@ -1127,6 +1161,7 @@ readyButton.addEventListener('click', async () => {
 playBlocked.addEventListener('click', async () => {
   enterPlayerFullscreen();
   try {
+    const resumed = audioRouter?.resume();
     if (sessionMode === 'youtube' && youtubePlayer && youtubeReady) youtubePlayer.play();
     else {
       localAutoplayMuted = false;
@@ -1134,6 +1169,7 @@ playBlocked.addEventListener('click', async () => {
       await video.play();
       if (!currentState?.playing) video.pause();
     }
+    if (resumed && !await resumed) throw new Error('3D sound is still blocked');
     playBlocked.classList.remove('show');
     lastError = '';
     postStatus();
@@ -1167,6 +1203,7 @@ video.addEventListener('playing', () => {
   postStatus();
 });
 video.addEventListener('ended', () => {
+  endedAssetVersion = currentAssetVersion;
   if (screenNumber === 1 && currentState?.playing && sessionMode !== 'youtube') command(currentState.loop ? { type: 'play', position: 0 } : { type: 'pause' });
   postStatus();
 });

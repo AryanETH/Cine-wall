@@ -69,7 +69,8 @@ let state = {
   anchorTime: Date.now(),
   mode: 'stretch',
   screenCount: 2,
-  audioSettings: defaultAudioSettings(),
+  audioMode: 'personal',
+  audioSettings: defaultAudioSettings(true),
   youtubeAudioMode: 'admin',
   asset: null,
   page: 1,
@@ -86,6 +87,7 @@ try {
   if (saved.state && ['video', 'audio', 'presentation', 'youtube'].includes(saved.state.sessionMode)
       && (!savedPath || savedPath.startsWith(`${CACHE_DIR}${path.sep}`) && fs.existsSync(savedPath))) {
     state = { ...state, ...saved.state, playing: false, notBefore: 0, anchorTime: Date.now() };
+    if (!['personal', '3d'].includes(state.audioMode)) state.audioMode = 'personal';
     assetFile = saved.assetFile;
     commandSequence = Number(state.commandId) || 0;
     sourceOwner = saved.sourceOwner || null;
@@ -220,7 +222,7 @@ function extractYouTubeId(value) {
 }
 
 function audioSettingsForMode(sessionMode) {
-  const settings = defaultAudioSettings(sessionMode === 'audio');
+  const settings = defaultAudioSettings(['video', 'audio'].includes(sessionMode));
   if (sessionMode === 'presentation') for (const setting of Object.values(settings)) setting.muted = true;
   return settings;
 }
@@ -236,7 +238,7 @@ function applyCommand(input) {
   const now = Date.now();
   // Give every ready browser time to receive the same start, rather than
   // starting the source first. Mixer changes remain immediate.
-  const executeAt = now + (['screen-audio', 'mute-all', 'youtube-audio-mode', 'audio-output'].includes(input.type) ? 0 : input.type === 'play' ? 350 : 90);
+  const executeAt = now + (['screen-audio', 'mute-all', 'audio-mode', 'youtube-audio-mode', 'audio-output'].includes(input.type) ? 0 : input.type === 'play' ? 350 : 90);
   const type = String(input.type || '');
   let position = currentPosition(executeAt);
 
@@ -255,6 +257,7 @@ function applyCommand(input) {
         position: 0,
         anchorTime: executeAt,
         screenCount: limits.initial,
+        audioMode: 'personal',
         mode: sessionMode === 'presentation' || sessionMode === 'youtube' ? 'crop' : sessionMode === 'video' ? 'stretch' : state.mode,
         audioSettings: audioSettingsForMode(sessionMode),
         youtubeAudioMode: 'admin',
@@ -315,13 +318,21 @@ function applyCommand(input) {
     if (!['fit', 'crop', 'stretch'].includes(input.mode)) throw new Error('Unknown wall framing');
     if (['presentation', 'youtube'].includes(state.sessionMode) && input.mode === 'stretch') throw new Error('Stretch is not available in this mode');
     state = { ...state, mode: input.mode };
+  } else if (type === 'audio-mode') {
+    if (!['video', 'audio'].includes(state.sessionMode)) throw new Error('3D mode is only available for video and audio');
+    if (!['personal', '3d'].includes(input.audioMode)) throw new Error('Unknown sound mode');
+    state = { ...state, audioMode: input.audioMode };
   } else if (type === 'layout') {
     const screenCount = Number(input.screenCount);
     const limits = modeLimits();
     if (!Number.isInteger(screenCount) || screenCount < limits.min || screenCount > limits.max) {
       throw new Error(`This mode supports ${limits.min} to ${limits.max} screens`);
     }
-    state = { ...state, screenCount };
+    const audioSettings = { ...state.audioSettings };
+    if (screenCount > state.screenCount && ['video', 'audio'].includes(state.sessionMode)) {
+      for (let screen = state.screenCount + 1; screen <= screenCount; screen++) audioSettings[String(screen)] = { volume: 1, muted: false };
+    }
+    state = { ...state, screenCount, audioSettings };
   } else if (type === 'screen-audio') {
     const screen = Number(input.screen);
     if (!Number.isInteger(screen) || screen < 1 || screen > 5) throw new Error('Unknown speaker');
