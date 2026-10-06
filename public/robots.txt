@@ -1,0 +1,15 @@
+# CineWall - Multi-Screen Video Wall Studio
+# https://cine-wall-production.railway.app/
+
+User-agent: *
+Allow: /
+Allow: /assets/
+Disallow: /admin.html
+Disallow: /screen.html
+Disallow: /.cinema-cache/
+
+# Crawl-delay
+Crawl-delay: 1
+
+# Sitemap
+Sitemap: https://cine-wall-production.railway.app/sitemap.xml

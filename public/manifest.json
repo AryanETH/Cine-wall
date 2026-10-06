@@ -1,0 +1,21 @@
+{
+  "name": "CineWall - Multi-Screen Video Wall Studio",
+  "short_name": "CineWall",
+  "description": "Transform multiple laptops into a synchronized video wall. Stream videos, audio, and presentations across 2-3 screens in perfect sync.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#000000",
+  "theme_color": "#000000",
+  "orientation": "landscape",
+  "categories": ["entertainment", "multimedia", "utilities"],
+  "lang": "en-US",
+  "dir": "ltr",
+  "icons": [
+    {
+      "src": "/favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}
