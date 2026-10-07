@@ -7,7 +7,7 @@
     "start": "node server.js",
     "test": "node --test tests/*.test.js",
     "test:preparation": "node tests/preparation-integration.js",
-    "check": "node --check server.js && node --check youtube-downloads.js && node --check public/launcher.js && node --check public/admin.js && node --check public/video-validation.js && node --check public/screen.js && node --check public/youtube-provider.js && node --check public/youtube-download.js && node --check public/theme.js && node --check public/icons.js && node --check public/session.js && node --check public/media-peer.js && node --check public/media-worker.js",
+    "check": "node --check server.js && node --check screen-sharing.js && node --check public/share.js && node --check youtube-downloads.js && node --check public/launcher.js && node --check public/admin.js && node --check public/video-validation.js && node --check public/screen.js && node --check public/youtube-provider.js && node --check public/youtube-download.js && node --check public/theme.js && node --check public/icons.js && node --check public/session.js && node --check public/media-peer.js && node --check public/media-worker.js",
     "setup:downloads": "powershell -NoProfile -ExecutionPolicy Bypass -File setup-download-tools.ps1"
   },
   "engines": {

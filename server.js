@@ -7,6 +7,8 @@ const os = require('node:os');
 const zlib = require('node:zlib');
 const { execFile } = require('node:child_process');
 const downloads = require('./youtube-downloads');
+const createScreenSharing = require('./screen-sharing');
+const { getDemoVisitSnapshot } = require('./public/home-footer');
 const SERVER_ID = require('node:crypto').randomUUID();
 
 const PREFERRED_PORT = Number(process.env.PORT || 4173);
@@ -163,6 +165,8 @@ function checkOwner(req, claim = false) {
   }
   return device;
 }
+
+const screenSharing = createScreenSharing({ identity, readJson, json });
 
 function releaseReservation() {
   if (!state.asset && !uploadInProgress) { sourceOwner = null; saveSession(); broadcast('state', snapshot()); }
@@ -822,6 +826,7 @@ function serveStatic(req, res, pathname) {
 
 async function handle(req, res, url) {
   try {
+    if (await screenSharing.handle(req, res, url)) return;
     if (req.method === 'GET' && url.pathname === '/api/time') {
       json(res, 200, { serverTime: Date.now() });
       return;
@@ -1027,7 +1032,7 @@ async function handle(req, res, url) {
   }
 }
 
-return { handle, pulse() { broadcast('pulse', snapshot()); activeScreens(); }, lastUsed: Date.now(), idle() { return !viewers.size && !uploadInProgress; }, close() { for (const viewer of viewers) viewer.end(); } };
+return { handle, pulse() { broadcast('pulse', snapshot()); activeScreens(); screenSharing.pulse(); }, lastUsed: Date.now(), idle() { return !viewers.size && !uploadInProgress && screenSharing.idle(); }, close() { for (const viewer of viewers) viewer.end(); screenSharing.close(); } };
 }
 
 function iceServers() {
@@ -1041,9 +1046,15 @@ function isLocalHost(host) {
 const sessions = new Map();
 const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, 'http://localhost');
+  // Public demo counter: shared across rooms, instances and server restarts.
+  if (req.method === 'GET' && url.pathname === '/api/demo-visits') {
+    res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' });
+    res.end(JSON.stringify(getDemoVisitSnapshot()));
+    return;
+  }
   const room = url.searchParams.get('room') || '';
   const hosted = process.env.CINEWALL_HOSTED === '1' || Boolean(process.env.RAILWAY_ENVIRONMENT) || !isLocalHost(String(req.headers['x-forwarded-host'] || req.headers.host || 'localhost').split(',')[0].trim());
-  if ((room && !/^[a-f0-9-]{36}$/.test(room)) || (hosted && !room && (url.pathname.startsWith('/api/') || url.pathname === '/events'))) {
+  if ((room && !/^[a-f0-9-]{36}$/.test(room)) || (hosted && !room && (url.pathname.startsWith('/api/') || url.pathname === '/events' || url.pathname === '/share-events'))) {
     res.writeHead(400, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ error: 'Open your private CineWall session link first.' })); return;
   }
   const key = room || '';

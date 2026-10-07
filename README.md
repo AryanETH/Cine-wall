@@ -1,131 +1,308 @@
-# CineWall Studio
+<p align="center">
+  <img src="public/assets/removed_background%20(24).png" alt="CineWall logo" width="100">
+</p>
 
-CineWall connects Windows Devices on the same local network for four synchronized modes:
+<h1 align="center">CineWall</h1>
 
-- **Video wall:** 2 or 3 displays, with the admin Device as Display 1.
-- **Speaker room:** 1 to 5 Devices, with individual volume and mute controls.
-- **Presentation wall:** 1 to 3 displays for PDF, PowerPoint, Word, RTF, and image files.
-- **YouTube wall:** 2 or 3 displays showing complementary slices of one synchronized YouTube player.
+<p align="center">A wider movie screen. A shared speaker room. The laptops you already own.</p>
+
+<p align="center">
+  <a href="https://watch.aitoyz.in/">Website</a> ·
+  <a href="#video-tutorial">Demo</a> ·
+  <a href="#quick-start">Quick start</a> ·
+  <a href="https://github.com/AryanETH/Cine-wall/issues">Report an issue</a> ·
+  <a href="#contribute">Contribute</a>
+</p>
+
+<p align="center">
+  <img src="https://img.shields.io/badge/Node.js-18%2B-339933?logo=nodedotjs&logoColor=white" alt="Node.js 18 or newer">
+  <img src="https://img.shields.io/badge/Player-Browser%20based-1769ff" alt="Browser-based player">
+  <img src="https://img.shields.io/badge/Sharing-WebRTC-713fd4" alt="WebRTC sharing">
+</p>
+
+![Two laptops showing one wide CineWall picture](public/assets/robots-laptops-poster.jpg)
+
+CineWall brings nearby laptops together for movies, music and live screen sharing. Choose a file on one laptop, open its numbered links on the others, and control playback from one dashboard. Only the source laptop needs the file.
+
+Use two or three screens for a wider movie view, up to five laptops for music, or share a tab, app window or desktop. CineWall can run from the website or from a local server on your Wi-Fi or hotspot.
+
+## Why CineWall?
+
+- **Movie nights:** turn laptops placed side by side into a wider picture.
+- **Shared music:** play a playlist around the room, with separate volume and mute controls.
+- **Lessons and demos:** show an app or live screen on other devices.
+- **Use what you have:** bring spare laptops into the setup without special movie-wall hardware.
+
+One screen is enough for everyday watching. CineWall is for when you want a larger combined view or sound from several devices. Laptop bezels stay visible, and Wi-Fi and browser performance affect the experience.
+
+## Features
+
+| Mode | Devices | Current status |
+| --- | --- | --- |
+| Video wall | 2–3 recommended; can reduce to 1 | Available |
+| Audio room | 1–5 speakers | Available |
+| Live screen sharing | Up to 3 numbered screen links | Available |
+| Presentation wall | Up to 3 displays | In development · homepage marked Coming soon |
+| Live YouTube wall | 2–3 displays | In development · homepage marked Coming soon |
+
+### Video and audio
+
+- One source laptop; other laptops cannot replace its file until it is removed.
+- Shared play, pause, seek and per-laptop sound controls.
+- Space to play/pause; left/right arrows or a double-click on either side to skip 10 seconds.
+- Play becomes available after every selected screen reports the current file ready.
+- **Instant** and **Server** file-sharing options.
+- Video **Fit**, **Crop** and **Stretch** framing; Stretch is the preset.
+- A silent, ten-second video preview and Replay when the movie ends.
+- Audio playlists of up to ten songs, drag-to-reorder and automatic next-song playback.
+- Current song names on the dashboard and speaker screens.
+- **Personal** and **3D mode** sound settings, plus individual volume and mute.
+- Light and dark themes, a first-use dashboard guide and connection feedback.
+
+### Live screen sharing
+
+- Share a browser tab, app window or entire screen through the browser's picker.
+- **Mirror** the whole view or **Split wall** across the numbered screens.
+- Auto, 720p and 1080p quality choices.
+- A shared pointer for pointing inside the view.
+- Horizontal flip for a teleprompter.
+- Receiver sound controls, fullscreen and reconnection.
+- Stop sharing from CineWall or the browser's own stop button.
+
+> [!NOTE]
+> Screen sharing shows a chosen view. It does not create extra desktop space or control another computer's system mouse and keyboard.
 
 ## Video tutorial
 
 [![Watch the CineWall tutorial on YouTube](https://img.youtube.com/vi/nKjiv6_XSN4/hqdefault.jpg)](https://www.youtube.com/watch?v=nKjiv6_XSN4)
 
-[Watch the tutorial on YouTube](https://www.youtube.com/watch?v=nKjiv6_XSN4). You can also use **Tutorial** on any dashboard.
+[Watch the tutorial on YouTube](https://www.youtube.com/watch?v=nKjiv6_XSN4). You can also use **Tutorial** on any dashboard. The homepage includes a click-to-play tutorial, setup guide, use cases and FAQs.
 
-## Start CineWall
+## Download and requirements
 
-1. Extract the ZIP completely.
-2. Double-click **START CINEMA.cmd** and keep the black window open.
-3. If Windows Firewall asks, allow Node.js on **Private networks**.
-4. Open the **Start** address printed in the black window, normally `http://localhost:4173/`.
-5. Choose Video, Audio, Presentation, or YouTube.
-6. Add only the Devices you need with **Add display** or **Add speaker**. Use the X on the last-added link to remove it.
-7. Open every generated link on its matching Device. Numbered links join automatically. Click the sound button if the browser blocks audio; use Join for fullscreen. Display 1 is always the admin Device.
+[Download the source ZIP](https://github.com/AryanETH/Cine-wall/archive/refs/heads/main.zip), or clone the repository. Extract the ZIP before starting CineWall.
 
-If port 4173 is busy, CineWall automatically chooses the next free port. Always use the addresses printed by the currently-running server.
+| Requirement | What you need |
+| --- | --- |
+| Local server | Node.js 18 or newer on the source laptop |
+| Playback | A current browser that supports the selected video/audio tracks; desktop Chrome or Edge is the recommended setup |
+| Connection | The same Wi-Fi or hotspot for local sharing, with device-to-device connections allowed |
+| Screen capture | Desktop browser capture support; open the HTTPS website or localhost on the source laptop |
+| Windows shortcuts | Included `START CINEMA.cmd` and optional `SETUP DOWNLOADS.cmd` |
+| Optional downloads | yt-dlp and FFmpeg; the setup script installs them locally |
 
-## Video wall
+The Windows launchers and Office conversion tools are designed for Windows. The Node server and browser pages may work on other operating systems, but full cross-platform support has not been verified. Mobile devices can receive a shared screen where their browser supports it; starting screen capture on mobile depends on browser support.
 
-1. Start with the two preset links; add the third only when needed.
-   Removing the last remote display leaves the admin playing on one full screen. Removed displays stop playback and show **Screen removed**; adding them back restores their numbered link, not the admin controls.
-2. Choose the movie once on the dashboard.
-   CineWall checks the container, tracks and browser playback before accepting it. MP4/M4V supports H.264, VP9 and AV1 video with AAC audio; WebM supports VP8/VP9 with Opus audio. MKV supports H.264 video with AAC audio (including HE-AAC and multiple language tracks). The current browser must also decode a frame before sharing starts. Unsupported tracks, including HEVC/Dolby MKV, are rejected with an H.264/AAC MP4 suggestion; CineWall does not convert movies.
-   **Instant** starts sharing the selected original file without waiting for a full upload. On the online website, movie/audio bytes go directly between browsers over the same hotspot or Wi-Fi. Keep the source dashboard open and its laptop awake. **Upload** sends a full copy to the server, with progress shown on the dashboard. Neither option converts the movie. The silent preview plays only the opening ten seconds.
-3. **Stretch** is the default wall framing. Fit and Cinema crop remain available.
-4. Selecting a file opens Display 1 in a separate tab (if your browser allows it); otherwise use **Open Display 1**. Play is enabled only after every selected display reports the current file ready. Play does not reload an already-open display. A browser may still need a click on each laptop to enable sound.
-5. Play, pause, seek, double-click ±10 seconds, and per-Device audio changes synchronize across the wall.
+## Quick start
 
-Sharing preserves the original bytes. Every Device still needs a browser that supports the selected tracks. DRM streaming services such as Netflix and Prime Video are not supported.
+### Use the website
 
-Laptops opening the same local CineWall server share its hotspot room. The first laptop to select a file becomes admin; other laptops see **Open screen** instead of source controls until that admin removes the file. On a public website, share the admin's numbered display links to join the same room. Being on the same Wi-Fi alone does not identify a room online. Display percentages describe startup readiness, not a complete movie download on each device.
+1. Open [watch.aitoyz.in](https://watch.aitoyz.in/) on the source laptop.
+2. Connect your other laptops to the same Wi-Fi or hotspot for Instant sharing.
+3. Choose Video or Audio and select your file.
+4. Add only the screens or speakers you need. Open each numbered link on its matching laptop.
+5. Wait for them to be ready, then press Play. Tap to enable sound on a laptop if asked.
 
-### Online Instant over a hotspot
+The first laptop to choose a file becomes admin. Display/Speaker 1 is that laptop, and its player opens in a separate tab. Keep the source dashboard open for Instant mode.
 
-1. Connect all laptops to the same hotspot or Wi-Fi and open the HTTPS website in current Chrome or Edge.
-2. Choose **Instant** on the source laptop, then choose the video/audio file there only.
-3. Open that dashboard's numbered screen links on the other laptops. They must include the same room ID.
-4. Allow local-network access if the browser asks. Keep the admin dashboard open. Play becomes available when every screen is ready.
+### Run locally on Windows
 
-Instant speaker/screen cards show the actual sharing connection: **Searching for hotspot…**, **Hotspot / Wi-Fi connected**, or **Connection lost · retrying**. The source display says **On this laptop** because it does not need a network transfer. Before a file is selected, the cards wait instead of claiming to detect a hotspot. Upload mode hides this indicator. Audio waves pause with playback and buffering, on both the dashboard and player.
+1. Install Node.js, then extract or clone CineWall.
+2. Double-click **START CINEMA.cmd** and keep the server window open.
+3. Allow Node.js on **Private networks** if Windows Firewall asks.
+4. Open the printed Start address, normally `http://localhost:4173/`.
+5. Choose Video or Audio, select a file and open the generated screen links on the other laptops.
 
-The website exchanges room, connection and playback messages, but does not receive movie bytes in this mode. Browser data channels transfer bounded original-file ranges on the local network. Hotspot mode uses no STUN/TURN servers, rejects public/relayed candidates, and checks the selected local route before sending file data. Its server-stream endpoint is disabled: it never silently falls back to forwarding the movie through the hosting server. If a hotspot isolates connected devices or a firewall blocks them, join a network that allows device-to-device communication or explicitly choose **Upload**. Internet is still needed for the online website and its controls; this is not a fully offline online-site mode.
+The local setup works without internet for local movie/audio files. If port 4173 is busy, CineWall tries the next free port. Use the links from the current dashboard rather than an old saved address. Stop the server with `Ctrl+C`.
 
-The browser cannot identify a Wi-Fi name or distinguish a hotspot from another reachable private network/VPN. Hotspot mode verifies a direct private/local route, not the network's name. A site deployment must update both the server and the dashboard/display scripts; reload all tabs after deployment.
+### Start from a terminal
 
-When running CineWall locally over plain HTTP, Instant keeps the existing local-server forwarding path. Those bytes stay on your LAN, and the other laptops do not need their own copy of the file.
+```sh
+git clone https://github.com/AryanETH/Cine-wall.git
+cd Cine-wall
+node server.js
+```
+
+The server has no npm package dependencies to install. Optional download tools are set up separately.
+
+## Instant or Server?
+
+| | Instant | Server |
+| --- | --- | --- |
+| Starts sharing | From the selected local file, without a full upload | After a full copy is uploaded and checked |
+| On the website | File ranges pass directly between browsers on the same local network | Screens receive media from the hosting server |
+| Running locally | Uses the local sharing path; plain HTTP can forward through the local server | Saves a copy to the local server's cache |
+| Source dashboard | Must stay open; laptop must stay awake | Not needed to serve uploaded media once preparation finishes |
+| Progress | Connection and startup readiness | Upload progress and startup readiness |
+| Movie conversion | None | None |
+
+Online Instant mode exchanges room and playback messages through the website, but keeps movie/audio bytes off the hosting server. Its local-network route has no silent server-upload fallback. Guest networks, hotspot isolation or firewalls can prevent a connection; use a network that allows laptops to reach one another or choose Server.
+
+A screen's loading percentage measures readiness to start, not a complete movie download. Browser-based sharing cannot identify your Wi-Fi name.
+
+## Sound and playlists
+
+**Personal** plays the full sound on each laptop. **3D mode** spreads the recording's left/right stereo sound in screen-number order and rebalances when devices are added or removed.
+
+| Laptops | 3D sound positions |
+| --- | --- |
+| 2 | Left · Right |
+| 3 | Left · Centre · Right |
+| 4 | Left · Centre-left · Centre-right · Right |
+| 5 | Left · Centre-left · Centre · Centre-right · Right |
+
+Video supports up to three screens; audio supports up to five speakers. This spreads existing stereo sound rather than creating Dolby Atmos. Mono recordings remain mono. Each laptop's volume and mute control still works.
+
+Add up to ten songs in Audio, then drag them into order. When the current song ends, CineWall loads the next and waits for every selected speaker to be ready before starting it. The source dashboard holds the playlist, so keep it open.
+
+Nearby speakers can echo because laptops have different output delays. Lower or mute individual speakers if needed.
+
+## Share a live screen
+
+1. Choose **Share a live screen** on the homepage or **Share screen** on a dashboard.
+2. On desktop Chrome or Edge, open the HTTPS website or localhost and press **Share screen**.
+3. Choose a tab, window or display in the browser's picker.
+4. Open the numbered screen links on your other laptops.
+5. Choose Mirror or Split wall, then adjust quality, flip or pointer settings as needed.
+6. Press **Stop sharing** when finished.
+
+Screen sharing sends captured media through WebRTC without a server upload. It has its own room state and does not replace a movie/audio session.
+
+Receivers start muted to prevent feedback. **Enable sound** works when the chosen source includes audio. Tab sharing with the browser's Share audio option is usually the simplest choice; window and desktop audio support varies.
+
+The shared pointer is an annotation inside CineWall. For one mouse and keyboard across entire desktops, use a native app such as [Deskflow](https://github.com/deskflow/deskflow). A true extended desktop also needs a desktop display-sharing solution and a virtual display or display adapter. Screen sharing uses direct connections and has no TURN relay fallback.
+
+## Supported files
+
+| Media | Working choices |
+| --- | --- |
+| Video | MP4/M4V with supported H.264, VP9 or AV1 configurations and AAC audio |
+| WebM video | Supported VP8/VP9 video with Opus audio |
+| MKV video | Selected H.264 profiles with supported AAC audio tracks |
+| Audio | MP3, WAV, AAC, M4A, OGG/OGA, FLAC and browser-supported WebM audio |
+
+**MP4 with H.264 video and AAC audio is the safest movie choice.** Every receiving browser must support the file's tracks. An MP4 or MKV extension alone does not guarantee compatibility.
+
+CineWall checks selected movies and rejects unsupported tracks, including HEVC/Dolby MKV. It does not convert movies; convert an unsupported file outside CineWall first. DRM-protected streaming services are not supported.
 
 ## YouTube downloads
 
-On the **Video** dashboard, choose the **YouTube** tab beside **Local video** in Admin Source. This opens the downloader without switching to live YouTube streaming. Paste a link, choose **Find qualities**, then select a format and quality. The menu lists the qualities available for that video, including MP4 and WebM video, MP3 at 96–320 kbps, original M4A audio, and WAV. MP3 bitrates are output settings and do not improve the source audio quality.
+YouTube downloads are separate from the upcoming live YouTube wall. Use the **YouTube** tab beside the local file choice on a Video or Audio dashboard.
 
-Use the X beside a loaded video or audio file to remove it from the session and stop playback on joined Devices. Original files and separately saved downloads are not deleted. Return to **Local video** to upload a file again.
+1. On Windows, run **SETUP DOWNLOADS.cmd** once to install the optional tools. Run it again to update them.
+2. Paste a YouTube link and choose **Search**.
+3. Select an available format and quality, then download.
+4. Save the result or use a supported result in CineWall.
 
-Choose **Download** and wait for it to finish. **Save file** saves it to the browser's Downloads folder. **Use on video wall** loads a supported MP4 into CineWall without conversion. Progress and Cancel are available. Downloads are limited to 10 GB and one active download at a time.
+Choices can include MP4/WebM video, MP3 at 96–320 kbps, original M4A audio and WAV, depending on the video. MP3 output settings do not improve source quality. Downloads have progress and cancellation, a 10 GB limit, and one active job at a time.
 
-MP3 downloads prefer the AAC audio source and retry other available streams if YouTube refuses that source. Connection errors try an alternate official API route and IPv6, with bounded retries at the selected quality.
+The downloader retries alternate streams and official API routes for certain failures. Updates to yt-dlp can help when YouTube changes. Sign-in restrictions, rate limits and blocked connections can still prevent a download. Only download content you own or have permission to save.
 
-The tools are installed in this copy's `tools` folder. For another admin Device, double-click **SETUP DOWNLOADS.cmd** once; run it again to update yt-dlp. The script downloads yt-dlp and FFmpeg from their official GitHub releases, verifies their SHA-256 checksums, and does not change system PATH. For recent YouTube compatibility fixes, use `powershell -NoProfile -ExecutionPolicy Bypass -File setup-download-tools.ps1 -Update -Channel nightly`. The downloader writes its cache inside `.cinema-cache/yt-dlp-cache`. Windows `10013` means the connection was blocked; check firewall/network access if all routes fail. Only download videos you own or have permission to save; restricted videos, sign-in gates and rate limits can still prevent downloads.
+The tools and cache stay in `tools/` and `.cinema-cache/`, which are excluded from Git. The Docker image includes download tools for hosted use.
 
-## Speaker room
+## Hosting
 
-1. Start with Speaker 1 on the admin Device and add up to four more speakers.
-2. Choose an audio file once. It uses the same HTTPS/HTTP sharing rules as video.
-3. Pressing Play opens Speaker 1 in a separate tab. Each Device must click the join button once so the browser can allow sound.
-4. Use the dashboard mixer to control volume or mute for any Device.
+The repository includes a [Dockerfile](Dockerfile) and [Railway configuration](railway.toml). Use a host that runs a long-lived Node process, serves HTTPS and supports event-stream connections.
 
-MP3, WAV, AAC, M4A, OGG, FLAC, and browser-supported WebM audio are accepted. **All speakers** uses a shared start time and gentle drift correction. Closely-spaced speakers can still echo because their output delays differ; choose **One speaker** to avoid overlapping sound. New video sessions use one speaker by default, while audio sessions use all speakers. Existing saved mixer settings are preserved.
+| Setting | Purpose |
+| --- | --- |
+| `PORT` | Server port; defaults to 4173 |
+| `CINEWALL_HOSTED=1` | Requires private room IDs for hosted API/event requests |
+| `CINEWALL_CACHE_DIR` | Location for temporary uploads and download cache |
 
-## Presentation wall
+Deploy both the server and public files, then reload the dashboards and player tabs. Server mode needs enough disk space and upload allowance for the chosen files. Temporary storage may disappear when a hosting instance restarts. Live screen captures and Instant source tabs do not survive a source-browser restart.
 
-1. Start with one display and add up to three.
-2. Choose a PDF, PowerPoint, Word, RTF, or image file.
-3. For a true horizontal split, use **Fill width**. CineWall renders one wide document canvas and gives every Device a different slice without distorting the page.
-4. **Fit page** preserves the complete page; very tall pages may use only the centre portion of a wide multi-display wall.
-5. Change pages from the dashboard or Display 1. Every joined display changes at the same synchronized moment.
+## FAQs
 
-PDF rendering uses the bundled Mozilla PDF.js runtime and works over the local network. Modern Office documents are prepared locally; Microsoft Office is used for the highest-fidelity conversion when it is available, with a simplified local fallback for supported modern formats.
+### If I can watch on one screen, why use more?
 
-## YouTube wall
+You don't need to. CineWall lets you combine laptops you already own into a wider movie view, share music across devices or show a live app to others. Bezels and extra setup are the trade-off.
 
-1. Start with two display links; add the third only when needed.
-2. Paste a standard YouTube, `youtu.be`, Shorts, Live, or embed link on the dashboard.
-3. Open every numbered display link and click **Enter fullscreen & join** once. Use Chrome or Edge for playback.
-4. Press Play from the dashboard. Display 1 opens separately and all joined displays follow the admin timeline.
-5. Use **Cinema crop** to fill the wall or **Fit** to preserve the complete 16:9 frame. Stretch is intentionally unavailable.
-6. YouTube audio plays on Display 1 by default. Choose **All screens** or adjust individual Device volume in the mixer.
+### Does each laptop need the same movie?
 
-YouTube playback requires internet access on every Device. All displays use the official YouTube IFrame Player API with autoplay permission and referrer identification. Dashboard readiness, buffering, errors, and position come from actual player events. Private, removed, age-restricted, or embedding-disabled videos may not play. Because each Device uses an independent YouTube player and buffer, CineWall corrects visible drift but cannot promise frame-perfect synchronization.
+No. Select it on the source laptop only. The other laptops receive it through the selected sharing mode.
 
-## Support this project
+### Why are rooms different on the same hotspot?
 
-Use **Support this project** on the start page, enter an amount, and choose **Generate payment QR**. The QR opens a UPI payment to `6260976807-3@ybl`; payment is completed in the user's UPI app. CineWall does not collect banking details. QR generation uses the external `api.qrserver.com` image service and therefore needs internet access.
+Wi-Fi connects devices, but it does not identify a room on the public website. Open the admin's numbered links, which contain the same room ID. Laptops using the same local CineWall server share its local room.
 
-## Best results
+### Why does Play wait for other screens?
 
-- Connect every Device to the same normal Wi-Fi or to the admin Device's Mobile Hotspot.
-- Use Ethernet or strong 5/6 GHz Wi-Fi when possible.
-- Plug Devices into power and disable sleep, screen savers, and battery-saving mode.
-- Match display resolution, Windows scaling, brightness, and colour settings.
-- Keep the server window open for the entire session.
+CineWall waits until every selected screen is ready for the current file. Open missing screens, resolve their error or remove an unused screen.
+
+### Why does sound need a tap?
+
+Browsers can block audio until you interact with a page. Enable sound once on that laptop, then continue from the admin controls.
+
+### Does fullscreen start automatically?
+
+CineWall attempts fullscreen, but browsers may require a click. Use the fullscreen button when prompted. You can exit it normally.
+
+### Why does one MKV work and another fail?
+
+MKV is a container. The video and audio inside it can use different codecs, and each browser/laptop must decode them. Try H.264 video with AAC audio; HEVC or Dolby tracks can be unsupported.
+
+### Can I share a screen without adding a virtual monitor?
+
+Yes, to show an existing tab, window or display. To create additional desktop space, you need a native display solution.
+
+### Are Presentation and live YouTube ready?
+
+They have existing development code, but their homepage cards are still marked Coming soon. Use Video, Audio or live Screen sharing for the current supported entry points.
 
 ## Troubleshooting
 
-- **A link times out:** confirm all Devices are on the same non-guest network and Node.js is allowed through Windows Firewall on private networks.
-- **The address changed:** use the exact links shown in the active dashboard. Do not reuse links from an older server window.
-- **A file does not play:** use MP4 with H.264/AAC or MP3/WAV audio. Convert unsupported movies outside CineWall first.
-- **Direct sharing cannot connect:** keep the admin dashboard open and configure TURN for restrictive networks. Choose the file again after refreshing the source dashboard.
-- **Sound is blocked:** click the join/allow-sound button once on that Device.
-- **The admin plays but other Devices do not:** reload their numbered display links in Chrome or Edge. Confirm each appears on the dashboard's live map. For three Devices, add Display 3 first. A joined display follows the admin automatically; if sound is blocked, local video starts muted and shows an enable-sound button.
-- **YouTube stays black or reports an error:** use current Chrome or Edge, confirm internet access on that Device, and try a public video that permits embedding.
-- **A display is in the wrong position:** reopen its exact numbered link.
-- **An Office file looks simplified:** export it to PDF first, then present the PDF for the most faithful result.
+| Problem | Try this |
+| --- | --- |
+| A screen link times out | Use the current link, the same non-guest Wi-Fi/hotspot and allow Node.js through the local firewall |
+| Different rooms | Open links copied from the same admin dashboard |
+| Instant cannot connect | Keep the source tab open and laptop awake; check local-network permission, firewall and device isolation, or choose Server |
+| Audio is blocked | Tap Enable sound on that laptop |
+| A movie is rejected | Try an H.264/AAC MP4; check the codecs, not just its extension |
+| Screen sharing is unavailable | Start capture in a supported desktop browser on HTTPS or localhost |
+| Screen sharing has no sound | Share a source with audio and enable Share audio in the browser's picker |
+| The picture or sound drifts | Use a strong connection, plug laptops into power, avoid sleep and reduce competing network activity |
+| YouTube download fails | Update the download tools and check the video's availability and network access |
 
-## Stop CineWall
+For a movie wall, match screen heights, resolution, brightness and scaling where possible. Use the correct numbered link for each position.
 
-Return to the black server window and press `Ctrl+C`.
+## Contribute
 
-## Third-party component
+Bug reports, documentation improvements, accessibility fixes and code contributions are welcome.
 
-The local PDF renderer is Mozilla PDF.js, licensed under Apache-2.0. Its license is included at `public/vendor/pdfjs/LICENSE`.
-YouTube downloads use [yt-dlp](https://github.com/yt-dlp/yt-dlp) and [FFmpeg](https://github.com/yt-dlp/FFmpeg-Builds). Their binaries and bundled license files are kept in the local `tools` folder, which is excluded from Git.
+- [Report a bug or suggest a feature](https://github.com/AryanETH/Cine-wall/issues).
+- Include the mode, browser, operating system, local/online setup and steps to reproduce.
+- For playback issues, include the codecs and error message when available.
+- Keep changes focused and test the affected flow before opening a pull request.
+
+### Development checks
+
+```sh
+npm run check
+npm test
+```
+
+The checks cover syntax, sharing/room behavior, file validation, audio queues and UI logic. Some integration checks start a temporary local server and need network and temporary-file access. Office preparation and optional download tests need their relevant tools installed.
+
+## Related projects
+
+- [Deskflow](https://github.com/deskflow/deskflow) — share one mouse and keyboard across computers.
+- [Deskreen](https://github.com/pavlobu/deskreen) — desktop screen sharing, with extended-display setups using a display adapter.
+
+These projects solve related problems. CineWall is independently developed and is not affiliated with them.
+
+## Support the project
+
+Use **Support this project** on the website, enter an amount and generate a UPI QR. Payment goes to `6260976807-3@ybl` and is completed in your UPI app. CineWall does not collect banking details; QR generation uses an external image service and needs internet.
+
+Built by [Aryan](https://www.linkedin.com/in/aryan686/).
+
+## License and credits
+
+A project-wide license has not yet been specified in this repository.
+
+Bundled or optional components keep their own licenses:
+
+- [Mozilla PDF.js](https://github.com/mozilla/pdf.js) — Apache-2.0; [bundled license](public/vendor/pdfjs/LICENSE).
+- [yt-dlp](https://github.com/yt-dlp/yt-dlp) and [FFmpeg builds](https://github.com/yt-dlp/FFmpeg-Builds) — optional download tools with their own upstream licenses.
+- [Anta](https://github.com/google/fonts/tree/main/ofl/anta) — [SIL Open Font License](public/fonts/OFL.txt).

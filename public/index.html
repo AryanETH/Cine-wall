@@ -8,7 +8,7 @@
   <!-- Primary Meta Tags -->
   <title>CineWall - Multi-Screen Synchronized Video Wall Studio | Transform Your Laptops</title>
   <meta name="title" content="CineWall - Multi-Screen Synchronized Video Wall Studio">
-  <meta name="description" content="Transform multiple laptops into a synchronized video wall. Stream videos, audio, and presentations across 2-3 screens in perfect sync. Free local network solution for immersive multi-display experiences.">
+  <meta name="description" content="Turn the laptops you already own into a wider movie screen, a shared speaker room, or a live screen-sharing setup. Explore CineWall, watch a demo, and learn how it works.">
   <meta name="keywords" content="multi-screen video wall, synchronized playback, triple screen cinema, laptop screen wall, video synchronization, multi-display setup, home theater system, screen mirroring, video wall software, presentation wall">
   <meta name="author" content="Aryan - CineWall Studio">
   <meta name="robots" content="index, follow">
@@ -71,6 +71,7 @@
   <link rel="preload" href="/fonts/Anta-Regular.ttf" as="font" type="font/ttf" crossorigin>
   <link rel="preload" as="image" href="/assets/robots-laptops-poster.jpg" fetchpriority="high">
   <link rel="stylesheet" href="styles.css?v=20261005-audio-37">
+  <link rel="stylesheet" href="home.css?v=20261008-footer-2">
 </head>
 <body class="mode-body">
   <main class="mode-shell">
@@ -86,11 +87,14 @@
       </div>
     </header>
 
+    <nav class="home-nav" aria-label="Explore CineWall"><a href="#how-it-works">How it works</a><a href="#demo">Demo</a><a href="#use-cases">Use cases</a><a href="#about">About</a><a href="#faq">FAQs</a></nav>
+
     <section class="mode-hero">
       <video class="mode-hero-photo" autoplay muted loop playsinline preload="metadata" poster="/assets/robots-laptops-poster.jpg" aria-hidden="true" tabindex="-1" width="1280" height="720">
         <source src="/assets/robots-laptops-hero.mp4" type="video/mp4">
       </video>
       <h1>What do you want<br>to <span class="mode-hero-gradient-word">share</span> today?</h1>
+      <p class="home-hero-copy">Turn the laptops you already have into a wider movie screen or a shared speaker room.</p>
     </section>
 
     <section class="mode-grid" aria-label="CineWall modes">
@@ -132,7 +136,49 @@
       </div>
     </section>
 
-    <footer class="mode-footer"><span>Builder: <a href="https://www.linkedin.com/in/aryan686/" target="_blank" rel="noopener noreferrer" style="color: var(--accent); text-decoration: none;">@aryan</a></span></footer>
+    <a class="home-share-banner" href="/share.html"><span class="home-share-icon fi" aria-hidden="true">&#xE7F4;</span><span><strong>Share a live screen</strong><small>A tab, an app window or your whole screen. Mirror it or spread it across your laptops.</small></span><span class="home-share-action">Start sharing <span class="fi" aria-hidden="true">&#xE72A;</span></span></a>
+
+    <section id="how-it-works" class="home-section" aria-labelledby="howHeading">
+      <div class="home-section-heading"><span class="section-kicker">A SIMPLE SETUP</span><h2 id="howHeading">One file. A bigger view.</h2><p>Choose once on one laptop. The other screens follow.</p></div>
+      <ol class="home-steps"><li><span>01</span><h3>Get together</h3><p>Connect your laptops to the same Wi-Fi or hotspot. Place them side by side for a movie wall.</p></li><li><span>02</span><h3>Choose and connect</h3><p>Choose Video or Audio, then select your file. Open its numbered screen links on the other laptops.</p></li><li><span>03</span><h3>Press play</h3><p>Wait for the screens to be ready. Play, pause and change the sound from the laptop that chose the file.</p></li></ol>
+    </section>
+
+    <section id="demo" class="home-section home-demo" aria-labelledby="demoHeading">
+      <div class="home-section-heading"><span class="section-kicker">SEE IT IN ACTION</span><h2 id="demoHeading">From two laptops<br>to one movie wall.</h2><p>Watch the setup tutorial before you start.</p><a class="home-text-link" href="https://www.youtube.com/watch?v=nKjiv6_XSN4" target="_blank" rel="noopener noreferrer">Watch on YouTube <span class="fi" aria-hidden="true">&#xE8A7;</span></a></div>
+      <div id="homeDemoPlayer" class="home-demo-player"><button id="playHomeDemo" type="button" aria-label="Play the CineWall setup tutorial"><img src="/assets/robots-laptops-poster.jpg" width="1280" height="720" loading="lazy" alt="Two laptops placed together as a movie wall"><span class="home-demo-play"><span class="fi" aria-hidden="true">&#xE768;</span></span><span class="home-demo-caption">Watch the setup tutorial</span></button></div>
+    </section>
+
+    <section id="use-cases" class="home-section" aria-labelledby="usesHeading">
+      <div class="home-section-heading"><span class="section-kicker">WHY MORE THAN ONE SCREEN?</span><h2 id="usesHeading">Make more of the devices you have.</h2><p>One screen is enough for everyday watching. CineWall is for the times you want a wider view or shared sound.</p></div>
+      <div class="home-use-grid"><article><span class="fi" aria-hidden="true">&#xE714;</span><h3>A movie night with friends</h3><p>Spread one picture across two or three laptops for a wider view. Match their heights and brightness for the best result.</p></article><article><span class="fi" aria-hidden="true">&#xE8D6;</span><h3>Music around the room</h3><p>Play your playlist on up to five laptops. Personal gives each full sound; 3D mode spreads left and right sound across them.</p></article><article><span class="fi" aria-hidden="true">&#xE7F4;</span><h3>Show an app or a lesson</h3><p>Share a live tab, window or screen. Mirror it so everyone sees the same view, or split it across a wall.</p></article></div>
+    </section>
+
+    <section id="about" class="home-section home-about" aria-labelledby="aboutHeading"><div><span class="section-kicker">ABOUT CINEWALL</span><h2 id="aboutHeading">Built for laptops.<br>Made for sharing.</h2></div><div><p>CineWall is an open-source browser app built by <a href="https://www.linkedin.com/in/aryan686/" target="_blank" rel="noopener noreferrer">Aryan</a>. It brings devices you already own together for movies, music and live screen sharing.</p><p>No special display hardware is needed for a movie wall. Screen edges stay visible, and playback depends on your Wi-Fi and each laptop’s browser.</p><a class="home-text-link" href="/share.html">Try live screen sharing <span class="fi" aria-hidden="true">&#xE72A;</span></a></div></section>
+
+    <section id="faq" class="home-section home-faq" aria-labelledby="faqHeading"><div class="home-section-heading"><span class="section-kicker">GOOD TO KNOW</span><h2 id="faqHeading">A few questions, answered.</h2></div><div class="home-faq-list">
+      <details><summary>If I can watch on one screen, why use other screens?</summary><p>You don’t have to. Use CineWall when you want a wider picture made from two or three laptops you already own, or music from several laptops. Each movie screen shows a different part of the same frame. The screen edges and extra setup are the trade-off.</p></details>
+      <details><summary>Does every laptop need the movie or song?</summary><p>No. Choose the file on one laptop only. That laptop becomes the admin and shares it with the screens that join its room.</p></details>
+      <details><summary>Why do laptops on the same Wi-Fi get different rooms?</summary><p>Wi-Fi connects the devices, but the website needs a room link to put them together. Open the admin’s numbered screen links instead of opening the homepage separately. Those links contain the same room ID.</p></details>
+      <details><summary>What is the difference between Instant and Server?</summary><p>Instant shares the file from the admin laptop and keeps that tab open. On the online site, the laptops need the same Wi-Fi or hotspot. Server uploads a copy first, then the screens play from it. Neither mode converts your movie.</p></details>
+      <details><summary>Can I use CineWall without internet?</summary><p>Yes, with the local CineWall server running on one laptop and all devices on the same Wi-Fi or hotspot. The online website still needs internet to load pages and connect the room.</p></details>
+      <details><summary>Which files work?</summary><p>MP4 with H.264 video and AAC sound is the safest video choice. Some WebM and H.264/AAC MKV files also work. For music, try MP3, WAV or AAC. Every laptop must be able to play the file. CineWall checks your selection and does not convert it.</p></details>
+      <details><summary>Why might I need to tap each laptop for sound?</summary><p>Browsers can block sound until you interact with that page. Tap Enable sound once when asked, then use the admin’s playback controls.</p></details>
+      <details><summary>Is 3D mode surround sound?</summary><p>It spreads the recording’s left and right sound across your laptops, in screen-number order. Movement comes from the song or movie’s stereo mix. It does not create Dolby Atmos, and a mono track stays mono.</p></details>
+      <details><summary>Can I use a laptop as a second desktop monitor?</summary><p>Screen sharing shows a view you choose: a tab, a window or your current desktop. It does not create extra desktop space. A true extended desktop needs a desktop app and a virtual display or display adapter.</p></details>
+      <details><summary>Can one mouse and keyboard control all the computers?</summary><p>CineWall can show a shared pointer inside the shared view. Controlling other computers’ apps or desktops needs installed software such as <a href="https://github.com/deskflow/deskflow" target="_blank" rel="noopener noreferrer">Deskflow</a>. A website cannot move another computer’s system cursor or type into its other apps.</p></details>
+      <details><summary>What is available today?</summary><p>Video, Audio and live Screen sharing are available. Presentation and live YouTube modes are still being worked on; their cards are marked Coming soon.</p></details>
+    </div></section>
+
+    <footer class="mode-footer">
+      <span>Built by <a href="https://www.linkedin.com/in/aryan686/" target="_blank" rel="noopener noreferrer">@aryan</a></span>
+      <div class="home-footer-links">
+        <span class="home-visit-count"><span>Total visits <strong id="demoVisitCount">—</strong><span id="demoVisitLive" class="home-visit-live"><i class="home-live-dot" aria-hidden="true"></i><span id="demoVisitStatus">Connecting</span></span></span><small>Realtime traffic</small></span>
+        <a class="home-github-link" href="https://github.com/AryanETH/Cine-wall" target="_blank" rel="noopener noreferrer">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 .5a12 12 0 0 0-3.79 23.39c.6.11.82-.26.82-.58v-2.04c-3.34.73-4.04-1.42-4.04-1.42-.55-1.39-1.34-1.76-1.34-1.76-1.09-.75.08-.73.08-.73 1.2.08 1.84 1.24 1.84 1.24 1.07 1.83 2.81 1.3 3.49.99.11-.78.42-1.3.76-1.6-2.67-.3-5.47-1.34-5.47-5.93 0-1.31.47-2.38 1.24-3.22-.12-.3-.54-1.52.12-3.17 0 0 1.01-.32 3.3 1.23a11.5 11.5 0 0 1 6 0c2.29-1.55 3.3-1.23 3.3-1.23.66 1.65.24 2.87.12 3.17.77.84 1.24 1.91 1.24 3.22 0 4.6-2.81 5.63-5.48 5.93.43.37.81 1.1.81 2.22v3.3c0 .32.22.7.83.58A12 12 0 0 0 12 .5Z"/></svg>
+          <span><small>Open source</small><strong>/ Cine-wall</strong></span>
+        </a>
+      </div>
+    </footer>
   </main>
   <div id="supportModal" class="support-modal" hidden>
     <section class="support-dialog" role="dialog" aria-modal="true" aria-labelledby="supportTitle">
@@ -155,6 +201,7 @@
     </section>
   </div>
   <div id="launcherBusy" class="launcher-busy" hidden><span class="spinner"></span><strong>Preparing your studio…</strong></div>
-  <script src="launcher.js?v=20261005-hero-29"></script>
+  <script src="home-footer.js?v=20261008-2"></script>
+  <script src="launcher.js?v=20261007-share-1"></script>
 </body>
 </html>

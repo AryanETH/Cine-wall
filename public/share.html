@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>CineWall · Screen sharing</title>
+  <meta name="description" content="Share a tab, window or screen with your other laptops on the same Wi-Fi. Mirror the view or spread it across a screen wall.">
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg">
+  <script src="icons.js?v=20261002-icons-18"></script>
+  <script src="theme.js"></script>
+  <script src="session.js?v=20261003-sharing-19"></script>
+  <link rel="stylesheet" href="styles.css?v=20261005-audio-37">
+  <link rel="stylesheet" href="share.css?v=20261007-share-1">
+</head>
+<body class="share-body">
+  <main class="share-shell">
+    <header class="share-nav">
+      <a class="brand-lockup" href="/"><span class="brand-icon"><img src="/assets/removed_background (24).png" alt=""></span><strong>CINEWALL</strong></a>
+      <div class="nav-actions"><a class="button subtle" href="/#how-it-works">Help</a><button class="theme-toggle" data-theme-toggle type="button"><span class="fi" data-theme-icon>&#xE706;</span><span data-theme-label>Light</span></button></div>
+    </header>
+    <div class="share-heading"><div><span class="section-kicker">LIVE SCREEN SHARING</span><h1 id="shareHeading">One view. More screens.</h1></div><span id="shareStatus" class="connection-chip" role="status">Connecting…</span></div>
+    <div id="shareError" class="share-error" role="alert" hidden></div>
+    <section id="hostControls" class="share-controls" aria-label="Sharing controls">
+      <div class="share-start-row"><div><h2>Share a tab, window or screen</h2><p>Choose what to share. Keep this tab open.</p></div><div class="share-buttons"><button id="startShare" class="button accent" type="button"><span class="fi">&#xE7F4;</span>Share screen</button><button id="stopShare" class="button danger" type="button" hidden>Stop sharing</button></div></div>
+      <div class="share-options">
+        <div><label>View</label><div id="shareLayout" class="segmented" role="group" aria-label="Shared screen layout"><button type="button" data-layout="mirror" aria-pressed="true">Mirror</button><button type="button" data-layout="wall" aria-pressed="false">Split wall</button></div></div>
+        <label>Quality<select id="shareQuality"><option value="auto">Auto</option><option value="720p">720p · lighter</option><option value="1080p">1080p · sharper</option></select></label>
+        <label class="share-check"><input id="shareFlip" type="checkbox">Flip for teleprompter</label>
+        <label class="share-check"><input id="sharePointers" type="checkbox" checked>Shared pointer</label>
+      </div>
+    </section>
+    <section id="shareLinksPanel" class="share-links-panel" aria-labelledby="shareLinksHeading"><div class="share-links-heading"><h2 id="shareLinksHeading">Your screens</h2><button id="addShareScreen" class="button subtle" type="button"><span class="fi">&#xE710;</span>Add screen</button></div><div id="shareLinks" class="share-links"></div></section>
+    <section id="shareStage" class="share-stage" aria-label="Shared screen preview">
+      <div id="shareCanvas" class="share-canvas"><video id="shareVideo" autoplay muted playsinline></video><div id="sharePointerLayer" class="share-pointer-layer" aria-hidden="true"></div></div>
+      <div id="shareEmpty" class="share-empty"><span class="fi">&#xE7F4;</span><strong id="shareEmptyTitle">Your shared view appears here</strong><p id="shareEmptyCopy">Press Share screen to begin.</p></div>
+      <button id="shareEnable" class="button accent share-enable" type="button" hidden>Start viewing</button>
+    </section>
+    <div class="share-player-bar"><strong id="shareSourceName">No screen shared</strong><div><button id="sharePointer" class="button subtle" type="button" aria-pressed="false">Pointer</button><button id="shareSound" class="button subtle" type="button" aria-pressed="true">Enable sound</button><button id="shareFullscreen" class="button subtle" type="button" title="Fullscreen"><span class="fi">&#xE740;</span><span>Fullscreen</span></button></div></div>
+    <p id="shareHelp" class="share-help">Open the numbered links on laptops using the same Wi-Fi. Sharing mirrors a chosen view; it does not add a new desktop monitor. <a href="/#faq">Read the FAQ</a></p>
+    <p id="shareNativeHelp" class="share-help">Need one mouse and keyboard across your computers? That needs a desktop app such as <a href="https://github.com/deskflow/deskflow" target="_blank" rel="noopener noreferrer">Deskflow</a>. The shared pointer here only points inside CineWall.</p>
+  </main>
+  <script src="share.js?v=20261007-share-1"></script>
+</body>
+</html>

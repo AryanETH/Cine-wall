@@ -14,6 +14,16 @@ function syncHeroMotion() {
 reducedMotion.addEventListener('change', syncHeroMotion);
 syncHeroMotion();
 
+document.querySelector('#playHomeDemo')?.addEventListener('click', () => {
+  const frame = document.createElement('iframe');
+  frame.src = 'https://www.youtube-nocookie.com/embed/nKjiv6_XSN4?autoplay=1';
+  frame.title = 'CineWall setup tutorial';
+  frame.allow = 'autoplay; encrypted-media; picture-in-picture; fullscreen';
+  frame.allowFullscreen = true;
+  frame.referrerPolicy = 'strict-origin-when-cross-origin';
+  document.querySelector('#homeDemoPlayer').replaceChildren(frame);
+});
+
 function closeSupport() {
   supportModal.hidden = true;
   document.body.classList.remove('modal-open');
