@@ -35,6 +35,27 @@
 .share-dot span { position: absolute; top: 18px; left: 0; padding: 3px 6px; white-space: nowrap; border-radius: 5px; background: #161b27; color: #fff; font-size: 11px; }
 .share-error { padding: 14px 18px; margin: 0 0 16px; border: 1px solid var(--danger); border-radius: 12px; background: color-mix(in srgb, var(--danger) 8%, var(--surface)); line-height: 1.5; }
 .share-help a { color: var(--accent); }
+.share-call { margin: 0 0 18px; padding: 22px; border: 1px solid var(--line); border-radius: 20px; background: var(--surface); }
+.share-call-heading { display: flex; justify-content: space-between; align-items: center; gap: 16px; }
+.share-call h2 { margin: 0; font-size: 1.15rem; }
+.share-call-heading p, .share-call-tip { margin: 8px 0 0; font-size: .82rem; color: var(--muted); line-height: 1.5; }
+.share-call-controls { display: flex; flex-wrap: wrap; gap: 10px; margin: 16px 0; }
+.share-call-controls button.active { color: var(--accent); border-color: var(--accent); background: color-mix(in srgb, var(--accent) 10%, var(--surface)); }
+.share-call-tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 12px; }
+.share-call-tile { position: relative; min-height: 145px; aspect-ratio: 16 / 10; overflow: hidden; background: var(--surface-2); border: 1px solid var(--line); border-radius: 15px; }
+.share-call-tile video { width: 100%; height: 100%; object-fit: cover; }
+.share-call-avatar { display: grid; place-items: center; height: 100%; padding-bottom: 30px; color: var(--accent); font: 2rem Anta, sans-serif; }
+.share-call-caption { position: absolute; bottom: 0; left: 0; right: 0; display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 10px; color: #fff; background: #111827dc; }
+.share-call-caption strong { font-size: .82rem; }
+.share-call-caption span { font-size: .68rem; opacity: .8; }
+.viewer .share-call { position: fixed; z-index: 5; top: 12px; right: 12px; width: min(360px, calc(100vw - 24px)); max-height: 50vh; overflow: auto; padding: 14px; background: var(--surface); box-shadow: 0 12px 40px #0004; }
+.viewer .share-call-heading h2 { font-size: .95rem; }
+.viewer .share-call-heading p { font-size: .72rem; }
+.viewer .share-call button { padding: 9px; font-size: .75rem; }
+.viewer .share-call-tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.viewer .share-call-tile { min-height: 100px; }
+.viewer .share-call-caption { display: grid; gap: 3px; }
+.viewer .share-call .share-error { position: static; background: var(--surface); color: var(--ink); font-size: .8rem; }
 .share-body button:focus-visible, .share-body a:focus-visible, .share-body select:focus-visible { outline: 3px solid var(--accent); outline-offset: 3px; }
 .share-body.viewer { padding: 0; background: #0b0e17; }
 .viewer .share-shell { width: 100%; }
@@ -56,4 +77,6 @@
   .share-player-bar { align-items: flex-start; flex-direction: column; }
   .share-player-bar > strong { max-width: 100%; }
   .share-player-bar button { padding: 10px; }
+  .share-call { padding: 16px; }
+  .share-call-heading { align-items: flex-start; }
 }

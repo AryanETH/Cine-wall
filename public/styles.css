@@ -258,7 +258,8 @@ body[data-session-mode="audio"] .top-settings { grid-template-columns: 1fr; }
 .mode-card-art { display: block; width: 100%; height: 100%; background-position: center; background-size: cover; transition: transform .55s cubic-bezier(.2,.75,.2,1); }
 .mode-card[data-session-mode="video"] .mode-card-art { background-image: url('/assets/MOVIES.webp'); }
 .mode-card[data-session-mode="audio"] .mode-card-art { background-image: url('/assets/AUDIO.webp'); background-position: center 30%; }
-.mode-card[data-bg="presentation"] .mode-card-art { background-image: url('/assets/PRESENTATION.jpg'); }
+.mode-card[data-bg="screen-sharing"] { text-decoration: none; }
+.mode-card[data-bg="screen-sharing"] .mode-card-art { background-image: url('/assets/screen-sharing-team.webp'); background-size: cover; background-position: center 15%; background-repeat: no-repeat; }
 .mode-card[data-bg="youtube"] .mode-card-art { background-image: url('/assets/YOUTUBE.webp'); }
 .mode-card.featured { border-color: color-mix(in srgb, var(--accent) 32%, var(--line)); }
 .mode-card:hover .mode-card-art, .mode-card:focus-visible .mode-card-art { transform: scale(1.06); }

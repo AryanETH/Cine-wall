@@ -2,15 +2,16 @@
 (() => {
   const $ = selector => document.querySelector(selector);
   const screen = Number(new URL(location.href).searchParams.get('screen') || 0);
-  const viewer = Number.isInteger(screen) && screen > 0 && screen <= 3;
+  const viewer = Number.isInteger(screen) && screen > 0 && screen <= 10;
   const id = crypto.randomUUID?.() || '10000000-1000-4000-8000-100000000000'.replace(/[018]/g, character => (character ^ crypto.getRandomValues(new Uint8Array(1))[0] & 15 >> character / 4).toString(16));
   const video = $('#shareVideo'), stage = $('#shareStage'), canvas = $('#shareCanvas');
   const connections = new Map(), dots = new Map();
   let stream = null, events = null, current = null, registration = null;
   let stateVersion = '', status = 'waiting', starting = false, pointerOn = false, leaving = false;
   let remoteOrigin = location.origin;
-  let pointerSentAt = 0, linksKey = '', qualityKey = '', barTimer;
+  let pointerSentAt = 0, linksKey = '', qualityKey = '', barTimer, qualityUpdating = false, qualityAgain = false;
   const labels = { waiting: 'Waiting', connecting: 'Connecting…', connected: 'Connected', disconnected: 'Connection lost', tap: 'Tap to view' };
+  const call = window.CineWallCall({ id, api, getInviteLink: () => window.CineWallSession.link('/share.html', remoteOrigin) });
 
   async function api(action, body = {}) {
     const response = await fetch(`/api/share/${action}`, { method: 'POST', keepalive: action === 'leave', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...body, peerId: id }) });
@@ -49,21 +50,15 @@
       actions.append(open, copy); card.append(actions); $('#shareLinks').append(card);
     }
     if (existingFocus) $('#shareLinks').querySelector(`[data-copy-screen="${existingFocus}"]`)?.focus();
-    $('#addShareScreen').disabled = locked() || current.settings.count >= 3;
-    $('#addShareScreen').hidden = current.settings.count >= 3;
+    $('#addShareScreen').disabled = locked() || current.settings.count >= 10;
+    $('#addShareScreen').hidden = current.settings.count >= 10;
   }
   function locked() { return Boolean(current?.source && current.source.peerId !== id); }
+  function receiving() { return viewer || locked(); }
   function layout() {
     if (!current) return;
     canvas.style.transform = current.settings.flip ? 'scaleX(-1)' : '';
-    if (viewer && current.settings.layout === 'wall' && video.videoWidth && video.videoHeight) {
-      const count = current.settings.count, totalWidth = stage.clientWidth * count;
-      const scale = Math.min(totalWidth / video.videoWidth, stage.clientHeight / video.videoHeight);
-      canvas.style.width = `${video.videoWidth * scale}px`;
-      canvas.style.height = `${video.videoHeight * scale}px`;
-      canvas.style.left = `${(totalWidth - video.videoWidth * scale) / 2 - stage.clientWidth * (screen - 1)}px`;
-      canvas.style.top = `${(stage.clientHeight - video.videoHeight * scale) / 2}px`;
-    } else { canvas.style.width = '100%'; canvas.style.height = '100%'; canvas.style.left = '0'; canvas.style.top = '0'; }
+    canvas.style.width = '100%'; canvas.style.height = '100%'; canvas.style.left = '0'; canvas.style.top = '0';
     positionDots();
   }
   function contentBounds() {
@@ -99,47 +94,52 @@
       try {
         const data = JSON.parse(event.data);
         if (data.type !== 'pointer' || !current?.settings.pointers) return;
-        const author = viewer && typeof data.author === 'string' ? data.author : from;
+        const author = receiving() && typeof data.author === 'string' ? data.author : from;
         receivePointer(data, author);
-        if (!viewer) sendPointer({ type: 'pointer', x: data.x, y: data.y, author: from }, from);
+        if (!receiving()) sendPointer({ type: 'pointer', x: data.x, y: data.y, author: from }, from);
       } catch {}
     };
   }
 
   async function adjustQuality() {
+    if (qualityUpdating) { qualityAgain = true; return; }
+    qualityUpdating = true;
+    try {
+      do { qualityAgain = false; await applyQuality(); } while (qualityAgain && stream);
+    } finally { qualityUpdating = false; }
+  }
+  async function applyQuality() {
     if (!stream || !current) return;
     const quality = current.settings.quality;
-    if (qualityKey !== quality) {
-      qualityKey = quality;
-      const height = quality === '720p' ? 720 : 1080;
-      try { await stream.getVideoTracks()[0]?.applyConstraints({ width: { ideal: height * 16 / 9 }, height: { ideal: height }, frameRate: { ideal: 30, max: 30 } }); } catch { /* Browsers choose the closest available capture size. */ }
+    const profile = window.CineWallShareMedia.qualityProfile(quality, connections.size);
+    const key = `${quality}:${profile.height}:${profile.fps}`;
+    if (qualityKey !== key) {
+      qualityKey = key;
+      try { await stream.getVideoTracks()[0]?.applyConstraints({ width: { ideal: profile.height * 16 / 9 }, height: { ideal: profile.height }, frameRate: { ideal: profile.fps, max: profile.fps } }); } catch { /* Browsers choose the closest available capture size. */ }
     }
-    for (const connection of connections.values()) for (const sender of connection.pc.getSenders()) if (sender.track?.kind === 'video') {
-      const parameters = sender.getParameters();
-      if (!parameters.encodings?.length) continue;
-      const bitrate = quality === '720p' ? 2000000 : quality === '1080p' ? 5000000 : 3500000;
-      if (parameters.encodings[0].maxBitrate === bitrate) continue;
-      parameters.encodings[0].maxBitrate = bitrate;
-      try { await sender.setParameters(parameters); } catch {}
-    }
+    await Promise.all([...connections.values()].flatMap(connection => connection.pc.getSenders().filter(sender => sender.track).map(sender => window.CineWallShareMedia.tuneSender(sender,
+      sender.track.kind === 'audio' ? { bitrate: 128000 } : { bitrate: profile.bitrate, fps: profile.fps }))));
   }
 
   function makeConnection(peerId) {
     const pc = new RTCPeerConnection({ iceServers: [] });
-    const connection = { pc, version: current.source.version, candidates: [], queue: Promise.resolve() };
+    const connection = { pc, version: current.source.version, candidates: [], queue: Promise.resolve(), remote: new MediaStream() };
     connections.set(peerId, connection);
     const signal = body => api('signal', { ...body, to: peerId, version: connection.version });
     pc.onicecandidate = event => { if (event.candidate && pc.connectionState !== 'closed') void signal({ candidate: event.candidate.toJSON() }).catch(() => {}); };
     pc.onconnectionstatechange = () => {
-      if (pc.connectionState === 'connected') { if (viewer) { setStatus('connected'); error(); } void adjustQuality(); }
+      if (pc.connectionState === 'connected') { if (receiving()) { setStatus('connected'); error(); } void adjustQuality(); }
       if (['failed', 'disconnected'].includes(pc.connectionState)) {
         pc.close(); if (connections.get(peerId) === connection) connections.delete(peerId);
-        if (viewer) { setStatus('disconnected'); empty('Reconnecting…', 'Keep the sharing laptop awake and use the same Wi-Fi.'); }
+        if (receiving()) { setStatus('disconnected'); empty('Reconnecting…', 'Keep the sharing laptop awake and use the same Wi-Fi.'); }
       }
     };
     pc.ontrack = event => {
-      if (!viewer || connection.version !== current?.source?.version) return;
-      video.srcObject = event.streams[0] || new MediaStream([event.track]);
+      if (!receiving() || connection.version !== current?.source?.version || connections.get(peerId) !== connection) return;
+      window.CineWallShareMedia.tuneReceiver(event.receiver);
+      if (!connection.remote.getTracks().some(track => track.id === event.track.id)) connection.remote.addTrack(event.track);
+      const incoming = event.streams[0] || connection.remote;
+      if (video.srcObject !== incoming) video.srcObject = incoming;
       void playView();
     };
     pc.ondatachannel = event => bindChannel(connection, event.channel, peerId);
@@ -154,6 +154,7 @@
     const connection = makeConnection(peerId);
     try {
       await connection.pc.setLocalDescription(await connection.pc.createOffer());
+      void adjustQuality();
       await api('signal', { to: peerId, version: connection.version, description: connection.pc.localDescription.toJSON() });
     } catch {
       connection.pc.close(); if (connections.get(peerId) === connection) connections.delete(peerId);
@@ -161,8 +162,8 @@
   }
   async function onSignal(data) {
     if (!current?.source || current.source.version !== data.version) return;
-    if (viewer && (data.from !== current.source.peerId || screen > current.settings.count)) return;
-    if (!viewer && (!stream || current.source.peerId !== id || !current.peers.some(peer => peer.peerId === data.from && peer.screen <= current.settings.count))) return;
+    if (receiving() && (data.from !== current.source.peerId || screen > current.settings.count)) return;
+    if (!receiving() && (!stream || current.source.peerId !== id || !(current.receivers || current.peers).some(peer => peer.peerId === data.from && peer.screen <= current.settings.count))) return;
     const connection = connections.get(data.from) || makeConnection(data.from);
     connection.queue = connection.queue.then(async () => {
       if (connection.pc.connectionState === 'closed') return;
@@ -177,23 +178,25 @@
         if (connection.pc.remoteDescription) await connection.pc.addIceCandidate(data.candidate);
         else if (connection.candidates.length < 128) connection.candidates.push(data.candidate);
       }
-    }).catch(() => { if (viewer) setStatus('disconnected'); });
+    }).catch(() => { if (receiving()) setStatus('disconnected'); });
     return connection.queue;
   }
   async function playView() {
-    try { await video.play(); $('#shareEnable').hidden = true; $('#shareEmpty').hidden = true; if (viewer) setStatus('connected'); }
-    catch { $('#shareEnable').hidden = false; if (viewer) setStatus('tap'); }
+    try { await video.play(); $('#shareEnable').hidden = true; $('#shareEmpty').hidden = true; if (receiving()) setStatus('connected'); }
+    catch { $('#shareEnable').hidden = false; if (receiving()) setStatus('tap'); }
     layout();
   }
   function applyState(next) {
     if (current && next.revision < current.revision) return;
     const changed = stateVersion !== (next.source?.version || '');
     current = next;
-    if (changed) { stateVersion = next.source?.version || ''; closeConnections(); if (viewer) video.srcObject = null; }
+    call.updateState(next);
+    if (changed) { stateVersion = next.source?.version || ''; closeConnections(); if (viewer || !stream) video.srcObject = null; }
     if (!viewer && stream && (!next.source || next.source.peerId !== id) && !starting) releaseCapture();
     const source = next.source;
     $('#shareSourceName').textContent = source?.name || 'No screen shared';
-    if (viewer) {
+    $('#shareSound').hidden = !receiving();
+    if (receiving()) {
       $('#shareSound').disabled = !source?.audio || screen > next.settings.count;
       $('#shareSound').textContent = source?.audio ? video.muted ? 'Enable sound' : 'Mute sound' : 'No sound shared';
     }
@@ -201,7 +204,6 @@
     $('#startShare').disabled = locked() || starting || !navigator.mediaDevices?.getDisplayMedia;
     $('#stopShare').hidden = !(stream && source?.peerId === id);
     $('#hostControls').querySelectorAll('select, input, [data-layout]').forEach(control => { control.disabled = locked(); });
-    $('#shareLayout').querySelectorAll('[data-layout]').forEach(button => { const active = button.dataset.layout === next.settings.layout; button.classList.toggle('active', active); button.setAttribute('aria-pressed', String(active)); });
     $('#shareQuality').value = next.settings.quality; $('#shareFlip').checked = next.settings.flip; $('#sharePointers').checked = next.settings.pointers;
     $('#sharePointer').disabled = !source || !next.settings.pointers;
     if (!next.settings.pointers) { pointerOn = false; clearPointers(); $('#sharePointer').setAttribute('aria-pressed', 'false'); }
@@ -210,11 +212,11 @@
     else if (!viewer && source.peerId === id && stream) {
       if (video.srcObject !== stream) { video.srcObject = stream; video.muted = true; void playView(); }
       setStatus('connected');
-      for (const [peerId, connection] of connections) if (!next.peers.some(peer => peer.peerId === peerId && peer.screen <= next.settings.count)) { connection.pc.close(); connections.delete(peerId); }
-      for (const peer of next.peers) if (peer.screen <= next.settings.count) void offer(peer.peerId);
+      const receivers = next.receivers || next.peers;
+      for (const [peerId, connection] of connections) if (!receivers.some(peer => peer.peerId === peerId && peer.screen <= next.settings.count)) { connection.pc.close(); connections.delete(peerId); }
+      for (const peer of receivers) if (peer.peerId !== id && peer.screen <= next.settings.count) void offer(peer.peerId);
       void adjustQuality();
-    } else if (!viewer && locked()) { setStatus('connected'); empty('Another laptop is sharing', 'Open a numbered screen below to watch.'); }
-    else if (viewer && !video.srcObject) { setStatus('connecting'); empty('Connecting to the shared view', 'Use the same Wi-Fi and keep the sharing tab open.'); }
+    } else if (receiving() && !video.srcObject) { setStatus('connecting'); empty('Connecting to the shared view', 'Use the same Wi-Fi and keep the sharing tab open.'); }
     renderLinks(); layout();
   }
 
@@ -233,7 +235,8 @@
       events = new EventSource(`/share-events?peer=${id}&token=${encodeURIComponent(result.token)}`);
       events.addEventListener('share-state', event => applyState(JSON.parse(event.data)));
       events.addEventListener('share-signal', event => { void onSignal(JSON.parse(event.data)); });
-      events.onerror = () => { if (viewer) setStatus('disconnected'); };
+      events.addEventListener('call-signal', event => { void call.onSignal(JSON.parse(event.data)); });
+      events.onerror = () => { if (receiving()) setStatus('disconnected'); };
       applyState(result.state);
     })().finally(() => { registration = null; });
     return registration;
@@ -264,7 +267,6 @@
     } finally { starting = false; if (current) applyState(current); }
   });
   $('#stopShare').addEventListener('click', () => { void stop(); });
-  $('#shareLayout').addEventListener('click', event => { const button = event.target.closest('[data-layout]'); if (button) void changeSettings({ layout: button.dataset.layout }); });
   $('#shareQuality').addEventListener('change', event => { void changeSettings({ quality: event.target.value }); });
   $('#shareFlip').addEventListener('change', event => { void changeSettings({ flip: event.target.checked }); });
   $('#sharePointers').addEventListener('change', event => { void changeSettings({ pointers: event.target.checked }); });
@@ -290,20 +292,20 @@
     receivePointer(data, id); sendPointer(data);
   });
   video.addEventListener('loadedmetadata', layout);
-  video.addEventListener('playing', () => { $('#shareEmpty').hidden = true; if (viewer) setStatus('connected'); });
+  video.addEventListener('playing', () => { $('#shareEmpty').hidden = true; if (receiving()) setStatus('connected'); });
   window.addEventListener('resize', layout); document.addEventListener('fullscreenchange', layout);
   document.body.classList.toggle('viewer', viewer); $('#hostControls').hidden = viewer; $('#shareLinksPanel').hidden = viewer;
   if (viewer) {
     document.title = `CineWall · Shared Screen ${screen}`;
     const bar = document.querySelector('.share-player-bar');
     document.addEventListener('pointermove', () => { bar.classList.add('show'); clearTimeout(barTimer); barTimer = setTimeout(() => bar.classList.remove('show'), 2800); });
-  } else if (!navigator.mediaDevices?.getDisplayMedia) error('Start sharing in desktop Chrome or Edge. Use the HTTPS website, or localhost on the laptop running CineWall.');
+  } else if (!navigator.mediaDevices?.getDisplayMedia) $('#hostControls').querySelector('p').textContent = 'Share screens from desktop Chrome or Edge. You can join the call here.';
   void register().catch(problem => error(problem.message));
   setInterval(async () => {
     if (leaving) return;
     try { applyState(await api('ping', { status })); }
     catch (problem) { if (problem.status === 403) { current = null; stateVersion = ''; closeConnections(); await register().catch(() => {}); } else { setStatus('disconnected'); error('Connection lost. Reconnecting…'); } }
   }, 5000);
-  window.addEventListener('pagehide', () => { leaving = true; events?.close(); closeConnections(); releaseCapture(); void api('leave', { }).catch(() => {}); });
+  window.addEventListener('pagehide', () => { leaving = true; call.close(); events?.close(); closeConnections(); releaseCapture(); void api('leave', { }).catch(() => {}); });
   window.addEventListener('pageshow', event => { if (event.persisted) { leaving = false; current = null; stateVersion = ''; void register().catch(problem => error(problem.message)); } });
 })();

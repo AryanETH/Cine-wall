@@ -1,4 +1,6 @@
-.home-nav { display: flex; flex-wrap: wrap; justify-content: center; gap: 10px 26px; padding: 24px 0 0; }
+.mode-nav { flex-wrap: wrap; gap: 18px; }
+.mode-nav .brand-lockup, .mode-nav .nav-actions { flex-shrink: 0; }
+.home-nav { display: flex; flex: 1; flex-wrap: wrap; justify-content: center; gap: 10px 18px; padding: 0; }
 .home-nav a { padding: 6px 0; color: var(--muted); text-decoration: none; font-size: .9rem; }
 .home-nav a:hover { color: var(--accent); }
 .mode-hero .home-hero-copy { max-width: 39%; color: #536071; font-size: 1rem; line-height: 1.6; }
@@ -54,6 +56,7 @@
 .mode-footer .home-github-link > span { display: block; }
 .home-github-link:hover { border-color: var(--accent); }
 .home-github-link:focus-visible { outline: 3px solid var(--accent); outline-offset: 4px; }
+@media(max-width: 1100px) { .home-nav { order: 3; flex-basis: 100%; } }
 @media(max-width: 1050px) { .home-demo, .home-about, .home-faq { gap: 28px; } .home-steps, .home-use-grid { gap: 18px; } }
 @media(max-width: 720px) {
   .mode-nav { align-items: flex-start; gap: 12px; }

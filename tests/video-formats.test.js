@@ -32,7 +32,7 @@ test('MKV validates H.264 profiles and dual HE-AAC tracks, skips huge payloads a
   const metadataStart = prefix.length + hugeSize, reads = [];
   const file = { name: 'dual-audio.MKV', size: metadataStart + tracks.length, slice(start, end) {
     reads.push([start, end]);
-    assert.ok(end - start <= 4096, 'no movie payload should be buffered');
+    assert.ok(end - start <= 4096, 'no video payload should be buffered');
     const bytes = Buffer.alloc(end - start);
     for (const [offset, part] of [[0, prefix], [metadataStart, tracks]]) {
       const from = Math.max(offset, start), to = Math.min(offset + part.length, end);
@@ -75,14 +75,14 @@ test('compatible MKV/MP4 are accepted; unsupported tracks, renamed containers an
       await assert.rejects(validation.inspect(file), /not supported.*H\.264/);
       await assert.rejects(inspectBrowserVideo(filePath, extension), /Use MP4/);
     }
-    assert.deepEqual(fs.readFileSync(filePath), original, 'validation must leave all movie bytes untouched');
+    assert.deepEqual(fs.readFileSync(filePath), original, 'validation must leave all video bytes untouched');
     return original;
   }
   const mp4 = await clip('supported.mp4', ['-c:v', 'libx264', '-c:a', 'aac'], true);
   await clip('youtube-vp9.mp4', ['-c:v', 'libvpx-vp9', '-c:a', 'aac'], 'vp9');
   await clip('youtube-av1.mp4', ['-c:v', 'libaom-av1', '-cpu-used', '8', '-c:a', 'aac'], 'av1');
   await clip('supported.M4V', ['-c:v', 'libx264', '-c:a', 'aac', '-f', 'mp4'], true);
-  const mkv = await clip('movie.mkv', ['-map', '0:v', '-map', '1:a', '-map', '1:a', '-c:v', 'libx264', '-c:a', 'aac'], true);
+  const mkv = await clip('video.mkv', ['-map', '0:v', '-map', '1:a', '-map', '1:a', '-c:v', 'libx264', '-c:a', 'aac'], true);
   await clip('hevc.mkv', ['-c:v', 'libx265', '-preset', 'ultrafast', '-x265-params', 'log-level=error:pools=1:frame-threads=1', '-c:a', 'eac3'], false);
   await clip('dolby.mkv', ['-c:v', 'libx264', '-c:a', 'eac3'], false);
   await clip('hevc.mp4', ['-c:v', 'libx265', '-preset', 'ultrafast', '-x265-params', 'log-level=error:pools=1:frame-threads=1', '-c:a', 'aac'], false);

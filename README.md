@@ -41,8 +41,9 @@ One screen is enough for everyday watching. CineWall is for when you want a larg
 | --- | --- | --- |
 | Video wall | 2–3 recommended; can reduce to 1 | Available |
 | Audio room | 1–5 speakers | Available |
-| Live screen sharing | Up to 3 numbered screen links | Available |
-| Presentation wall | Up to 3 displays | In development · homepage marked Coming soon |
+| Screen sharing | Up to 10 numbered screens, plus the presenter | Available · phones, tablets and laptops |
+| Room calls | Up to 4 devices | Available · optional mic and camera |
+| Presentation wall | Up to 3 displays | In development · share a slides/document window with Screen sharing instead |
 | Live YouTube wall | 2–3 displays | In development · homepage marked Coming soon |
 
 ### Video and audio
@@ -62,8 +63,13 @@ One screen is enough for everyday watching. CineWall is for when you want a larg
 ### Live screen sharing
 
 - Share a browser tab, app window or entire screen through the browser's picker.
-- **Mirror** the whole view or **Split wall** across the numbered screens.
+- Mirror the whole view on every screen; this mode does not split the picture.
+- Add up to ten numbered receiver screens. Phones and tablets can watch; use desktop Chrome or Edge to start capture.
+- Join a room call on up to four devices with separate microphone and camera switches, live camera tiles and a leave button.
+- Mic and camera start off. Joining a call only listens; each person chooses when to enable their devices.
+- Calls continue when screen sharing stops. Use one call tab per laptop and headphones to reduce echo.
 - Auto, 720p and 1080p quality choices.
+- Auto reduces video traffic and capture size as more screens join, leaving room for audio. Every receiver uses the same low-delay buffering preference where the browser supports it.
 - A shared pointer for pointing inside the view.
 - Horizontal flip for a teleprompter.
 - Receiver sound controls, fullscreen and reconnection.
@@ -159,16 +165,20 @@ Nearby speakers can echo because laptops have different output delays. Lower or 
 
 ## Share a live screen
 
-1. Choose **Share a live screen** on the homepage or **Share screen** on a dashboard.
+1. Choose the active **Screen sharing** homepage card or **Share screen** on a dashboard. YouTube streaming stays Coming soon.
 2. On desktop Chrome or Edge, open the HTTPS website or localhost and press **Share screen**.
 3. Choose a tab, window or display in the browser's picker.
-4. Open the numbered screen links on your other laptops.
-5. Choose Mirror or Split wall, then adjust quality, flip or pointer settings as needed.
+4. Use **Add screen** to create up to ten links. Open them on phones, tablets or laptops on the same Wi-Fi.
+5. Every screen sees the whole view. Adjust quality, flip or pointer settings as needed.
 6. Press **Stop sharing** when finished.
 
 Screen sharing sends captured media through WebRTC without a server upload. It has its own room state and does not replace a movie/audio session.
 
+For a call, press **Join call** on each laptop, then turn on **Mic** or **Camera** if wanted. **Invite to room** copies the same room link. Camera and mic need HTTPS (or localhost), browser permission and a connected microphone/camera. Calls use direct connections on the same Wi-Fi, just like screen sharing; there is no internet relay or recording. Press **Leave call** to stop your camera, mic and incoming call audio.
+
 Receivers start muted to prevent feedback. **Enable sound** works when the chosen source includes audio. Tab sharing with the browser's Share audio option is usually the simplest choice; window and desktop audio support varies.
+
+For lower sound delay, leave quality on **Auto**, keep the presenter awake, use a strong Wi-Fi signal and avoid Bluetooth speakers. Audio gets priority over screen video when supported. Browser buffering preferences are not a promise of identical output timing: device sound drivers, Wi-Fi jitter and speaker delays still vary. Headphones are best for a call. Ten screens are supported by the room and links; practical smoothness depends on the presenter's hardware and network. The presenter sends a separate stream to each viewer, so more viewers use more upload bandwidth and encoding work.
 
 The shared pointer is an annotation inside CineWall. For one mouse and keyboard across entire desktops, use a native app such as [Deskflow](https://github.com/deskflow/deskflow). A true extended desktop also needs a desktop display-sharing solution and a virtual display or display adapter. Screen sharing uses direct connections and has no TURN relay fallback.
 
@@ -246,9 +256,13 @@ MKV is a container. The video and audio inside it can use different codecs, and 
 
 Yes, to show an existing tab, window or display. To create additional desktop space, you need a native display solution.
 
-### Are Presentation and live YouTube ready?
+### Can phones and tablets join? How many screens?
 
-They have existing development code, but their homepage cards are still marked Coming soon. Use Video, Audio or live Screen sharing for the current supported entry points.
+Yes. Screen sharing supports up to ten numbered screens, plus the presenter. A phone or tablet opens a screen link to watch the full view. Start capture from desktop Chrome or Edge. Optional mic/camera calls support four devices at once; the other screens can still watch and hear the shared source.
+
+### Can I show slides? Is live YouTube ready?
+
+Use the active **Screen sharing** card to share your slides, PDF or document window. The separate Presentation wall remains development code rather than a homepage mode. Live YouTube streaming stays Coming soon; YouTube downloads in Video and Audio are already available.
 
 ## Troubleshooting
 
@@ -261,6 +275,7 @@ They have existing development code, but their homepage cards are still marked C
 | A movie is rejected | Try an H.264/AAC MP4; check the codecs, not just its extension |
 | Screen sharing is unavailable | Start capture in a supported desktop browser on HTTPS or localhost |
 | Screen sharing has no sound | Share a source with audio and enable Share audio in the browser's picker |
+| Shared sound lags or cuts out | Choose Auto quality, use strong Wi-Fi and avoid Bluetooth audio; fewer viewers reduce load |
 | The picture or sound drifts | Use a strong connection, plug laptops into power, avoid sleep and reduce competing network activity |
 | YouTube download fails | Update the download tools and check the video's availability and network access |
 
@@ -306,3 +321,4 @@ Bundled or optional components keep their own licenses:
 - [Mozilla PDF.js](https://github.com/mozilla/pdf.js) — Apache-2.0; [bundled license](public/vendor/pdfjs/LICENSE).
 - [yt-dlp](https://github.com/yt-dlp/yt-dlp) and [FFmpeg builds](https://github.com/yt-dlp/FFmpeg-Builds) — optional download tools with their own upstream licenses.
 - [Anta](https://github.com/google/fonts/tree/main/ofl/anta) — [SIL Open Font License](public/fonts/OFL.txt).
+- The Screen sharing card uses an AI-generated [thumbnail](public/assets/screen-sharing-team.webp); its generation prompt and optimization details are saved [here](docs/asset-prompts/screen-sharing.md).
