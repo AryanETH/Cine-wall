@@ -31,10 +31,10 @@ test('server snapshots give every visitor the same count and next update time', 
 
 test('public server route shares a non-cached demo count across rooms before session checks', async () => {
   const source = fs.readFileSync(path.join(__dirname, '../server.js'), 'utf8');
-  const handlerCode = source.match(/const server = http\.createServer\(async \(req, res\) => \{[\s\S]*?\n\}\);/)?.[0];
+  const handlerCode = source.match(/const requestHandler = async \(req, res\) => \{[\s\S]*?\n\};/)?.[0];
   assert.ok(handlerCode);
   let handler;
-  vm.runInNewContext(handlerCode, { URL, http: { createServer: callback => { handler = callback; } }, getDemoVisitSnapshot: () => getDemoVisitSnapshot(Date.parse('2026-10-08T00:00:30Z')) });
+  vm.runInNewContext(`${handlerCode}\nsetHandler(requestHandler);`, { URL, setHandler: callback => { handler = callback; }, getDemoVisitSnapshot: () => getDemoVisitSnapshot(Date.parse('2026-10-08T00:00:30Z')) });
   const responses = [];
   for (const url of ['/api/demo-visits', '/api/demo-visits?room=00000000-0000-0000-0000-000000000000']) {
     const result = {};

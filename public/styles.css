@@ -261,6 +261,8 @@ body[data-session-mode="audio"] .top-settings { grid-template-columns: 1fr; }
 .mode-card[data-bg="screen-sharing"] { text-decoration: none; }
 .mode-card[data-bg="screen-sharing"] .mode-card-art { background-image: url('/assets/screen-sharing-team.webp'); background-size: cover; background-position: center 15%; background-repeat: no-repeat; }
 .mode-card[data-bg="youtube"] .mode-card-art { background-image: url('/assets/YOUTUBE.webp'); }
+.mode-card[data-bg="mic"] { text-decoration: none; }
+.mode-card[data-bg="mic"] .mode-card-art { background-image: url('/assets/mic-speakers.svg'); background-color: #112727; }
 .mode-card.featured { border-color: color-mix(in srgb, var(--accent) 32%, var(--line)); }
 .mode-card:hover .mode-card-art, .mode-card:focus-visible .mode-card-art { transform: scale(1.06); }
 .mode-card:not(.coming-soon):hover, .mode-card:not(.coming-soon):focus-visible { border-color: var(--accent); transform: translateY(-4px); box-shadow: 0 22px 40px rgba(15, 27, 50, .16); }

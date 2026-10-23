@@ -44,7 +44,7 @@ One screen is enough for everyday watching. CineWall is for when you want a larg
 | Screen sharing | Up to 10 numbered screens, plus the presenter | Available · phones, tablets and laptops |
 | Room calls | Up to 4 devices | Available · optional mic and camera |
 | Presentation wall | Up to 3 displays | In development · share a slides/document window with Screen sharing instead |
-| Live YouTube wall | 2–3 displays | In development · homepage marked Coming soon |
+| Mic and Speaker | 1 phone + up to 3 laptop speakers | Available · trusted HTTPS required for phone microphone |
 
 ### Video and audio
 
@@ -59,6 +59,19 @@ One screen is enough for everyday watching. CineWall is for when you want a larg
 - Current song names on the dashboard and speaker screens.
 - **Personal** and **3D mode** sound settings, plus individual volume and mute.
 - Light and dark themes, a first-use dashboard guide and connection feedback.
+
+### Mic and Speaker
+
+Open **Mic and Speaker** on the homepage. Connect everyone to the same Wi-Fi/hotspot, open the phone link on one phone and a different numbered speaker link on each laptop. Tap **Enable speaker** on each laptop, then **Turn microphone on** on the phone.
+
+- Live phone microphone with broadcast mute, boost and independent laptop volume controls.
+- Phone audio-file playback alongside voice. Capturing arbitrary audio from other phone apps is not supported by the browser.
+- Phone teleprompter: type/paste a script, adjust auto-scroll speed and font size, pause, reset, mirror or use focus view.
+- Voice recording without requiring a live broadcast. Stop to preview, download or delete; saved takes persist in IndexedDB on that device. Recording excludes the audio-file player.
+- One phone and three distinct speaker slots per room, with duplicate-device checks and reconnection.
+- Start with one laptop slot. Use **Add laptop** for up to three, or **Remove** on any laptop to disconnect it.
+- Phone microphone access needs trusted HTTPS. For offline/local hotspot use, set `CINEWALL_TLS_CERT` and `CINEWALL_TLS_KEY` to trusted certificate/key files before starting the server. Trust the CA on the phone and receiver laptops and include the server's actual LAN IP in the certificate. See the in-app **Connection & HTTPS help** at `/mic-setup.html` for setup steps.
+- Keep the phone away from speakers to reduce feedback. Browser/network delay means laptop audio is not sample-synchronized.
 
 ### Live screen sharing
 

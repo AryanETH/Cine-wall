@@ -4,3 +4,4 @@ tools
 node_modules
 tests
 *.zip
+*.pem

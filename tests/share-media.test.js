@@ -38,7 +38,7 @@ test('sender tuning prioritizes audio and limits traffic; unsupported settings n
   await assert.doesNotReject(() => tuneSender({ getParameters() { throw new Error('Older browser'); } }));
 });
 
-test('homepage enables Screen sharing with its optimized image while YouTube stays Coming soon', () => {
+test('homepage enables Screen sharing and replaces the YouTube placeholder with Mic and Speaker', () => {
   const home = fs.readFileSync(path.join(__dirname, '../public/index.html'), 'utf8');
   const card = home.match(/<a class="mode-card" data-bg="screen-sharing"[\s\S]*?<\/a>/)?.[0];
   assert.ok(card);
@@ -47,7 +47,13 @@ test('homepage enables Screen sharing with its optimized image while YouTube sta
   assert.doesNotMatch(card, /coming-soon|data-session-mode/);
   assert.doesNotMatch(home, /data-bg="presentation"/);
   assert.doesNotMatch(home, /class="home-share-banner"/);
-  assert.match(home, /youtube-mode-card coming-soon/);
+  const micCard = home.match(/<a class="mode-card mic-mode-card"[\s\S]*?<\/a>/)?.[0];
+  assert.ok(micCard);
+  assert.match(micCard, /href="\/mic.html"/);
+  assert.match(micCard, /Mic and Speaker/);
+  assert.match(micCard, /1 phone · up to 3 laptops/);
+  assert.doesNotMatch(micCard, /coming-soon/);
+  assert.doesNotMatch(home, /Stream YouTube|youtube-mode-card coming-soon/);
   assert.ok(fs.statSync(path.join(__dirname, '../public/assets/screen-sharing-team.webp')).size < 150000);
   const css = fs.readFileSync(path.join(__dirname, '../public/styles.css'), 'utf8');
   assert.match(css, /screen-sharing-team\.webp/);

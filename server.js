@@ -8,6 +8,7 @@ const zlib = require('node:zlib');
 const { execFile } = require('node:child_process');
 const downloads = require('./youtube-downloads');
 const createScreenSharing = require('./screen-sharing');
+const createMicRoom = require('./mic-room');
 const { getDemoVisitSnapshot } = require('./public/home-footer');
 const SERVER_ID = require('node:crypto').randomUUID();
 
@@ -167,6 +168,7 @@ function checkOwner(req, claim = false) {
 }
 
 const screenSharing = createScreenSharing({ identity, readJson, json });
+const micRoom = createMicRoom({ identity, readJson, json });
 
 function releaseReservation() {
   if (!state.asset && !uploadInProgress) { sourceOwner = null; saveSession(); broadcast('state', snapshot()); }
@@ -827,6 +829,7 @@ function serveStatic(req, res, pathname) {
 async function handle(req, res, url) {
   try {
     if (await screenSharing.handle(req, res, url)) return;
+    if (await micRoom.handle(req, res, url)) return;
     if (req.method === 'GET' && url.pathname === '/api/time') {
       json(res, 200, { serverTime: Date.now() });
       return;
@@ -1032,7 +1035,7 @@ async function handle(req, res, url) {
   }
 }
 
-return { handle, pulse() { broadcast('pulse', snapshot()); activeScreens(); screenSharing.pulse(); }, lastUsed: Date.now(), idle() { return !viewers.size && !uploadInProgress && screenSharing.idle(); }, close() { for (const viewer of viewers) viewer.end(); screenSharing.close(); } };
+return { handle, pulse() { broadcast('pulse', snapshot()); activeScreens(); screenSharing.pulse(); micRoom.pulse(); }, lastUsed: Date.now(), idle() { return !viewers.size && !uploadInProgress && screenSharing.idle() && micRoom.idle(); }, close() { for (const viewer of viewers) viewer.end(); screenSharing.close(); micRoom.close(); } };
 }
 
 function iceServers() {
@@ -1044,7 +1047,10 @@ function isLocalHost(host) {
   return /^(localhost|127\.0\.0\.1|\[::1\])$/.test(hostname) || /^(10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.)/.test(hostname);
 }
 const sessions = new Map();
-const server = http.createServer(async (req, res) => {
+const tlsEnabled = Boolean(process.env.CINEWALL_TLS_CERT && process.env.CINEWALL_TLS_KEY);
+if (Boolean(process.env.CINEWALL_TLS_CERT) !== Boolean(process.env.CINEWALL_TLS_KEY)) throw new Error('Set both CINEWALL_TLS_CERT and CINEWALL_TLS_KEY for HTTPS.');
+const protocol = tlsEnabled ? 'https' : 'http';
+const requestHandler = async (req, res) => {
   const url = new URL(req.url, 'http://localhost');
   // Public demo counter: shared across rooms, instances and server restarts.
   if (req.method === 'GET' && url.pathname === '/api/demo-visits') {
@@ -1054,7 +1060,7 @@ const server = http.createServer(async (req, res) => {
   }
   const room = url.searchParams.get('room') || '';
   const hosted = process.env.CINEWALL_HOSTED === '1' || Boolean(process.env.RAILWAY_ENVIRONMENT) || !isLocalHost(String(req.headers['x-forwarded-host'] || req.headers.host || 'localhost').split(',')[0].trim());
-  if ((room && !/^[a-f0-9-]{36}$/.test(room)) || (hosted && !room && (url.pathname.startsWith('/api/') || url.pathname === '/events' || url.pathname === '/share-events'))) {
+  if ((room && !/^[a-f0-9-]{36}$/.test(room)) || (hosted && !room && (url.pathname.startsWith('/api/') || url.pathname === '/events' || url.pathname === '/share-events' || url.pathname === '/mic-events'))) {
     res.writeHead(400, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ error: 'Open your private CineWall session link first.' })); return;
   }
   const key = room || '';
@@ -1065,7 +1071,8 @@ const server = http.createServer(async (req, res) => {
   const session = sessions.get(key);
   session.lastUsed = Date.now();
   await session.handle(req, res, url);
-});
+};
+const server = tlsEnabled ? require('node:https').createServer({ cert: fs.readFileSync(process.env.CINEWALL_TLS_CERT), key: fs.readFileSync(process.env.CINEWALL_TLS_KEY) }, requestHandler) : http.createServer(requestHandler);
 
 const pulse = setInterval(() => {
   for (const [key, session] of sessions) {
@@ -1090,15 +1097,15 @@ server.on('error', (error) => {
 server.on('listening', () => {
   const networks = Object.values(os.networkInterfaces()).flat().filter((item) => item.family === 'IPv4' && !item.internal);
   console.log('\nCineWall Studio is running.\n');
-  console.log(`Start:  http://localhost:${activePort}/`);
-  console.log(`Admin:  http://localhost:${activePort}/admin.html`);
+  console.log(`Start:  ${protocol}://localhost:${activePort}/`);
+  console.log(`Admin:  ${protocol}://localhost:${activePort}/admin.html`);
   if (networks.length) {
     console.log('\nRecommended display link:');
-    console.log(`  http://${networks[0].address}:${activePort}/screen.html`);
+    console.log(`  ${protocol}://${networks[0].address}:${activePort}/screen.html`);
     for (const network of networks.slice(1)) {
       const label = network.address === '192.168.137.1' ? 'Mobile Hotspot link' : 'Alternative link';
       console.log(`${label}:`);
-      console.log(`  http://${network.address}:${activePort}/screen.html`);
+      console.log(`  ${protocol}://${network.address}:${activePort}/screen.html`);
     }
   }
   console.log('\nKeep this window open. Press Ctrl+C to stop.\n');

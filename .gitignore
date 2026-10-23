@@ -3,6 +3,7 @@
 
 # Node modules
 node_modules/
+*.pem
 tools/
 
 # OS files

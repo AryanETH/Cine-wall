@@ -1,0 +1,88 @@
+.mic-body { background: var(--page); color: var(--ink); }
+.mic-shell { max-width: 1120px; margin: auto; padding: 0 28px 40px; }
+.mic-nav { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 26px 0; border-bottom: 1px solid var(--line); }
+.mic-brand { color: var(--ink); text-decoration: none; font-family: Anta, sans-serif; letter-spacing: .04em; }
+.mic-brand span { color: var(--muted); margin-left: 10px; font: 400 .88rem 'Segoe UI', sans-serif; letter-spacing: 0; }
+.mic-heading { display: flex; align-items: center; justify-content: space-between; gap: 20px; padding: 28px 0; }
+.mic-kicker { color: var(--accent); font-size: .7rem; font-weight: 700; letter-spacing: .14em; }
+.mic-heading h1 { font-size: 1.8rem; letter-spacing: -.04em; line-height: 1.2; margin: 0; }
+.mic-heading h1 span { color: var(--accent); }
+.mic-heading p, .mic-panel p { color: var(--muted); line-height: 1.65; }
+.mic-layout { display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: 18px; align-items: start; }
+.mic-main, .mic-side { display: grid; gap: 22px; min-width: 0; }
+.mic-panel { padding: 22px; border: 1px solid var(--line); background: var(--surface); border-radius: 14px; min-width: 0; }
+.mic-panel h2 { font-size: 1.15rem; letter-spacing: -.025em; margin: 0; }
+.mic-panel h3 { font-size: 1.05rem; margin: 10px 0; }
+.mic-panel p { font-size: .9rem; margin: 10px 0 20px; }
+.mic-role-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-top: 25px; }
+.mic-role { display: flex; align-items: center; gap: 12px; padding: 18px; background: var(--surface-2); border: 1px solid var(--line); border-radius: 10px; color: var(--ink); text-decoration: none; font-size: .9rem; }
+.mic-role:hover { border-color: var(--accent); }
+.mic-role > span { font-size: 1.4rem; color: var(--accent); }
+.mic-role small { color: var(--muted); line-height: 1.5; }
+.mic-section-head { display: flex; align-items: center; justify-content: space-between; gap: 14px; }
+.mic-badge { display: inline-flex; align-items: center; gap: 7px; border-radius: 100px; padding: 7px 10px; font-size: .68rem; background: var(--surface-2); white-space: nowrap; }
+.mic-badge.online { color: var(--success); }
+.mic-badge.online::before { content: ''; width: 6px; height: 6px; background: currentColor; border-radius: 50%; }
+.mic-actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 18px; }
+.mic-actions .button { justify-content: center; }
+.mic-meter { margin: 22px 0; height: 12px; border-radius: 8px; overflow: hidden; background: var(--surface-2); }
+.mic-meter div { width: 0; height: 100%; background: var(--accent); transition: width .08s; border-radius: inherit; }
+.mic-slider { display: grid; gap: 13px; margin: 24px 0; font-size: .86rem; }
+.mic-slider > span { display: flex; justify-content: space-between; gap: 12px; }
+.mic-slider output { color: var(--accent); font-variant-numeric: tabular-nums; }
+.mic-slider input { width: 100%; accent-color: var(--accent); }
+.mic-panel .mic-hint { font-size: .78rem; color: var(--muted); line-height: 1.65; }
+.mic-panel hr { border: 0; border-top: 1px solid var(--line); margin: 24px 0; }
+.mic-file { display: block; padding: 16px; border: 1px dashed var(--line); border-radius: 12px; font-size: .86rem; }
+.mic-file input { display: block; max-width: 100%; margin-top: 12px; font-size: .8rem; }
+.mic-panel audio { width: 100%; margin: 14px 0; }
+.mic-notice { border: 1px solid var(--warning); background: var(--surface); padding: 18px 22px; border-radius: 15px; margin-bottom: 24px; color: var(--ink); line-height: 1.65; font-size: .85rem; }
+.mic-notice.error { border-color: var(--danger); }
+.mic-notice a, .mic-text-link { color: var(--accent); }
+.mic-notice strong { display: block; }
+.mic-device-links { display: grid; gap: 12px; margin: 22px 0; }
+.mic-device { padding: 14px; border: 1px solid var(--line); border-radius: 10px; background: transparent; }
+.mic-device header { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.mic-device strong { font-size: .85rem; }
+.mic-device small { font-size: .68rem; color: var(--muted); }
+.mic-device input { display: block; width: 100%; margin-top: 12px; padding: 9px; background: var(--surface); border: 1px solid var(--line); color: var(--muted); border-radius: 7px; font-size: .7rem; }
+.mic-device-actions { display: flex; gap: 16px; margin-top: 12px; }
+.mic-device-actions .mic-remove-laptop { margin-left: auto; color: var(--muted); }
+.mic-device-actions .mic-remove-laptop:hover { color: var(--danger); }
+.mic-disconnect { display: block; margin-top: 20px; color: var(--muted); }
+#addLaptop { width: 100%; justify-content: center; }
+.mic-panel .button { min-height: 38px; padding: 10px 15px; border-radius: 9px; font-size: .85rem; }
+.mic-panel button:disabled { cursor: default; opacity: .45; }
+.mic-text-button, .mic-device-actions a, .mic-text-link { border: 0; background: none; padding: 0; font: inherit; font-size: .8rem; text-decoration: none; color: var(--accent); }
+.mic-steps ol { padding-left: 20px; margin: 22px 0; }
+.mic-steps li { padding-left: 6px; margin: 16px 0; font-size: .85rem; line-height: 1.65; color: var(--muted); }
+#networkLabel { font-size: .8rem; color: var(--muted); }
+#networkAddress { width: 100%; margin-top: 10px; padding: 10px; border-radius: 8px; background: var(--surface-2); border: 1px solid var(--line); color: var(--ink); }
+.mic-speaker-panel { text-align: center; }
+.mic-speaker-symbol { color: var(--accent); font-size: 5rem; margin: 30px 0; }
+.mic-speaker-panel .mic-slider { text-align: left; }
+#scriptEditor summary { cursor: pointer; color: var(--muted); font-size: .88rem; margin-top: 18px; }
+#scriptText { width: 100%; resize: vertical; min-height: 150px; background: var(--surface-2); color: var(--ink); border: 1px solid var(--line); padding: 16px; border-radius: 12px; font: 400 .95rem/1.7 'Segoe UI', sans-serif; margin-top: 14px; }
+.mic-prompter-controls { display: grid; grid-template-columns: 1fr 1fr; gap: 25px; }
+.mic-prompter-viewport { overflow-y: auto; height: 260px; border: 1px solid var(--line); background: var(--page); padding: 24px; border-radius: 10px; overscroll-behavior: contain; scroll-behavior: auto; }
+#prompterText { white-space: pre-wrap; overflow-wrap: anywhere; font-size: 36px; line-height: 1.7; padding-bottom: 220px; }
+#prompterText.mirrored { transform: scaleX(-1); }
+.mic-clock { font-variant-numeric: tabular-nums; color: var(--muted); font-size: 1.3rem; }
+.mic-clock.recording { color: var(--danger); }
+.mic-recordings { display: grid; gap: 16px; }
+.mic-recording { border-top: 1px solid var(--line); padding-top: 18px; }
+.mic-recording strong { display: block; font-size: .88rem; }
+.mic-recording small { color: var(--muted); font-size: .75rem; }
+.mic-footer { color: var(--muted); font-size: .8rem; padding: 36px 0; }
+.mic-panel.focused { position: fixed; inset: 0; z-index: 50; border-radius: 0; display: flex; flex-direction: column; overflow-y: auto; padding: 20px max(20px, env(safe-area-inset-left)); }
+.mic-panel.focused .mic-prompter-viewport { flex: 1; min-height: 150px; }
+.mic-panel.focused .mic-prompter-controls .mic-slider { margin: 12px 0; }
+.mic-panel.focused h2 { display: none; }
+.mic-panel.focused .mic-section-head { margin-bottom: 10px; }
+.mic-setup { max-width: 800px; margin: 35px auto; line-height: 1.8; }
+.mic-setup pre { overflow-x: auto; padding: 18px; background: var(--surface-2); border-radius: 12px; }
+.mic-setup code { font-size: .85rem; }
+.mic-setup a { color: var(--accent); }
+.mic-shell :focus-visible { outline: 2px solid var(--accent); outline-offset: 4px; }
+@media (max-width: 980px) { .mic-layout { grid-template-columns: minmax(0, 1fr) 300px; } .mic-panel { padding: 22px; } }
+@media (max-width: 760px) { .mic-shell { padding: 0 16px 28px; } .mic-heading { padding: 24px 0; } .mic-layout { grid-template-columns: 1fr; } .mic-side { order: -1; } body[data-role="phone"] .mic-side, body[data-role="speaker"] .mic-side { order: 1; } .mic-brand span { display: block; margin: 6px 0 0; } .mic-heading h1 { font-size: 1.6rem; } .mic-section-head { flex-wrap: wrap; } .mic-panel { padding: 20px 16px; } .mic-role-grid { grid-template-columns: 1fr; } }

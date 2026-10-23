@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Mic and Speaker · CineWall</title>
+  <meta name="description" content="Turn your phone into a microphone for up to three laptop speakers, with a teleprompter and voice recordings.">
+  <link rel="icon" href="/favicon.svg"><link rel="stylesheet" href="/styles.css"><link rel="stylesheet" href="/mic.css?v=20261023-2">
+  <script src="/theme.js"></script><script src="/session.js"></script>
+</head>
+<body class="mic-body">
+  <main class="mic-shell">
+    <header class="mic-nav"><a href="/" class="mic-brand">CINEWALL <span>/ Mic and Speaker</span></a><button class="theme-toggle" data-theme-toggle type="button"><span data-theme-icon></span><span data-theme-label>Theme</span></button></header>
+    <section class="mic-heading"><h1>Mic and Speaker</h1><a class="mic-text-link" href="/mic-setup.html">Help</a></section>
+    <div id="micError" class="mic-notice error" role="alert" hidden></div>
+    <div id="secureNotice" class="mic-notice" hidden>Microphone requires HTTPS. <a href="/mic-setup.html">Set up</a></div>
+    <div class="mic-layout">
+      <div class="mic-main">
+        <section id="chooseRole" class="mic-panel"><h2>This device</h2><div class="mic-role-grid"><a id="phoneRole" class="mic-role" href="?role=phone"><span aria-hidden="true">◉</span><strong>Phone mic</strong></a><a id="speakerRole" class="mic-role" href="?speaker=1"><span aria-hidden="true">◖))</span><strong>Laptop speaker</strong></a></div></section>
+        <section id="phonePanel" class="mic-panel" hidden>
+          <div class="mic-section-head"><h2>Microphone</h2><span id="phoneState" class="mic-badge">Mic off</span></div>
+          <div class="mic-meter" aria-hidden="true"><div id="micLevel"></div></div>
+          <div class="mic-actions"><button id="toggleMic" class="button accent" type="button">Mic on</button><button id="muteMic" class="button subtle" type="button" disabled>Mute</button></div>
+          <label class="mic-slider" for="micBoost"><span>Microphone boost <output id="boostValue">1.0×</output></span><input id="micBoost" type="range" min="0.5" max="3" value="1" step="0.1"></label>
+          <hr><h3>Phone audio</h3>
+          <label class="mic-file" for="phoneAudio">Audio file<input id="phoneAudio" type="file" accept="audio/*"></label><p id="audioFileName" class="mic-hint" hidden></p>
+          <audio id="phonePlayer" controls preload="metadata" hidden></audio><button id="removeAudio" class="mic-text-button" type="button" hidden>Remove audio</button>
+        </section>
+        <section id="speakerPanel" class="mic-panel mic-speaker-panel" hidden><span class="mic-kicker" id="speakerLabel">LAPTOP SPEAKER</span><h2 id="speakerTitle">Waiting</h2><p id="speakerMessage" class="mic-hint"></p><button id="enableSpeaker" class="button accent" type="button">Enable speaker</button><label class="mic-slider" for="speakerVolume"><span>Volume <output id="volumeValue">100%</output></span><input id="speakerVolume" type="range" min="0" max="1" value="1" step="0.01"></label><button id="muteSpeaker" class="button subtle" type="button">Mute</button></section>
+        <section id="prompterPanel" class="mic-panel" hidden>
+          <div class="mic-section-head"><h2>Teleprompter</h2><button id="focusPrompter" class="button subtle" type="button">Focus</button></div>
+          <details id="scriptEditor" open><summary>Script</summary><textarea id="scriptText" rows="4" maxlength="100000" placeholder="Type or paste script…" aria-label="Teleprompter script"></textarea><small id="scriptSaved" class="mic-hint" hidden></small></details>
+          <div class="mic-prompter-controls"><label class="mic-slider" for="scrollSpeed"><span>Scroll speed <output id="speedValue">35 px/s</output></span><input id="scrollSpeed" type="range" min="5" max="100" step="5" value="35"></label><label class="mic-slider" for="fontSize"><span>Text size <output id="fontValue">36 px</output></span><input id="fontSize" type="range" min="20" max="80" step="2" value="36"></label></div>
+          <div id="prompterViewport" class="mic-prompter-viewport" tabindex="0" aria-label="Script reading area"><div id="prompterText"></div></div>
+          <div class="mic-actions"><button id="scrollToggle" class="button accent" type="button">Start</button><button id="resetScroll" class="button subtle" type="button">Reset</button><button id="mirrorScript" class="button subtle" type="button" aria-pressed="false">Mirror</button></div>
+        </section>
+        <section id="recordPanel" class="mic-panel" hidden><div class="mic-section-head"><h2>Voice recorder</h2><output id="recordTime" class="mic-clock" aria-live="off">00:00</output></div><div class="mic-actions"><button id="startRecord" class="button accent" type="button">Record</button><button id="stopRecord" class="button subtle" type="button" disabled>Stop</button></div><p id="recordStatus" class="mic-hint" role="status" hidden></p><div id="recordings" class="mic-recordings"></div></section>
+      </div>
+      <aside class="mic-side">
+        <section class="mic-panel"><div class="mic-section-head"><h2>Devices</h2><span id="roomConnection" class="mic-badge" role="status">Connecting…</span></div><p id="roomSummary" class="mic-hint">0/3 laptops</p><label id="networkLabel" for="networkAddress" hidden>Network<select id="networkAddress"></select></label><div id="deviceLinks" class="mic-device-links"></div><button id="addLaptop" class="button subtle" type="button">+ Add laptop</button><button id="leaveRoom" class="mic-text-button mic-disconnect" type="button" hidden>Disconnect</button></section>
+      </aside>
+    </div>
+  </main>
+  <script src="/icons.js"></script><script src="/mic.js?v=20261023-2"></script>
+</body>
+</html>
