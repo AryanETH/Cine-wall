@@ -11,7 +11,7 @@ test('Play waits for readiness and never opens or navigates a copied audio link;
   let focused = 0;
   const context = vm.createContext({ window: { CineWallSession: { deviceId: 'source', room: 'room', link: (route) => `http://hotspot${route}&room=room` }, open(url, name) { opens.push({ url, name }); return { closed: false, focus() { focused++; } }; } },
     status: { state: { ownerId: 'source', allReady: false } }, uploadBusy: false, isPreparing: () => false, positionNow: () => 4,
-    command: (value) => commands.push(value), $: () => ({ addEventListener() {} }), localStorage: { setItem() {} },
+    command: (value) => commands.push(value), videoFinished: () => false, $: () => ({ addEventListener() {} }), localStorage: { setItem() {} },
   });
   vm.runInContext('let adminDisplayWindow = null, sharingMode = "instant";', context);
   vm.runInContext(source.slice(source.indexOf('function sourceLocked()'), source.indexOf('function acceptState(')), context);
@@ -30,7 +30,7 @@ test('Play waits for readiness and never opens or navigates a copied audio link;
 test('video readiness needs picture plus canplay, audio needs canplay but no picture; startup progress is bounded', () => {
   const source = read('screen.js');
   const video = { duration: 60, readyState: 1, videoWidth: 1920, videoHeight: 1080, currentTime: 0, buffered: { length: 1, start: () => 0, end: () => 1.5 } };
-  const context = vm.createContext({ Number, Boolean, Math, video, currentState: { asset: { version: 'current' } }, currentAssetVersion: 'current', sessionMode: 'video', lastError: '', mediaRecoveryInFlight: '', documentReady: false, youtubeReady: false });
+  const context = vm.createContext({ Number, Boolean, Math, video, currentState: { asset: { version: 'current' } }, currentAssetVersion: 'current', mediaElementVersion: 'current', mediaPlayedVersion: '', endedAssetVersion: '', sessionMode: 'video', lastError: '', mediaRecoveryInFlight: '', documentReady: false, youtubeReady: false });
   vm.runInContext(source.slice(source.indexOf('function mediaIsReady()'), source.indexOf('function checkVideoFrames(')), context);
   assert.equal(vm.runInContext('mediaIsReady()', context), false);
   assert.equal(vm.runInContext('loadingStatus().loadProgress', context), 50);

@@ -174,6 +174,8 @@ Video supports up to three screens; audio supports up to five speakers. This spr
 
 Add up to ten songs in Audio, then drag them into order. When the current song ends, CineWall loads the next and waits for every selected speaker to be ready before starting it. The source dashboard holds the playlist, so keep it open.
 
+In **3D mode**, a gradient along the bottom of each speaker player follows its actual audio output. Louder sound produces a fuller glow; stereo movement shifts the glow across the numbered laptops. Volume and mute affect the glow, and it fades during silence, pause or buffering. Mono and centered recordings light the speakers evenly. The effect follows the recording's stereo position rather than adding an automatic sound rotation.
+
 Nearby speakers can echo because laptops have different output delays. Lower or mute individual speakers if needed.
 
 ## Share a live screen

@@ -14,11 +14,22 @@
       this.playRequest = false;
       this.finishedVersion = '';
       this.sequence = 0;
+      this.generation = 0;
+      this.observedState = null;
+      this.observedScreens = [];
+      this.loadingId = '';
+      this.autoplayRevision = 0;
     }
     changed() { this.options.changed?.(this); }
+    reconcile() {
+      const state = this.options.state?.() || this.observedState;
+      if (state) this.observe(state, this.options.screens?.() || this.observedScreens);
+    }
+    cancelAutoplay() { this.autoplayRevision++; this.pendingPlay = ''; this.changed(); }
     clear() {
+      this.generation++;
       this.items = []; this.currentId = ''; this.version = '';
-      this.pendingPlay = ''; this.finishedVersion = ''; this.changed();
+      this.pendingPlay = ''; this.finishedVersion = ''; this.loadingId = ''; this.changed();
     }
     async add(files) {
       if (this.busy || this.options.blocked()) return;
@@ -41,6 +52,7 @@
       } finally { this.busy = false; this.changed(); }
       if (errors.length) this.options.error(`Could not add ${errors.join(', ')}. Try MP3, WAV or AAC audio.`);
       if (!this.currentId && this.items.length) await this.select(this.items[0].id, false);
+      else this.reconcile();
     }
     move(id, to) {
       if (this.busy || this.options.blocked()) return;
@@ -52,14 +64,21 @@
       if (this.busy || this.options.blocked()) return;
       const item = this.items.find(item => item.id === id);
       if (!item) return;
-      this.busy = true; this.pendingPlay = ''; this.changed();
+      const generation = ++this.generation;
+      const autoplayRevision = this.autoplayRevision;
+      this.busy = true; this.loadingId = id; this.pendingPlay = ''; this.changed();
       try {
         const state = await this.options.load(item.file);
-        if (!state?.asset || state.sessionMode !== 'audio') return;
+        if (generation !== this.generation || !state?.asset || state.sessionMode !== 'audio') return;
         this.currentId = item.id; this.version = state.asset.version;
-        this.finishedVersion = ''; this.pendingPlay = autoplay ? this.version : '';
+        this.finishedVersion = ''; this.pendingPlay = autoplay && autoplayRevision === this.autoplayRevision ? this.version : '';
       } catch (error) { this.options.error(error.message || 'This song could not be opened.'); }
-      finally { this.busy = false; this.changed(); }
+      finally {
+        this.busy = false; this.loadingId = ''; this.changed();
+        // Readiness can arrive while load() is still resolving. Consume that
+        // snapshot now instead of waiting for another screen event.
+        if (generation === this.generation) this.reconcile();
+      }
     }
     async remove(id, resume = false) {
       if (this.busy || this.options.blocked()) return;
@@ -76,20 +95,26 @@
       if (current && this.items.length) await this.select(this.items[Math.min(index, this.items.length - 1)].id, resume);
     }
     observe(state, screens) {
+      this.observedState = state; this.observedScreens = screens || [];
       if (this.busy || this.options.blocked()) return;
       if (state.sessionMode !== 'audio') { if (this.items.length) this.clear(); return; }
       if (this.version && state.asset?.version !== this.version) { this.clear(); return; }
       if (!this.version) return;
       if (this.pendingPlay === this.version && state.allReady && !this.playRequest) {
         const version = this.version;
-        this.playRequest = true;
-        Promise.resolve().then(() => this.options.play(version)).then(result => {
+        const request = { version, generation: this.generation };
+        this.playRequest = request;
+        Promise.resolve().then(() => {
+          if (request.generation !== this.generation || this.pendingPlay !== version) return null;
+          return this.options.play(version);
+        }).then(result => {
           if (result && this.pendingPlay === version) this.pendingPlay = '';
         }).catch(error => this.options.error(error.message || 'Could not start the song.'))
-          .finally(() => { this.playRequest = false; this.changed(); });
+          .finally(() => { if (this.playRequest === request) this.playRequest = false; this.changed(); });
       }
-      const source = screens.find(screen => screen.screen === 1 && screen.assetVersion === this.version && screen.ready && !screen.error);
-      if (!source?.ended || state.loop || this.pendingPlay || this.finishedVersion === this.version) return;
+      const source = this.observedScreens.filter(screen => screen.screen === 1 && screen.assetVersion === this.version)
+        .sort((a, b) => (b.lastSeen || 0) - (a.lastSeen || 0))[0];
+      if (!source?.ready || source.error || !source.ended || state.loop || this.pendingPlay || this.finishedVersion === this.version) return;
       this.finishedVersion = this.version;
       const index = this.items.findIndex(item => item.id === this.currentId);
       if (index >= 0 && index + 1 < this.items.length) void this.select(this.items[index + 1].id, true);
@@ -114,6 +139,8 @@
       panel.hidden = options.state().sessionMode !== 'audio' || options.locked();
       input.disabled = queue.busy || blocked || queue.items.length >= 10;
       count.textContent = `${queue.items.length} / 10`;
+      const hint = panel.querySelector('.audio-queue-hint');
+      if (hint) hint.textContent = queue.loadingId ? 'Preparing next song…' : queue.pendingPlay ? 'Waiting for speakers · next song starts automatically.' : 'Songs play in order automatically. Drag to change the order.';
       const key = JSON.stringify([queue.items.map(item => item.id), queue.currentId, queue.busy, blocked]);
       if (key === renderKey) return;
       renderKey = key;

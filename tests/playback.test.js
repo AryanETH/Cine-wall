@@ -6,6 +6,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const vm = require('node:vm');
 const { downloadChoices, downloadError, common } = require('../youtube-downloads');
+const nextTurn = () => new Promise(resolve => setImmediate(resolve));
 
 function player(screen, mode = 'video', peer = null, fullscreen = async () => {}) {
   const nodes = new Map();
@@ -551,7 +552,8 @@ test('dashboard MKV retries preserve the direct asset and are bounded just like 
 
 test('a validated video loads a silent local preview before its LAN transfer, surviving state refreshes', async () => {
   const dashboard = uploadDashboard();
-  await dashboard.evaluate("uploadFile({name:'movie.mp4',size:1000,type:'video/mp4'})");
+  const completion = dashboard.evaluate("uploadFile({name:'movie.mp4',size:1000,type:'video/mp4'})");
+  await nextTurn();
   assert.deepEqual(dashboard.actions, ['preview-load', 'upload-send']);
   assert.equal(dashboard.nodes.get('#mediaPreview').src, 'blob:selected-file');
   assert.equal(dashboard.nodes.get('#mediaPreview').muted, true);
@@ -560,6 +562,7 @@ test('a validated video loads a silent local preview before its LAN transfer, su
   dashboard.evaluate('setPreviewKind(); setPreviewKind()');
   assert.equal(dashboard.nodes.get('#mediaPreview').src, 'blob:selected-file');
   assert.equal(dashboard.revoked.length, 0);
+  dashboard.requests[0].handlers.abort(); await completion;
 });
 
 test('rejected files never upload or replace the existing movie, and the chooser works again afterward', async () => {
@@ -574,13 +577,16 @@ test('rejected files never upload or replace the existing movie, and the chooser
   assert.equal(dashboard.nodes.get('#adminAssetFile').disabled, false);
   assert.match(dashboard.nodes.get('#fileWarning').textContent, /Convert it to \.mp4 first/);
   dashboard.context.window.CineWallVideoFile.validate = async () => {};
-  await dashboard.evaluate("uploadFile({name:'movie.mp4',size:1000,type:'video/mp4'})");
+  const completion = dashboard.evaluate("uploadFile({name:'movie.mp4',size:1000,type:'video/mp4'})");
+  await nextTurn();
   assert.equal(dashboard.requests.length, 1);
+  dashboard.requests[0].handlers.abort(); await completion;
 });
 
 test('upload 100 percent becomes checking, and response state becomes ready without an extra fetch', async () => {
   const dashboard = uploadDashboard();
-  await dashboard.evaluate("uploadFile({name:'movie.mp4',size:1000,type:'video/mp4'})");
+  const completion = dashboard.evaluate("uploadFile({name:'movie.mp4',size:1000,type:'video/mp4'})");
+  await nextTurn();
   const request = dashboard.requests[0];
   request.upload.handlers.progress({ lengthComputable: true, loaded: 1000, total: 1000 });
   request.upload.handlers.load();
@@ -589,6 +595,7 @@ test('upload 100 percent becomes checking, and response state becomes ready with
   request.status = 200;
   request.responseText = JSON.stringify({ state: { sessionMode: 'video', asset: { version: 'ready-1', name: 'movie.mp4' } } });
   request.handlers.load();
+  await completion;
   assert.equal(dashboard.evaluate('uploadBusy'), false);
   assert.equal(dashboard.evaluate('status.state.asset.version'), 'ready-1');
   assert.equal(dashboard.evaluate('localPreview.pending'), false);
@@ -601,11 +608,13 @@ test('upload 100 percent becomes checking, and response state becomes ready with
 test('upload failures clear the stalled progress and release local preview resources', async () => {
   for (const event of ['error', 'abort', 'load']) {
     const dashboard = uploadDashboard();
-    await dashboard.evaluate("uploadFile({name:'movie.mp4',size:1000,type:'video/mp4'})");
+    const completion = dashboard.evaluate("uploadFile({name:'movie.mp4',size:1000,type:'video/mp4'})");
+    await nextTurn();
     const request = dashboard.requests[0];
     request.status = 500;
     request.responseText = JSON.stringify({ error: 'File transfer failed' });
     request.handlers[event]();
+    await completion;
     assert.equal(dashboard.evaluate('uploadBusy'), false);
     assert.equal(dashboard.evaluate('localPreview'), null);
     assert.equal(dashboard.nodes.get('#uploadProgressWrap').hidden, true);
@@ -625,11 +634,13 @@ test('refresh recovers transfer progress and blocks duplicate uploads', async ()
 
 test('409 preserves the same-file local preview and recovers the already running transfer', async () => {
   const dashboard = uploadDashboard();
-  await dashboard.evaluate("uploadFile({name:'movie.mp4',size:1000,type:'video/mp4'})");
+  const completion = dashboard.evaluate("uploadFile({name:'movie.mp4',size:1000,type:'video/mp4'})");
+  await nextTurn();
   const request = dashboard.requests[0];
   request.status = 409;
   request.responseText = JSON.stringify({ preparation: { phase: 'uploading', kind: 'video', name: 'movie.mp4', size: 1000, progress: 50 } });
   request.handlers.load();
+  await completion;
   assert.equal(dashboard.evaluate('uploadBusy'), false);
   assert.equal(dashboard.evaluate('localPreview.pending'), true);
   assert.equal(dashboard.nodes.get('#uploadProgressText').textContent, '50%');
@@ -650,6 +661,7 @@ test('a periodic update restores the ready player if its completion event was mi
     status: { state: { commandId: 1, asset: null, preparation: { phase: 'converting' }, serverId: 'same-server' } },
     events: { addEventListener(name, callback) { handler = callback; } },
     render: () => { renders++; }, renderPreparation: () => { progressUpdates++; }, syncPreview() {}, updateServerTime() {}, acceptState(next) { context.status.state = next; },
+    audioQueue: { queue: { observe() {} } },
   });
   vm.runInContext(pulse, context);
   handler({ data: JSON.stringify({ commandId: 2, asset: { version: 'ready-1' }, preparation: { phase: 'ready' }, serverId: 'same-server' }) });

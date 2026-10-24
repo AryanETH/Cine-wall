@@ -723,3 +723,28 @@ body[data-session-mode="audio"] .top-settings { grid-template-columns: 1fr; }
 .instant-status[data-connection='disconnected'] .status-dot { background: var(--danger); }
 @keyframes connectionPulse { from { opacity: .3; } to { opacity: 1; } }
 @media (prefers-reduced-motion: reduce) { .audio-bars i, .speaker-bars i, .speaker-orbit i, .instant-status .status-dot { animation: none !important; } }
+
+/* Live 3D sound: position follows stereo balance, strength follows this output. */
+.speaker-stage { overflow: hidden; isolation: isolate; }
+.audio-gradient {
+  --sound-level: 0;
+  --sound-height: .18;
+  --sound-x: 50%;
+  --sound-span: 1;
+  position: absolute;
+  z-index: -1;
+  pointer-events: none;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: clamp(130px, 33vh, 320px);
+  opacity: var(--sound-level);
+  transform: scaleY(var(--sound-height));
+  transform-origin: bottom;
+  background:
+    radial-gradient(ellipse calc(58% * var(--sound-span)) 105% at var(--sound-x) 110%, #9d5bff 0%, #576aff99 35%, #26dcf244 65%, transparent 88%),
+    linear-gradient(0deg, #554cff99, #3cdcef33 35%, transparent 88%);
+  filter: blur(12px);
+  will-change: transform, opacity;
+}
+@media (prefers-reduced-motion: reduce) { .audio-gradient { transform: none; } }

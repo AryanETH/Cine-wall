@@ -61,3 +61,45 @@ test('the router can switch from 3D back to full personal stereo without creatin
     else global.AudioContext = original;
   }
 });
+
+test('3D meters follow routed output, stereo balance, volume and mute without treating left-only stereo as mono', () => {
+  const original = global.AudioContext;
+  let context;
+  class Node { connect() { return this; } }
+  class Context {
+    constructor() { context = this; this.currentTime = 0; this.state = 'running'; this.destination = new Node(); this.gains = []; this.analysers = []; }
+    createMediaElementSource() { return new Node(); }
+    createGain() { const gain = Object.assign(new Node(), { gain: { value: 0, setTargetAtTime(value) { this.value = value; } } }); this.gains.push(gain); return gain; }
+    createChannelSplitter() { return new Node(); }
+    createAnalyser() { const analyser = Object.assign(new Node(), { sample: 0, getFloatTimeDomainData(data) { data.fill(this.sample); } }); this.analysers.push(analyser); return analyser; }
+  }
+  global.AudioContext = Context;
+  try {
+    const media = { paused: false, ended: false, muted: false, volume: 1 };
+    const router = createRouter(media);
+    router.set('3d', 2, 2, 'song');
+    assert.equal(context.gains[1].gain.value, 0, 'right laptop never substitutes left-only stereo');
+    assert.equal(context.gains[2].gain.value, 1);
+    assert.equal(context.gains[3].channelCount, 2);
+    assert.equal(context.gains[3].channelCountMode, 'explicit', 'actual mono is upmixed before splitting');
+    const [left, right, output] = context.analysers;
+    left.sample = .2; right.sample = 0; output.sample = 0;
+    assert.equal(router.levels().level, 0);
+    assert.equal(router.levels().position, 0);
+    left.sample = 0; right.sample = .2; output.sample = .2;
+    const full = router.levels();
+    assert.equal(full.position, 1); assert.ok(full.level > .59);
+    media.volume = .25; output.sample = .05; assert.ok(Math.abs(router.levels().level - full.level / 4) < .00001);
+    media.muted = true; assert.equal(router.levels().level, 0); media.muted = false;
+    media.paused = true; assert.equal(router.levels().level, 0); media.paused = false;
+    right.sample = 0; output.sample = 0; assert.equal(router.levels().level, 0);
+    left.sample = right.sample = .1; assert.equal(router.levels().position, .5);
+    for (let count = 2; count <= 5; count++) for (let screen = 1; screen <= count; screen++) {
+      router.set('3d', count, screen, 'next-song');
+      const mix = mixForScreen(count, screen);
+      assert.equal(context.gains[1].gain.value, mix.left * mix.gain);
+      assert.equal(context.gains[2].gain.value, mix.right * mix.gain);
+    }
+    router.set('personal', 2, 1, 'next-song'); assert.equal(router.levels().level, 0);
+  } finally { if (original === undefined) delete global.AudioContext; else global.AudioContext = original; }
+});

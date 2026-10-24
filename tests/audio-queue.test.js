@@ -63,3 +63,99 @@ test('removing the playing song selects the next song while retaining the queue'
   assert.equal(queue.version, 'second.mp3');
   assert.equal(queue.pendingPlay, 'second.mp3');
 });
+
+test('readiness received during loading starts the next song without needing another status message', async () => {
+  let state = { sessionMode: 'audio', asset: null, allReady: false };
+  let finishLoading;
+  const played = [];
+  const queue = new AudioQueue({ blocked: () => false, state: () => state, screens: () => [], validate: async () => {},
+    load: async file => {
+      if (file.name === 'second.mp3') await new Promise(resolve => { finishLoading = resolve; });
+      state = { ...state, asset: { version: file.name }, allReady: true };
+      queue.observe(state, []);
+      return state;
+    }, play: async version => { played.push(version); return true; }, error: message => assert.fail(message),
+  });
+  await queue.add([{ name: 'first.mp3' }, { name: 'second.mp3' }, { name: 'third.mp3' }]);
+  const ended = [{ screen: 1, ready: true, ended: true, assetVersion: 'first.mp3' }];
+  queue.observe(state, ended); queue.observe(state, ended);
+  finishLoading(); await nextTurn();
+  assert.equal(queue.items.length, 3);
+  assert.equal(queue.currentId, queue.items[1].id);
+  assert.deepEqual(played, ['second.mp3']);
+  assert.equal(queue.pendingPlay, '');
+});
+
+test('all songs advance once, preserve reordering, wait for reconnecting speakers and stop after the final song', async () => {
+  const state = { sessionMode: 'audio', asset: null, allReady: false, loop: false };
+  const loaded = [], played = [];
+  const queue = new AudioQueue({ blocked: () => false, validate: async () => {},
+    load: async file => { loaded.push(file.name); state.allReady = false; state.asset = { version: file.name }; return state; },
+    play: async version => { played.push(version); return true; }, error: message => assert.fail(message),
+  });
+  await queue.add(['one', 'two', 'three'].map(name => ({ name })));
+  queue.move(queue.items[2].id, 1);
+  for (const name of ['one', 'three', 'two']) {
+    state.allReady = true;
+    queue.observe(state, []); await nextTurn();
+    const ended = [{ screen: 1, assetVersion: name, ready: true, ended: true }];
+    queue.observe(state, ended); queue.observe(state, ended); await nextTurn();
+    if (name !== 'two') assert.equal(queue.pendingPlay, state.asset.version);
+  }
+  assert.deepEqual(loaded, ['one', 'three', 'two']);
+  assert.deepEqual(played, ['three', 'two']);
+  assert.equal(queue.currentId, queue.items.at(-1).id);
+});
+
+test('cancel, clear and repeated end reports cannot restart a stale song', async () => {
+  const state = { sessionMode: 'audio', asset: null, allReady: false };
+  const played = [];
+  const queue = new AudioQueue({ blocked: () => false, validate: async () => {},
+    load: async file => { state.asset = { version: file.name }; return state; },
+    play: async version => { played.push(version); return true; }, error: message => assert.fail(message),
+  });
+  await queue.add([{ name: 'one' }, { name: 'two' }]);
+  await queue.select(queue.items[1].id);
+  state.allReady = true;
+  queue.observe(state, []); queue.cancelAutoplay(); await nextTurn();
+  assert.deepEqual(played, []);
+  state.allReady = false;
+  await queue.select(queue.items[0].id);
+  state.allReady = true; queue.observe(state, []); queue.clear(); await nextTurn();
+  assert.deepEqual(played, []);
+  assert.deepEqual(queue.items, []);
+});
+
+test('a stale Display 1 tab cannot finish the current song ahead of the latest tab, and repeat holds the song', async () => {
+  const state = { sessionMode: 'audio', asset: null, allReady: false, loop: true };
+  const loaded = [];
+  const queue = new AudioQueue({ blocked: () => false, validate: async () => {},
+    load: async file => { loaded.push(file.name); state.asset = { version: file.name }; return state; },
+    play: async () => true, error: message => assert.fail(message),
+  });
+  await queue.add([{ name: 'one' }, { name: 'two' }]);
+  const reports = [
+    { screen: 1, assetVersion: 'one', ready: true, ended: true, lastSeen: 1 },
+    { screen: 1, assetVersion: 'one', ready: true, ended: false, lastSeen: 2 },
+  ];
+  state.loop = false; queue.observe(state, reports); await nextTurn();
+  assert.deepEqual(loaded, ['one']);
+  state.loop = true; reports[1].ended = true; queue.observe(state, reports); await nextTurn();
+  assert.deepEqual(loaded, ['one']);
+  state.loop = false; reports[1].error = 'Reconnecting'; queue.observe(state, reports); await nextTurn();
+  assert.deepEqual(loaded, ['one']);
+});
+
+test('pausing while the next file loads cancels its automatic start', async () => {
+  const state = { sessionMode: 'audio', asset: null, allReady: true };
+  let finish;
+  const played = [];
+  const queue = new AudioQueue({ blocked: () => false, state: () => state, validate: async () => {},
+    load: async file => { if (file.name === 'two') await new Promise(resolve => { finish = resolve; }); state.asset = {version:file.name}; return state; },
+    play: async version => { played.push(version); return true; }, error: message => assert.fail(message),
+  });
+  await queue.add([{name:'one'}, {name:'two'}]);
+  const loading = queue.select(queue.items[1].id);
+  queue.cancelAutoplay(); finish(); await loading; await nextTurn();
+  assert.equal(queue.version, 'two'); assert.equal(queue.pendingPlay, ''); assert.deepEqual(played, []);
+});

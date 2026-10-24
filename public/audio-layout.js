@@ -28,11 +28,11 @@
     let personalGain = null;
     let leftGain = null;
     let rightGain = null;
+    let leftAnalyser = null;
     let rightAnalyser = null;
+    let outputAnalyser = null;
     let samples = null;
-    let checkTimer = null;
     let assetVersion = '';
-    let stereoDetected = false;
     let mode = 'personal';
     let count = 1;
     let screen = 1;
@@ -48,21 +48,34 @@
         personalGain = context.createGain();
         leftGain = context.createGain();
         rightGain = context.createGain();
+        leftAnalyser = context.createAnalyser();
         rightAnalyser = context.createAnalyser();
+        outputAnalyser = context.createAnalyser();
+        leftAnalyser.fftSize = 512;
         rightAnalyser.fftSize = 512;
+        outputAnalyser.fftSize = 512;
         samples = new Float32Array(rightAnalyser.fftSize);
+        // Explicit speaker upmix duplicates a genuinely mono channel. A stereo
+        // recording with a silent right channel must remain left-only.
+        const stereoInput = context.createGain();
+        stereoInput.channelCount = 2;
+        stereoInput.channelCountMode = 'explicit';
+        stereoInput.channelInterpretation = 'speakers';
         const splitter = context.createChannelSplitter(2);
         personalGain.gain.value = 1;
         leftGain.gain.value = 0;
         rightGain.gain.value = 0;
         source.connect(personalGain);
-        personalGain.connect(context.destination);
-        source.connect(splitter);
-        splitter.connect(leftGain, 0);
+        personalGain.connect(outputAnalyser);
+        source.connect(stereoInput);
+        stereoInput.connect(splitter);
+        splitter.connect(leftAnalyser, 0);
         splitter.connect(rightAnalyser, 1);
+        leftAnalyser.connect(leftGain);
         rightAnalyser.connect(rightGain);
-        leftGain.connect(context.destination);
-        rightGain.connect(context.destination);
+        leftGain.connect(outputAnalyser);
+        rightGain.connect(outputAnalyser);
+        outputAnalyser.connect(context.destination);
         graphReady = true;
         return true;
       } catch {
@@ -84,44 +97,39 @@
       setGain(personalGain, spatial ? 0 : 1);
       if (!spatial) { setGain(leftGain, 0); setGain(rightGain, 0); return; }
       const mix = mixForScreen(count, screen);
-      // Until a real right channel is heard, treat the input as mono. This
-      // prevents the rightmost laptop from going silent on mono recordings.
-      setGain(leftGain, (mix.left + (stereoDetected ? 0 : mix.right)) * mix.gain);
-      setGain(rightGain, stereoDetected ? mix.right * mix.gain : 0);
+      setGain(leftGain, mix.left * mix.gain);
+      setGain(rightGain, mix.right * mix.gain);
     }
 
-    function watchForStereo() {
-      if (checkTimer || !context || stereoDetected) return;
-      checkTimer = setInterval(() => {
-        if (mode !== '3d' || stereoDetected || media.paused || media.ended || context.state !== 'running') return;
-        rightAnalyser.getFloatTimeDomainData(samples);
-        if (samples.some((sample) => Math.abs(sample) > 0.002)) {
-          stereoDetected = true;
-          applyGains();
-          clearInterval(checkTimer);
-          checkTimer = null;
-        }
-      }, 250);
+    function rms(analyser) {
+      analyser.getFloatTimeDomainData(samples);
+      let energy = 0;
+      for (const sample of samples) energy += sample * sample;
+      return Math.sqrt(energy / samples.length);
     }
 
-    function stopWatching() {
-      if (checkTimer) clearInterval(checkTimer);
-      checkTimer = null;
+    function levels() {
+      if (!graphReady || mode !== '3d' || count < 2 || context.state !== 'running' || media.paused || media.ended || media.muted || media.volume === 0 || media.error) return { level: 0, position: 0.5 };
+      const left = rms(leftAnalyser), right = rms(rightAnalyser);
+      const total = left * left + right * right;
+      return {
+        // The MediaElementSource already includes the element's volume.
+        level: Math.min(1, rms(outputAnalyser) * 3),
+        position: total > 0.000001 ? right * right / total : 0.5,
+      };
     }
 
     function set(nextMode, nextCount, nextScreen, nextVersion) {
       mode = nextMode === '3d' ? '3d' : 'personal';
       count = Math.min(5, Math.max(1, Number(nextCount) || 1));
       screen = Math.min(count, Math.max(1, Number(nextScreen) || 1));
-      if (nextVersion !== assetVersion) { assetVersion = nextVersion || ''; stereoDetected = false; }
+      assetVersion = nextVersion || '';
       const key = `${mode}:${count}:${screen}:${assetVersion}`;
       if (key === appliedKey) return !graphFailed;
       if (mode === '3d' && count >= 2 && !ensure()) return false;
       if (graphFailed) return false;
       appliedKey = key;
       applyGains();
-      if (mode === '3d' && count >= 2) watchForStereo();
-      else stopWatching();
       return true;
     }
 
@@ -130,7 +138,7 @@
       try { await context.resume(); return context.state === 'running'; } catch { return false; }
     }
 
-    return { set, resume, state: () => context?.state || 'native' };
+    return { set, resume, levels, state: () => context?.state || 'native' };
   }
 
   const api = { roleForScreen, mixForScreen, createRouter };

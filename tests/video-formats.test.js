@@ -100,7 +100,7 @@ test('compatible MKV/MP4 are accepted; unsupported tracks, renamed containers an
   const webmBytes = fs.readFileSync(webmPath);
   assert.equal(await validation.inspect(new File([webmBytes], 'movie.webm'), peerContext.window.CineWallFilePeer.matroskaCodecs), 'video/webm');
   assert.equal((await inspectBrowserVideo(webmPath, '.webm')).video, 'vp9');
-  const mkvPath = path.join(temporary, 'movie.mkv');
+  const mkvPath = path.join(temporary, 'video.mkv');
   await assert.rejects(validation.inspect(new File([fs.readFileSync(mkvPath)], 'renamed.webm'), peerContext.window.CineWallFilePeer.matroskaCodecs), /not supported/);
 
   // Put valid metadata after a virtual 12 GB media box; validation must skip the data.

@@ -241,6 +241,9 @@ function removeCurrentAsset() {
 }
 
 function applyCommand(input) {
+  if (input.assetVersion && ['play', 'pause', 'seek', 'restart'].includes(input.type) && input.assetVersion !== state.asset?.version) {
+    const error = new Error('The song changed. Reload its playback state.'); error.status = 409; throw error;
+  }
   const now = Date.now();
   // Give every ready browser time to receive the same start, rather than
   // starting the source first. Mixer changes remain immediate.

@@ -781,7 +781,7 @@ $('#sharingOptions')?.addEventListener('click', (event) => {
 
 $('#play').addEventListener('click', playOnAdminDisplay);
 $('#openViewerScreen').addEventListener('click', openViewerScreen);
-$('#pause').addEventListener('click', () => command({ type: 'pause' }));
+$('#pause').addEventListener('click', () => { audioQueue.queue.cancelAutoplay(); command({ type: 'pause' }); });
 $('#restart').addEventListener('click', () => command({ type: 'restart' }));
 $('#back').addEventListener('click', () => seekRelative(-10));
 $('#forward').addEventListener('click', () => seekRelative(10));
@@ -898,6 +898,7 @@ $('#playlistFiles').addEventListener('change', () => {
 
 const audioQueue = window.CineWallAudioQueue.attach({
   state: () => status.state,
+  screens: () => status.screens,
   locked: sourceLocked,
   blocked: () => sourceLocked() || uploadBusy || removeBusy || isPreparing() || status.state.sessionMode !== 'audio',
   validate: (file) => window.CineWallVideoFile.validateAudio(file),
@@ -908,7 +909,7 @@ const audioQueue = window.CineWallAudioQueue.attach({
     if (removed) { filePeer?.clear(); releaseLocalPreview(); return true; }
     return false;
   },
-  play: async (version) => status.state.asset?.version === version ? command({ type: 'play', position: 0 }) : null,
+  play: async (version) => status.state.asset?.version === version ? command({ type: 'play', position: 0, assetVersion: version }) : null,
   error: (message) => { warning.textContent = message; warning.classList.add('show'); },
 });
 
@@ -1342,13 +1343,14 @@ events.addEventListener('state', (event) => {
 events.addEventListener('screens', (event) => {
   status.screens = JSON.parse(event.data).screens;
   renderScreens();
+  audioQueue.queue.observe(status.state, status.screens);
   refresh();
 });
 events.addEventListener('pulse', (event) => {
   const previous = status.state;
   acceptState(JSON.parse(event.data));
   if (previous.commandId !== status.state.commandId || previous.asset?.version !== status.state.asset?.version || previous.ownerId !== status.state.ownerId || previous.allReady !== status.state.allReady || previous.preparation?.phase !== status.state.preparation?.phase || previous.serverId !== status.state.serverId) render();
-  else { renderPreparation(); syncPreview(); }
+  else { renderPreparation(); syncPreview(); audioQueue.queue.observe(status.state, status.screens); }
 });
 
 function tickTimeline() {

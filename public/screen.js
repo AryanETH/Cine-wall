@@ -1,6 +1,6 @@
 'use strict';
 
-const CLIENT_BUILD = '2026.10.05-audio-37';
+const CLIENT_BUILD = '2026.10.24-audio-38';
 const filePeer = window.CineWallFilePeer ? new window.CineWallFilePeer.FilePeer() : null;
 const $ = (selector) => document.querySelector(selector);
 const video = $('#video');
@@ -9,6 +9,7 @@ const stage = $('#wallStage');
 const youtubeViewport = $('#youtubeViewport');
 const youtubeWall = $('#youtubeWall');
 const speakerStage = $('#speakerStage');
+const audioGradient = window.CineWallAudioGradient?.create($('#audioGradient'), audioRouter);
 const documentWall = $('#documentWall');
 const documentFrame = $('#documentFrame');
 const documentImage = $('#documentImage');
@@ -687,6 +688,7 @@ function seekTo(position) {
 async function command(payload) {
   if (removedScreenNumber || !screenNumber || !ready) return;
   if (payload.type === 'play' && currentState?.allReady !== true) return;
+  if (['play', 'pause', 'seek', 'restart'].includes(payload.type)) payload = { ...payload, assetVersion: currentState?.asset?.version };
   if (['play', 'seek', 'restart'].includes(payload.type)) endedAssetVersion = '';
   const sequence = ++localControlSequence;
   const volumeRevision = payload.type === 'screen-audio' && 'volume' in payload ? ++localVolumeRevision : 0;
@@ -700,6 +702,7 @@ async function command(payload) {
     updateController();
   }
   const send = async () => {
+    if (payload.assetVersion && payload.assetVersion !== currentState?.asset?.version) return;
     if (volumeRevision && volumeRevision !== localVolumeRevision) return;
     try {
     const response = await fetch('/api/command', {
@@ -711,6 +714,7 @@ async function command(payload) {
     schedule(result.command);
     return result.command;
     } catch (error) {
+      if (payload.assetVersion && payload.assetVersion !== currentState?.asset?.version) return;
       if (localPlaybackIntent?.sequence === sequence) localPlaybackIntent = null;
       lastError = error.message; fetchInitialState(); postStatus();
     }
@@ -1034,6 +1038,7 @@ function updateAudioWaves() {
   const playing = sessionMode === 'audio' && ready && !removedScreenNumber && currentState?.playing &&
     Number(currentState.notBefore || 0) <= serverNow() && !video.paused && !video.ended && !video.error && video.readyState >= 3 && !video.seeking && !audioWaiting;
   speakerStage.classList.toggle('playing', Boolean(playing));
+  audioGradient?.set(playing && currentState.audioMode === '3d' && wallScreens >= 2, wallScreens, screenNumber);
 }
 
 function instantConnectionStatus() {

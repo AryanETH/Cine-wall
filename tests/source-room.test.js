@@ -116,6 +116,11 @@ test('hotspot room elects one source, blocks replacements, relays original range
   assert.equal((await play()).status, 409);
   await joined(2, assetVersion, { buffering: true }); assert.equal((await play()).status, 409);
   await joined(2); assert.equal((await play()).status, 200);
+  for (const type of ['play', 'pause', 'seek', 'restart']) {
+    const stale = await api('/api/command', winner, { type, assetVersion:'previous-song', position:0 });
+    assert.equal(stale.status,409, 'delayed controls from the previous song must be rejected');
+    assert.equal((await api('/api/status')).data.state.playing,true);
+  }
   await joined(2, assetVersion, { instantConnection: 'connected' });
   assert.equal((await api('/api/status')).data.screens.find(screen => screen.screen === 2).instantConnection, 'connected');
   await joined(2, assetVersion, { instantConnection: '<script>not a valid state</script>' });
