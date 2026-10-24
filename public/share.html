@@ -3,14 +3,17 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>CineWall · Screen sharing</title>
-  <meta name="description" content="Share your screen, talk and turn on your camera with laptops in your CineWall room.">
+  <title>CineWall | Screen Sharing &amp; Room Calls</title>
+  <meta name="description" content="Share a tab, window or desktop with up to 10 receivers. Join a room call on up to 4 devices with optional microphone and camera.">
   <link rel="icon" type="image/svg+xml" href="/favicon.svg">
   <script src="icons.js?v=20261002-icons-18"></script>
   <script src="theme.js"></script>
-  <script src="session.js?v=20261003-sharing-19"></script>
+  <script src="device-support.js?v=20261025-mobile-42"></script>
+  <script src="session.js?v=20261025-storage-41"></script>
   <link rel="stylesheet" href="styles.css?v=20261005-audio-37">
   <link rel="stylesheet" href="share.css?v=20261008-ten-screens-1">
+  <meta name="robots" content="noindex, nofollow">
+  <link rel="stylesheet" href="device-support.css?v=20261025-mobile-42">
 </head>
 <body class="share-body">
   <main class="share-shell">
@@ -28,7 +31,7 @@
         <label class="share-check"><input id="sharePointers" type="checkbox" checked>Shared pointer</label>
       </div>
     </section>
-    <section id="shareLinksPanel" class="share-links-panel" aria-labelledby="shareLinksHeading"><div class="share-links-heading"><div><h2 id="shareLinksHeading">Your screens</h2><p class="share-help">Add up to 10 phones, tablets or laptops.</p></div><button id="addShareScreen" class="button subtle" type="button"><span class="fi">&#xE710;</span>Add screen</button></div><div id="shareLinks" class="share-links"></div></section>
+    <section id="shareLinksPanel" class="share-links-panel" aria-labelledby="shareLinksHeading"><div class="share-links-heading"><div><h2 id="shareLinksHeading">Your screens</h2><p class="share-help">Add up to 10 laptop or PC screens.</p></div><button id="addShareScreen" class="button subtle" type="button"><span class="fi">&#xE710;</span>Add screen</button></div><div id="shareLinks" class="share-links"></div></section>
     <section class="share-call" aria-labelledby="callHeading">
       <div class="share-call-heading"><div><h2 id="callHeading">Room call</h2><p id="callStatus" role="status">Join to talk or listen. Mic and camera start off.</p></div><button id="callJoin" class="button accent" type="button" disabled>Join call</button></div>
       <div class="share-call-controls">
@@ -52,6 +55,6 @@
   </main>
   <script src="share-media.js?v=20261008-ten-screens-1"></script>
   <script src="share-call.js?v=20261008-ten-screens-1"></script>
-  <script src="share.js?v=20261008-ten-screens-1"></script>
+  <script src="desktop-entry.js?v=20261025-mobile-42" data-src="share.js?v=20261008-ten-screens-1"></script>
 </body>
 </html>

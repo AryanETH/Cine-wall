@@ -14,8 +14,10 @@
   const local = /^(localhost|127\.0\.0\.1|\[::1\])$/.test(page.hostname) || /^(10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.)/.test(page.hostname);
   let room = page.searchParams.get('room') || '';
   if (!local && !room) {
-    room = localStorage.getItem('cinewall-room') || uuid();
-    localStorage.setItem('cinewall-room', room);
+    let savedRoom = '';
+    try { savedRoom = localStorage.getItem('cinewall-room') || ''; } catch {}
+    room = /^[a-f0-9-]{36}$/.test(savedRoom) ? savedRoom : uuid();
+    try { localStorage.setItem('cinewall-room', room); } catch {}
     page.searchParams.set('room', room);
     history.replaceState(null, '', page);
   }

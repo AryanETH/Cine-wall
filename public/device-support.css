@@ -1,0 +1,12 @@
+html.device-restricted body > :not(.device-warning) { display: none !important; }
+.device-warning { width: min(460px, calc(100% - 32px)); max-height: calc(100dvh - 32px); margin: auto; padding: 28px; box-sizing: border-box; overflow-y: auto; border: 1px solid var(--line); border-radius: 22px; background: var(--surface, #171c29); color: var(--ink, #fff); box-shadow: 0 24px 80px #0005; }
+.device-warning::backdrop { background: #090d18cc; }
+.device-warning-label { color: var(--accent, #abff3b); font-size: .73rem; font-weight: 700; letter-spacing: .08em; }
+.device-warning h2 { margin: 16px 0; font-size: 1.8rem; line-height: 1.15; letter-spacing: -.035em; }
+.device-warning p { margin: 14px 0; color: var(--muted, #aab2c2); font-size: .97rem; line-height: 1.65; }
+.device-warning-actions { display: grid; gap: 12px; margin-top: 24px; }
+.device-warning-actions .button { justify-content: center; text-align: center; white-space: normal; }
+.device-warning-actions :focus-visible { outline: 3px solid var(--accent); outline-offset: 3px; }
+.device-notice { margin: 16px 0; padding: 18px 20px; border: 1px solid color-mix(in srgb, var(--accent) 45%, var(--line)); border-radius: 16px; background: var(--surface); }
+.device-notice strong { font-size: 1rem; }
+.device-notice p { margin: 8px 0 0; color: var(--muted); font-size: .93rem; line-height: 1.6; }

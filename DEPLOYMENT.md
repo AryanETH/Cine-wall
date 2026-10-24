@@ -1,100 +1,31 @@
-# CineWall Deployment Guide
+# CineWall deployment
 
-## ⚠️ Important: Deployment Limitations
+CineWall uses a long-running Node.js process, in-memory room state, Server-Sent Events and optional local media storage. Use the included Dockerfile and railway.toml for the existing Railway service. Detailed setup and current transport behavior are in [HOSTING.md](HOSTING.md).
 
-CineWall is designed as a **local network application** with features that require:
-- Long-running Node.js server
-- Server-Sent Events (SSE) for real-time sync
-- File uploads and local file system access
-- Persistent WebSocket-like connections
-- Local network device discovery
+## Existing Railway setup
 
-**Vercel and most serverless platforms are NOT suitable** for this application because:
-1. Serverless functions have execution time limits (10-60 seconds)
-2. No persistent connections (SSE won't work reliably)
-3. No local file system persistence
-4. Can't maintain real-time sync across multiple devices
+- Select this CineWall directory as the service root.
+- Build with the included Dockerfile; start with node server.js.
+- Use one replica. Playback state, source ownership and signaling are not shared across instances.
+- Keep watch.aitoyz.in attached to this service.
+- Redeploy after changing local source files, then reload dashboards and numbered players.
 
-## ✅ Recommended Deployment Options
+The Docker image includes Node.js 24, FFmpeg, FFprobe and yt-dlp. It sets CINEWALL_HOSTED=1 and CINEWALL_CACHE_DIR=/tmp/cinewall-cache. Temporary cache files can be lost during redeployment. Attach persistent storage and change the cache path if uploaded files must survive it.
 
-### Option 1: Local Network Only (Recommended)
-**Best for: Home/Office use**
-- Run `node server.js` on one computer
-- Other devices connect via local IP address
-- Perfect for the intended use case
+## Configuration read by the server
 
-### Option 2: VPS/Cloud Server with Node.js
-**Best for: Remote access needed**
+| Variable | Purpose |
+| --- | --- |
+| PORT | Listening port supplied by the host; defaults to 4173 locally |
+| CINEWALL_HOSTED | Set to 1 to require room identifiers for public APIs |
+| CINEWALL_CACHE_DIR | Media, preparation and session-cache directory |
+| CINEWALL_TLS_CERT / CINEWALL_TLS_KEY | Both trusted certificate and key paths, for local HTTPS |
+| CINEWALL_ICE_SERVERS | Optional ICE configuration for legacy peer transport; hosted Instant remains local-only |
 
-**Recommended Platforms:**
-- **Railway.app** (Easy, affordable, Node.js native)
-- **Render.com** (Free tier available)
-- **DigitalOcean App Platform**
-- **Heroku**
-- **AWS EC2** or **Google Cloud Compute**
+The server binds to all interfaces. It does not read a HOST variable. A conventional serverless function is not a drop-in deployment target for this architecture: room state and long-lived signaling would need a different design.
 
-**Steps for Railway.app (Easiest):**
-1. Go to https://railway.app
-2. Sign in with GitHub
-3. Click "New Project" → "Deploy from GitHub repo"
-4. Select this repository
-5. Railway will auto-detect Node.js and deploy
-6. Get your deployment URL
+## Local use and verification
 
-**Steps for Render.com:**
-1. Go to https://render.com
-2. Sign in with GitHub
-3. Click "New +" → "Web Service"
-4. Connect this repository
-5. Build Command: `npm install`
-6. Start Command: `node server.js`
-7. Deploy!
+Run START CINEMA.cmd or node server.js. Devices join the printed address and numbered room links. Plain HTTP/LAN supports local file-range forwarding; phone microphone access requires trusted HTTPS. On the public website, Instant transfers stay between browsers on the same local network. Upload mode and YouTube downloads use the hosting server's storage and bandwidth.
 
-### Option 3: Docker Container
-**Best for: Self-hosting with flexibility**
-
-Create a `Dockerfile`:
-```dockerfile
-FROM node:18
-WORKDIR /app
-COPY package*.json ./
-RUN npm install
-COPY . .
-EXPOSE 4173
-CMD ["node", "server.js"]
-```
-
-Deploy to:
-- Docker Swarm
-- Kubernetes
-- Any cloud provider with container support
-
-## 🚫 Not Recommended
-
-- ❌ Vercel (Serverless, no persistent connections)
-- ❌ Netlify Functions (Same limitations)
-- ❌ AWS Lambda (Serverless, time limits)
-- ❌ Cloudflare Workers (No Node.js runtime, no SSE)
-
-## Environment Variables
-
-When deploying to a cloud platform, set:
-- `PORT` - The port number (usually auto-set by platform)
-- `HOST` - Set to `0.0.0.0` for cloud deployment
-
-## Notes
-
-- File uploads are stored in `.cinema-cache/` directory
-- Make sure the platform supports persistent storage or use cloud storage
-- SSE (Server-Sent Events) requires platforms that support long-lived HTTP connections
-- The application is optimized for **local network use** where all devices are on the same WiFi
-
-## Quick Fix for Vercel
-
-If you must use Vercel (not recommended), you would need to:
-1. Replace SSE with polling
-2. Replace file uploads with cloud storage (S3, etc.)
-3. Use a database for state management
-4. Rebuild as a true serverless application
-
-This would require significant refactoring and is not the intended use case.
+Before deployment, run npm run check and npm test. Browser testing should include song changes, final-song replay, sound permissions and WebRTC connectivity on the devices and network you intend to use. Passing local tests does not deploy the website.

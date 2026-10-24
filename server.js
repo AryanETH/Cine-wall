@@ -29,6 +29,10 @@ const contentTypes = {
   '.ttf': 'font/ttf',
   '.mjs': 'text/javascript; charset=utf-8',
   '.json': 'application/json; charset=utf-8',
+  '.txt': 'text/plain; charset=utf-8',
+  '.xml': 'application/xml; charset=utf-8',
+  '.mp4': 'video/mp4',
+  '.webm': 'video/webm',
   '.svg': 'image/svg+xml',
   '.png': 'image/png',
   '.jpg': 'image/jpeg',
@@ -817,7 +821,7 @@ function serveStatic(req, res, pathname) {
       return;
     }
     res.writeHead(200, {
-      'Content-Type': contentTypes[path.extname(resolved).toLowerCase()] || 'application/octet-stream',
+      'Content-Type': route === '/manifest.json' ? 'application/manifest+json; charset=utf-8' : contentTypes[path.extname(resolved).toLowerCase()] || 'application/octet-stream',
       'Content-Length': data.length,
       'Cache-Control': 'no-cache',
       'Referrer-Policy': 'strict-origin-when-cross-origin',
@@ -825,7 +829,7 @@ function serveStatic(req, res, pathname) {
       'X-Content-Type-Options': 'nosniff',
       'Content-Security-Policy': "default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self' https://www.youtube.com https://s.ytimg.com; media-src 'self' blob:; img-src 'self' data: blob: https://i.ytimg.com https://yt3.ggpht.com https://api.qrserver.com; connect-src 'self' https://www.youtube.com; frame-src 'self' blob: https://www.youtube.com https://www.youtube-nocookie.com; object-src 'self'",
     });
-    res.end(data);
+    res.end(req.method === 'HEAD' ? undefined : data);
   });
 }
 
@@ -879,6 +883,7 @@ async function handle(req, res, url) {
       removeCurrentAsset();
       state = { ...state, playing: false, position: 0, anchorTime: Date.now(), commandId: ++commandSequence,
         asset: { name: String(body.name || 'Local movie').slice(0, 220), size: body.size, originalSize: body.size, duration: Number(body.duration) || 0,
+          publicationId: /^[a-f0-9-]{36}$/.test(body.publicationId || '') ? body.publicationId : '',
           type: String(body.type || 'video/mp4').slice(0, 100), kind: state.sessionMode, renderType: 'media', source: 'peer', transport: body.localOnly === true ? 'hotspot' : body.relay ? 'relay' : 'webrtc', peerId: body.peerId,
           fingerprint: body.fingerprint, codecs: Array.isArray(body.codecs) ? body.codecs.filter((codec) => typeof codec === 'string' && /^(V|A)_[A-Z0-9/_-]{1,60}$/.test(codec)).slice(0, 8) : [], version: require('node:crypto').randomUUID() } };
       for (const screen of screens.values()) Object.assign(screen, { mediaReady: false, duration: 0, playbackTime: 0, error: '' });
@@ -886,12 +891,13 @@ async function handle(req, res, url) {
     }
     if (req.method === 'POST' && url.pathname === '/api/peer-signal') {
       const body = await readJson(req);
+      if (body.assetVersion && body.assetVersion !== state.asset?.version) { json(res, 409, { error: 'The selected media changed.' }); return; }
       if (![body.from, body.to].every((id) => /^[a-f0-9-]{36}$/.test(id || ''))) throw new Error('Invalid peer identity');
       if (![...viewers].some((viewer) => viewer.peerId === body.from)) { json(res, 403, { error: 'Connect your file-sharing tab before signaling' }); return; }
       if (body.description && (!['offer', 'answer'].includes(body.description.type) || typeof body.description.sdp !== 'string' || body.description.sdp.length > 64000)) throw new Error('Invalid peer description');
       const target = [...viewers].find((viewer) => viewer.peerId === body.to);
       if (!target) { json(res, 409, { error: 'The admin source is offline. Keep its dashboard tab open.' }); return; }
-      sendEvent(target, 'peer-signal', { from: body.from, description: body.description, candidate: body.candidate }); json(res, 200, { ok: true }); return;
+      sendEvent(target, 'peer-signal', { from: body.from, assetVersion:state.asset?.version, publicationId:state.asset?.publicationId, description: body.description, candidate: body.candidate }); json(res, 200, { ok: true }); return;
     }
     if (req.method === 'POST' && url.pathname === '/api/media/cancel') {
       checkOwner(req);
@@ -1029,7 +1035,7 @@ async function handle(req, res, url) {
       json(res, 200, { ok: true, command });
       return;
     }
-    if (req.method === 'GET') {
+    if (req.method === 'GET' || (req.method === 'HEAD' && !url.pathname.startsWith('/api/'))) {
       serveStatic(req, res, url.pathname);
       return;
     }
@@ -1055,14 +1061,17 @@ const tlsEnabled = Boolean(process.env.CINEWALL_TLS_CERT && process.env.CINEWALL
 if (Boolean(process.env.CINEWALL_TLS_CERT) !== Boolean(process.env.CINEWALL_TLS_KEY)) throw new Error('Set both CINEWALL_TLS_CERT and CINEWALL_TLS_KEY for HTTPS.');
 const protocol = tlsEnabled ? 'https' : 'http';
 const requestHandler = async (req, res) => {
-  const url = new URL(req.url, 'http://localhost');
+  let url;
+  try { url = new URL(req.url, 'http://localhost'); }
+  catch { res.writeHead(400, { 'Content-Type':'application/json; charset=utf-8' }); res.end(JSON.stringify({error:'Invalid request URL'})); return; }
   // Public demo counter: shared across rooms, instances and server restarts.
   if (req.method === 'GET' && url.pathname === '/api/demo-visits') {
-    res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' });
+    res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store', 'X-Robots-Tag':'noindex, nofollow' });
     res.end(JSON.stringify(getDemoVisitSnapshot()));
     return;
   }
   const room = url.searchParams.get('room') || '';
+  if (room || /^\/(?:api\/|events$|share-events$|mic-events$|__cinewall_peer__\/|(?:admin|screen|share|mic)\.html$)/.test(url.pathname)) res.setHeader('X-Robots-Tag', 'noindex, nofollow');
   const hosted = process.env.CINEWALL_HOSTED === '1' || Boolean(process.env.RAILWAY_ENVIRONMENT) || !isLocalHost(String(req.headers['x-forwarded-host'] || req.headers.host || 'localhost').split(',')[0].trim());
   if ((room && !/^[a-f0-9-]{36}$/.test(room)) || (hosted && !room && (url.pathname.startsWith('/api/') || url.pathname === '/events' || url.pathname === '/share-events' || url.pathname === '/mic-events'))) {
     res.writeHead(400, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ error: 'Open your private CineWall session link first.' })); return;

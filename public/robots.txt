@@ -1,15 +1,11 @@
-# CineWall - Multi-Screen Video Wall Studio
-# https://watch.aitoyz.in/
-
+# Public information pages are indexable. Room pages send noindex tags/headers.
 User-agent: *
 Allow: /
-Allow: /assets/
-Disallow: /admin.html
-Disallow: /screen.html
+Disallow: /api/
+Disallow: /events
+Disallow: /share-events
+Disallow: /mic-events
+Disallow: /__cinewall_peer__/
 Disallow: /.cinema-cache/
 
-# Crawl-delay
-Crawl-delay: 1
-
-# Sitemap
 Sitemap: https://watch.aitoyz.in/sitemap.xml

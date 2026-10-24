@@ -4,7 +4,7 @@
 
 <h1 align="center">CineWall</h1>
 
-<p align="center">A wider movie screen. A shared speaker room. The laptops you already own.</p>
+<p align="center">Free mini theatre at home. Movie nights, 3D music and screen sharing on the laptops you already own.</p>
 
 <p align="center">
   <a href="https://watch.aitoyz.in/">Website</a> ·
@@ -41,7 +41,7 @@ One screen is enough for everyday watching. CineWall is for when you want a larg
 | --- | --- | --- |
 | Video wall | 2–3 recommended; can reduce to 1 | Available |
 | Audio room | 1–5 speakers | Available |
-| Screen sharing | Up to 10 numbered screens, plus the presenter | Available · phones, tablets and laptops |
+| Screen sharing | Up to 10 numbered screens, plus the presenter | Available · laptops and PCs |
 | Room calls | Up to 4 devices | Available · optional mic and camera |
 | Presentation wall | Up to 3 displays | In development · share a slides/document window with Screen sharing instead |
 | Mic and Speaker | 1 phone + up to 3 laptop speakers | Available · trusted HTTPS required for phone microphone |
@@ -55,9 +55,9 @@ One screen is enough for everyday watching. CineWall is for when you want a larg
 - **Instant** and **Server** file-sharing options.
 - Video **Fit**, **Crop** and **Stretch** framing; Stretch is the preset.
 - A silent, ten-second video preview and Replay when the movie ends.
-- Audio playlists of up to ten songs, drag-to-reorder and automatic next-song playback.
+- Audio playlists of up to ten songs, drag-to-reorder, automatic next-song playback and final-song replay.
 - Current song names on the dashboard and speaker screens.
-- **Personal** and **3D mode** sound settings, plus individual volume and mute.
+- **Normal** and **3D mode** sound settings, a player shortcut, sound-reactive gradients, and individual volume and mute.
 - Light and dark themes, a first-use dashboard guide and connection feedback.
 
 ### Mic and Speaker
@@ -77,7 +77,7 @@ Open **Mic and Speaker** on the homepage. Connect everyone to the same Wi-Fi/hot
 
 - Share a browser tab, app window or entire screen through the browser's picker.
 - Mirror the whole view on every screen; this mode does not split the picture.
-- Add up to ten numbered receiver screens. Phones and tablets can watch; use desktop Chrome or Edge to start capture.
+- Add up to ten numbered laptop or PC receiver screens. Use desktop Chrome or Edge to start capture. Smartphone visitors are directed to Mic and Speaker.
 - Join a room call on up to four devices with separate microphone and camera switches, live camera tiles and a leave button.
 - Mic and camera start off. Joining a call only listens; each person chooses when to enable their devices.
 - Calls continue when screen sharing stops. Use one call tab per laptop and headphones to reduce echo.
@@ -110,7 +110,7 @@ Open **Mic and Speaker** on the homepage. Connect everyone to the same Wi-Fi/hot
 | Windows shortcuts | Included `START CINEMA.cmd` and optional `SETUP DOWNLOADS.cmd` |
 | Optional downloads | yt-dlp and FFmpeg; the setup script installs them locally |
 
-The Windows launchers and Office conversion tools are designed for Windows. The Node server and browser pages may work on other operating systems, but full cross-platform support has not been verified. Mobile devices can receive a shared screen where their browser supports it; starting screen capture on mobile depends on browser support.
+The Windows launchers and Office conversion tools are designed for Windows. The Node server and browser pages may work on other operating systems, but full cross-platform support has not been verified. Video streaming, audio streaming and screen sharing are limited to laptops and PCs in the interface. Smartphone users see a warning for those modes, including direct room links. Mic and Speaker remains available on phones in portrait mode.
 
 ## Quick start
 
@@ -161,7 +161,7 @@ A screen's loading percentage measures readiness to start, not a complete movie 
 
 ## Sound and playlists
 
-**Personal** plays the full sound on each laptop. **3D mode** spreads the recording's left/right stereo sound in screen-number order and rebalances when devices are added or removed.
+**Normal** plays the full sound on each laptop. **3D mode** spreads the recording's left/right stereo sound in screen-number order and rebalances when devices are added or removed.
 
 | Laptops | 3D sound positions |
 | --- | --- |
@@ -180,10 +180,10 @@ Nearby speakers can echo because laptops have different output delays. Lower or 
 
 ## Share a live screen
 
-1. Choose the active **Screen sharing** homepage card or **Share screen** on a dashboard. YouTube streaming stays Coming soon.
+1. Choose the active **Screen sharing** homepage card or **Share screen** on a dashboard. YouTube downloads are available inside the Video and Audio dashboards; the old standalone YouTube streaming mode is not offered on the homepage.
 2. On desktop Chrome or Edge, open the HTTPS website or localhost and press **Share screen**.
 3. Choose a tab, window or display in the browser's picker.
-4. Use **Add screen** to create up to ten links. Open them on phones, tablets or laptops on the same Wi-Fi.
+4. Use **Add screen** to create up to ten links. Open them on laptops or PCs on the same Wi-Fi.
 5. Every screen sees the whole view. Adjust quality, flip or pointer settings as needed.
 6. Press **Stop sharing** when finished.
 
@@ -271,13 +271,13 @@ MKV is a container. The video and audio inside it can use different codecs, and 
 
 Yes, to show an existing tab, window or display. To create additional desktop space, you need a native display solution.
 
-### Can phones and tablets join? How many screens?
+### Can phones join? How many screens?
 
-Yes. Screen sharing supports up to ten numbered screens, plus the presenter. A phone or tablet opens a screen link to watch the full view. Start capture from desktop Chrome or Edge. Optional mic/camera calls support four devices at once; the other screens can still watch and hear the shared source.
+Video streaming, audio streaming and screen sharing are intended for laptops and PCs. Smartphones show a warning and do not start those sessions; turning the phone sideways does not bypass it. Use Mic and Speaker on a phone in portrait mode. Screen sharing supports up to ten numbered laptop/PC screens, plus the presenter. Optional mic/camera calls support four devices at once.
 
 ### Can I show slides? Is live YouTube ready?
 
-Use the active **Screen sharing** card to share your slides, PDF or document window. The separate Presentation wall remains development code rather than a homepage mode. Live YouTube streaming stays Coming soon; YouTube downloads in Video and Audio are already available.
+Use the active **Screen sharing** card to share your slides, PDF or document window. The separate Presentation wall remains development code rather than a homepage mode. There is no standalone live YouTube streaming mode on the homepage; YouTube downloads in Video and Audio are available.
 
 ## Troubleshooting
 

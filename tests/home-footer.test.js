@@ -47,9 +47,11 @@ test('public server route shares a non-cached demo count across rooms before ses
   assert.deepEqual(responses[0], responses[1]);
 });
 
-test('footer retains the traffic counter without the open-source GitHub link', () => {
+test('footer labels the simulated counter honestly without the open-source GitHub link', () => {
   const html = fs.readFileSync(path.join(__dirname, '../public/index.html'), 'utf8');
-  assert.match(html, /Realtime traffic/);
+  assert.match(html, /Demo activity/);
+  assert.match(html, /Illustrative counter · not measured visits/);
+  assert.doesNotMatch(html, /Total visits|Realtime traffic/);
   assert.doesNotMatch(html, /Back to setup guide/);
   assert.doesNotMatch(html, /home-github-link|github\.com\/AryanETH\/Cine-wall/);
   assert.match(html, /home-footer\.js\?v=/);
@@ -72,7 +74,7 @@ test('browser uses the server count instead of its own clock and reconnects on f
   vm.runInNewContext(fs.readFileSync(path.join(__dirname, '../public/home-footer.js'), 'utf8'), context);
   await new Promise(resolve => setImmediate(resolve));
   assert.equal(counter.textContent, '5,432');
-  assert.equal(status.textContent, 'Live');
+  assert.equal(status.textContent, 'Demo');
   assert.ok(classes.has('is-live'));
   assert.equal(scheduled[0].delay, 15025);
   online = false;

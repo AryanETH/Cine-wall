@@ -104,6 +104,7 @@ fetch('/api/status', { cache: 'no-store' })
   .then((response) => {
     if (!response.ok) throw new Error();
     document.querySelector('#launcherConnection').classList.add('online');
+    document.querySelector('#launcherConnection span:last-child').textContent = 'Ready to connect';
   })
   .catch(() => {
     document.querySelector('#launcherConnection span:last-child').textContent = 'Server unavailable';

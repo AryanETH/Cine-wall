@@ -29,6 +29,20 @@ test('hosted server separates sessions, signals only within a room, and stores n
   });
   for (let attempt = 0; attempt < 100 && !output.includes(`http://localhost:${port}/`); attempt++) await pause(50);
   assert.ok(output.includes(`http://localhost:${port}/`), output);
+  const malformed=await new Promise((resolve,reject)=>{
+    http.get({hostname:'127.0.0.1',port,path:'//%'},response=>{let body='';response.on('data',chunk=>body+=chunk);response.on('end',()=>resolve({status:response.statusCode,body}));}).on('error',reject);
+  });
+  assert.equal(malformed.status,400,'invalid request URLs must not crash the process');
+  assert.match(malformed.body,/Invalid request URL/);
+  for(const [route,type] of [['/','text/html'],['/robots.txt','text/plain'],['/sitemap.xml','application/xml'],['/manifest.json','application/manifest+json'],['/assets/robots-laptops-hero.mp4','video/mp4']]) {
+    const head=await fetch(base+route,{method:'HEAD'});
+    assert.equal(head.status,200,route);assert.ok(head.headers.get('content-type').startsWith(type),route);
+    assert.ok(Number(head.headers.get('content-length'))>0);assert.equal((await head.arrayBuffer()).byteLength,0);
+  }
+  assert.equal((await fetch(base+'/')).headers.get('x-robots-tag'),null);
+  for(const route of ['/admin.html','/screen.html','/share.html','/mic.html',`/?room=${roomA}`,`/api/info?room=${roomA}`]) {
+    const response=await fetch(base+route);assert.equal(response.status,200,route);assert.match(response.headers.get('x-robots-tag'),/noindex/,route);await response.arrayBuffer();
+  }
   async function api(route, room, body, headers = {}) {
     const url = new URL(base + route); if (room) url.searchParams.set('room', room);
     const response = await fetch(url, { headers: { 'Content-Type': 'application/json', 'X-CineWall-Device': peerA, 'X-CineWall-Key': peerB, ...headers }, ...(body ? { method: 'POST', body: JSON.stringify(body) } : {}) });
@@ -72,9 +86,11 @@ test('hosted server separates sessions, signals only within a room, and stores n
   assert.equal((await api('/api/status', roomA)).data.state.asset, null);
   const mkv = await api('/api/local-source', roomA, { ...metadata, name: 'compatible.mkv', type: 'video/x-matroska', codecs: ['V_MPEG4/ISO/AVC', 'A_AAC'] });
   assert.equal(mkv.status, 200); assert.equal(mkv.data.state.asset.type, 'video/x-matroska');
-  const published = await api('/api/local-source', roomA, { ...metadata, localOnly: true, relay: true });
+  const published = await api('/api/local-source', roomA, { ...metadata, publicationId:peerB, localOnly: true, relay: true });
   assert.equal(published.status, 200); assert.equal(published.data.state.asset.source, 'peer'); assert.equal(published.data.state.asset.size, metadata.size);
   assert.equal(published.data.state.asset.transport, 'hotspot', 'local-only takes precedence over relay');
+  assert.equal(published.data.state.asset.publicationId,peerB,'the source can identify its pending publication before the HTTP response');
+  assert.equal((await api('/api/peer-signal',roomA,{from:peerA,to:peerB,assetVersion:'previous-song',candidate:{candidate:'old'}})).status,409,'old-song negotiation must not reach the new song');
   for (const route of ['/api/media/stream', '/api/movie/stream']) {
     const url = `${base}${route}?room=${roomA}&v=${published.data.state.asset.version}`;
     for (const method of ['GET', 'HEAD']) assert.equal((await fetch(url, { method })).status, 409, 'hotspot files cannot be forwarded through the host');

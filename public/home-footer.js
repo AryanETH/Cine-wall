@@ -35,7 +35,7 @@ if (typeof document !== 'undefined') {
             !Number.isFinite(snapshot.serverNow) || !Number.isFinite(snapshot.nextUpdateAt)) throw new Error('Invalid counter');
         counter.textContent = snapshot.count.toLocaleString('en-US');
         indicator?.classList.add('is-live');
-        if (status) status.textContent = 'Live';
+        if (status) status.textContent = 'Demo';
         // Schedule against server time, not each visitor's computer clock.
         delay = Math.max(100, Math.min(45000, snapshot.nextUpdateAt - snapshot.serverNow - (performance.now() - started) / 2 + 25));
       } catch {

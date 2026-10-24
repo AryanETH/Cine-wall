@@ -67,3 +67,10 @@
   .home-steps li { padding: 22px; }
 }
 @media(prefers-reduced-motion: reduce) { .home-share-banner { transition: none; } }
+
+.home-faq-group { scroll-margin-top: 24px; margin: 0 0 36px; }
+.home-faq-group:first-child h3 { margin-top: 0; }
+.home-faq-group h3 { color: var(--accent); font-size: 1rem; }
+.home-faq-nav { display: grid; gap: 14px; margin-top: 28px; }
+.home-faq-nav a { width: fit-content; color: var(--muted); font-size: .95rem; text-decoration: none; }
+.home-faq-nav a:hover { color: var(--accent); }

@@ -1,21 +1,27 @@
 {
-  "name": "CineWall - Multi-Screen Video Wall Studio",
+  "name": "CineWall - Free mini theatre at home",
   "short_name": "CineWall",
-  "description": "Transform multiple laptops into a synchronized video wall. Stream videos, audio, and presentations across 2-3 screens in perfect sync.",
+  "description": "Turn laptops into a free mini theatre at home. Host movie nights with friends, enjoy 3D music playlists, share your screen, or use your phone as a mic.",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#000000",
   "theme_color": "#000000",
-  "orientation": "landscape",
-  "categories": ["entertainment", "multimedia", "utilities"],
-  "lang": "en-US",
+  "orientation": "any",
+  "categories": [
+    "entertainment",
+    "multimedia",
+    "utilities"
+  ],
+  "lang": "en",
   "dir": "ltr",
   "icons": [
     {
       "src": "/favicon.svg",
       "sizes": "any",
       "type": "image/svg+xml",
-      "purpose": "any maskable"
+      "purpose": "any"
     }
-  ]
+  ],
+  "id": "/",
+  "scope": "/"
 }

@@ -1,27 +1,34 @@
-CINEWALL STUDIO - START HERE
+CINEWALL - START HERE
 
-1. Extract this ZIP completely.
-2. Double-click: START CINEMA.cmd
-3. Keep the black window open.
-4. Open the Start address printed in that window.
-5. Choose Video, Audio, Presentation, or YouTube.
-6. Add only the displays or speakers you need.
-7. Open each numbered link on its matching Device. It joins automatically.
-   Click the sound button if audio is blocked; click Join to enter fullscreen.
-8. Choose the media/document on the dashboard.
+1. Extract the ZIP completely and install Node.js 18 or newer.
+2. Double-click START CINEMA.cmd and keep the server window open.
+3. Open the Start address printed in that window.
+4. Choose Video, Audio, Screen sharing, or Mic and Speaker.
+5. Add only the screens or speakers you need and open each numbered link on its matching device.
+6. For video/audio, select your files on the source dashboard and wait for every selected player to be ready before pressing Play.
 
-Video and audio Play opens Display 1 / Speaker 1 in a separate tab. The dashboard stays silent.
-Video/audio now default to Direct local file: no whole-movie upload, no automatic quality reduction. Keep the source dashboard open.
-On remote HTTP/LAN displays, choose the same file when prompted. On HTTPS, direct peer sharing is available; restrictive networks may need TURN.
-The silent dashboard video preview stops after the first 10 seconds. Replay preview does not restart the wall movie.
-Server compatibility copy is optional: MKV repackaging preserves quality, while lossy codec conversion requires explicit permission.
-Railway hosting at watch.aitoyz.in uses private room links on the domain. See HOSTING.md and redeploy the changed project files.
-Presentation pages can be changed from the dashboard or Display 1 and stay synchronized.
-YouTube mode accepts watch, youtu.be, Shorts, Live, and embed links. Every Device needs internet access.
-Video dashboard: YouTube beside Local video offers available MP4/WebM qualities and MP3/M4A/WAV audio. After preparation, save the file or load its MP4 on the wall.
-Click the X beside a loaded file to remove it from the session and stop all displays; your original file and saved downloads stay intact.
-Download/conversion tools are in the tools folder. On another admin Device, double-click SETUP DOWNLOADS.cmd once to install them.
-Run SETUP DOWNLOADS.cmd again to update the downloader. Its cache stays in the CineWall folder.
-For MP3, you can also select MP3 from saved video and convert an already downloaded video without another YouTube request.
+Video supports up to 3 displays; Audio supports up to 5 speakers and 10 songs.
+The source's Display/Speaker 1 is a separate tab. The dashboard stays silent.
+Songs advance automatically. If there is no next song, the current song plays again.
+Drag songs to reorder them. Try in 3D and Settings control the same 3D stereo mode.
+The bottom gradient on each 3D speaker player follows its actual sound, volume and mute state.
 
+Instant keeps the original file on the source laptop. Keep the dashboard open and the laptop awake.
+On the website, Instant uses direct WebRTC file ranges on the same Wi-Fi/hotspot, with no automatic server-upload fallback. Guest-network isolation or firewall restrictions can prevent a connection.
+On a local HTTP server, Instant can forward file ranges in memory; other laptops do not need another copy of the file.
+Upload copies the original file to the server first. Movie files are not converted or remuxed.
+Browser codec support still matters on every player. MP4 with H.264 video and AAC audio is the safest video choice.
+
+Screen sharing mirrors a desktop tab, window or screen on up to 10 receivers. Room calls support up to 4 devices with optional mic and camera.
+Mic and Speaker uses one phone and up to 3 laptop speakers, with a teleprompter and voice recording. Phone microphone access requires trusted HTTPS. Read the in-app Help for local certificate setup.
+For presentations, share the slides/document window through Screen sharing; the dedicated presentation wall remains in development.
+
+Video and Audio dashboards include YouTube download panels. Check formats, prepare a file, then save it or load a compatible download into the room. Optional yt-dlp/FFmpeg tools are installed or updated by SETUP DOWNLOADS.cmd.
+Removing a loaded file stops that session's players; it does not delete your original file or saved downloads.
+The silent video dashboard preview stops after 10 seconds. Replay preview does not restart the wall movie.
+
+For watch.aitoyz.in, share the source dashboard's numbered room links. Local source edits need a Railway redeploy before they reach the website. See HOSTING.md.
 If Windows hides file extensions, the launcher may appear simply as START CINEMA.
+
+SMARTPHONES
+Video streaming, audio streaming and screen sharing are intended for laptops and PCs only. Phones show a warning for these modes, even through a direct room link. Mic and Speaker remains available on phones in portrait mode.

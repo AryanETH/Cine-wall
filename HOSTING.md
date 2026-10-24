@@ -16,7 +16,9 @@ All numbered links use the page's public origin, never the server's private IP o
 
 Before sharing a video, the dashboard checks its container and tracks, then tests whether the current browser decodes a frame. Metadata reads are bounded: MP4 data boxes are skipped even when metadata sits after 12 GB of movie data. Accepted video uses MP4/M4V with H.264, VP9 or AV1 video and AAC audio, WebM with VP8/VP9 and Opus/Vorbis, or MKV with H.264 and AAC (including HE-AAC and multiple language tracks). Metadata validation allows common 8-bit profiles; browser decoding still determines whether each device can play the file. HEVC/Dolby MKV and unsupported tracks remain rejected. CineWall does not convert or remux uploaded movies.
 
-**Instant** publishes only file metadata before loading begins. Each display requests original byte ranges; the source browser reads at most 512 KiB per request. The Node server relays those ranges in memory with backpressure and a bounded pending-request count, without saving a movie copy. This works on HTTP/LAN and HTTPS without a service worker or TURN server. Hosted Instant playback still uses server bandwidth, so it is not bandwidth-free. **Server** transfers the entire original file to server storage, with shared upload progress. Both paths preserve bytes without conversion.
+**Instant on the website** publishes metadata, then serves original file ranges directly between browsers on the same Wi-Fi/hotspot through WebRTC. Requests are bounded to 256 KiB and packets to 16 KiB. The service worker exposes seekable ranges to each player. Only private host candidates are allowed; this path does not use STUN or TURN and does not silently upload media to the hosting server. Keep the source dashboard open and the laptop awake. Guest-network isolation and local firewall restrictions can prevent a connection.
+
+**Instant on a local HTTP server** can relay bounded ranges through Node in memory without saving a full movie copy. Only the source selects the file; receivers do not need another copy. **Upload** transfers the entire original file to server storage before playback. These paths preserve the original movie bytes without conversion or remuxing.
 
 Keep the source dashboard open and prevent Device sleep. Refreshing/closing it loses its browser file access; choose the file again. Use current Chrome/Edge on every Device. Playback still depends on disk speed, network bandwidth, browser decoding and buffering. Original bytes mean no re-encoding or image-quality loss, not universally instant playback for every format/network.
 
@@ -24,7 +26,7 @@ Only the source laptop selects a file. Its separate display tab reuses the local
 
 ## Reliable peer connectivity
 
-The older direct WebRTC transport is retained for previous sessions/tests. New **Instant** selections use the bounded relay described above, so the following TURN configuration is not required for that path.
+Hosted **Instant** uses the local-only WebRTC path described above. Configured ICE servers do not override its private-host-candidate restriction. The following optional ICE configuration is for legacy non-hotspot peer transport; it does not enable an internet fallback for hosted Instant.
 
 STUN is configured by default. For different networks or restrictive NAT/firewalls, provide a TURN service through the `CINEWALL_ICE_SERVERS` Railway variable, as JSON:
 
@@ -41,7 +43,7 @@ Replace these example addresses/credentials with an actual service. ICE configur
 
 The server also checks uploaded video tracks before publishing them. H.264/AAC MKV is accepted without remuxing or conversion; this includes dual AAC/HE-AAC audio tracks. HEVC/Dolby MKV remains rejected. The admin browser must decode a frame before sharing, and each display still needs a compatible decoder. A rejected file leaves the previous movie and playback state intact. Renaming MKV to `.mp4` (or MP4 to `.mkv`) cannot pass the container check. Decoder/source recovery remains bounded, but does not change the original bytes or create a converted movie. Reload the dashboard and numbered display tabs after an update.
 
-HTTP/LAN transfers, document uploads and YouTube downloads use server files. The Docker cache is temporary at `/tmp/cinewall-cache`, not a database; a deploy/restart may remove it. Large server uploads remain constrained by hosting limits; Railway documents a five-minute maximum body-upload time in its [networking limits](https://docs.railway.com/networking/public-networking/specs-and-limits). HTTPS direct sharing avoids that upload path. Office documents can still be prepared as PDF; export to PDF yourself for best fidelity when a desktop Office converter is unavailable.
+Upload copies, document preparation and YouTube downloads use server files. Local Instant forwarding uses bounded memory ranges instead of saving a full media copy. The Docker cache defaults to temporary storage at `/tmp/cinewall-cache`; redeployment may remove it. Choose persistent storage if these copies must survive a deployment. Hosted Instant avoids full-file uploads, but depends on direct browser connectivity. Dedicated presentation support remains in development; use Screen sharing for a slides or document window.
 
 ## Controls and preview
 
@@ -61,4 +63,4 @@ Connection failures also try the official `youtubei.googleapis.com` API with the
 
 ## Verification
 
-Run `node --test tests/*.test.js` and `node tests/preparation-integration.js`. Tests cover hosted room separation, domain links, targeted signaling, virtual 12 GB range/metadata handling, byte-exact transfer, cancellation, control reconciliation, the ten-second preview, format/codec rejection and bounded download route/stream retries. No cross-Device browser/WebRTC or Railway deployment verification was performed in this workspace.
+Run `npm run check` and `npm test`. Tests cover room separation, scoped signaling, large-file ranges, byte-exact transfer, cancellation, playlist progression/replay, 3D audio metering and download retries. Local Chrome browser peers have verified hosted Instant song transitions through real WebRTC channels and service-worker range playback. Railway deployment and physical multi-laptop behavior have not been verified from this workspace.

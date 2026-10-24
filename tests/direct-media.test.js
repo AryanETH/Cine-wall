@@ -10,13 +10,13 @@ const source = (name) => fs.readFileSync(path.join(__dirname, '../public', name)
 const room = '01234567-89ab-4cde-8fab-0123456789ab';
 const turn = () => new Promise(setImmediate);
 
-function sessionPage(href, savedRoom) {
+function sessionPage(href, savedRoom, storageBlocked = false) {
   const location = new URL(href), calls = [], clicks = [], storage = new Map(savedRoom ? [['cinewall-room', savedRoom]] : []);
   class XHR { open(...args) { calls.push(args); } setRequestHeader() {} }
   class Events { constructor(url) { calls.push(['events', url]); } }
   const window = { fetch: async (...args) => { calls.push(['fetch', ...args]); return {}; }, EventSource: Events };
   const context = vm.createContext({ URL, Request, Headers, location, window, XMLHttpRequest: XHR, crypto: crypto.webcrypto,
-    localStorage: { getItem: (key) => storage.get(key), setItem: (key, value) => storage.set(key, value) },
+    localStorage: { getItem: (key) => {if(storageBlocked)throw Error('Storage denied');return storage.get(key);}, setItem: (key, value) => {if(storageBlocked)throw Error('Storage denied');storage.set(key,value);} },
     history: { replaceState(a, b, value) { calls.push(['history', String(value)]); } },
     document: { addEventListener(type, handler) { clicks.push(handler); } },
   });
@@ -49,6 +49,16 @@ test('an explicit private link wins over another session saved in the browser; L
   const lan = sessionPage('http://192.168.137.1:4173/admin.html');
   assert.equal(lan.window.CineWallSession.room, '');
   assert.equal(lan.window.CineWallSession.link('/screen.html?screen=2'), 'http://192.168.137.1:4173/screen.html?screen=2');
+});
+
+test('hosted startup still creates a usable room when storage is blocked or contains an invalid room', async () => {
+  for(const [saved,blocked] of [[undefined,true],['invalid-saved-room',false]]) {
+    const client=sessionPage('https://watch.aitoyz.in/admin.html?mode=audio',saved,blocked);
+    assert.match(client.window.CineWallSession.room,/^[a-f0-9-]{36}$/);
+    await client.window.fetch('/api/status');
+    assert.equal(new URL(client.calls.at(-1)[1]).searchParams.get('room'),client.window.CineWallSession.room);
+  }
+  assert.equal(sessionPage(`https://watch.aitoyz.in/screen.html?room=${room}`,undefined,true).window.CineWallSession.room,room);
 });
 
 test('dashboard renders every hosted display on the domain even when server info advertises internal addresses', () => {
@@ -112,6 +122,77 @@ test('direct publish sends metadata only, with correct audio MIME fallback and o
   assert.equal(client.sent.length, 1);
   assert.ok(JSON.stringify(client.sent[0].body).length < 1000);
   assert.equal(file.reads.length, 2);
+  owner.clear();
+});
+
+test('an old preview request during a song change cannot discard the next local file', async () => {
+  const client = peerPage(), owner = new client.api.FilePeer();
+  const first = virtualFile(700000, 'first.mp3', 'audio/mpeg');
+  const second = virtualFile(300000, 'second.mp3', 'audio/mpeg');
+  let version = 0;
+  client.context.fetch = async (route, options) => ({ ok:true, json:async()=>({state:{asset:{...JSON.parse(options.body),source:'peer',version:`song-${++version}`}}}) });
+  const previous = await owner.publish(first);
+  const changing = owner.publish(second);
+  // A revoked/finishing dashboard preview can ask for its old song while the
+  // next fingerprint and publication response are still pending.
+  await owner.open(previous.asset);
+  const next = await changing;
+  assert.equal(owner.file, second);
+  const packets=[];
+  await owner.sendRange({readyState:'open',bufferedAmount:0,send:data=>packets.push(data)}, {id:1,version:next.asset.version,start:0,end:100});
+  assert.equal(packets[0].byteLength,104);
+  await assert.rejects(owner.open(previous.asset), /changed|previous/i);
+  assert.equal(owner.file,second,'a late old-song retry must not clear the current source');
+  owner.clear();
+});
+
+test('a delayed state event for an identical previous file cannot roll the published song version back', async () => {
+  const client = peerPage(), owner = new client.api.FilePeer();
+  let version=0;
+  client.context.fetch=async(route,options)=>({ok:true,json:async()=>({state:{asset:{...JSON.parse(options.body),source:'peer',version:`song-${++version}`}}})});
+  const first=await owner.publish(virtualFile(300000,'first.mp3','audio/mpeg'));
+  const next=await owner.publish(virtualFile(300000,'copy.mp3','audio/mpeg'));
+  client.events[0].handlers.state({data:JSON.stringify({asset:first.asset})});
+  assert.equal(owner.asset.version,next.asset.version);
+  owner.clear();
+});
+
+test('a range read interrupted by a song change is cancelled without sending old bytes or reporting a connection fault', async () => {
+  const client=peerPage(),owner=new client.api.FilePeer(),first=virtualFile(500000,'first.mp3','audio/mpeg');
+  const state=await owner.publish(first),slice=first.slice;
+  let finishRead;
+  first.slice=(start,end,type)=>{const part=slice(start,end,type);if(start===100&&end===200){const read=part.arrayBuffer;part.arrayBuffer=()=>new Promise(resolve=>{finishRead=()=>read().then(resolve);});}return part;};
+  const packets=[];
+  const pending=owner.sendRange({readyState:'open',bufferedAmount:0,send:packet=>packets.push(packet)},{id:1,version:state.asset.version,start:100,end:200}).catch(error=>error);
+  await owner.publish(virtualFile(300000,'next.mp3','audio/mpeg'));
+  finishRead();const error=await pending;
+  assert.equal(error.name,'AbortError');assert.equal(packets.length,0);
+  owner.report(error);assert.deepEqual(client.errors,[]);
+  owner.clear();
+});
+
+test('failed next-song preparation preserves the current file and its playback URL', async () => {
+  const client=peerPage(),owner=new client.api.FilePeer(),file=virtualFile(300000);
+  const previous=await owner.publish(file),url=await owner.open(previous.asset);
+  client.context.fetch=async()=>{throw new Error('Temporary metadata failure');};
+  await assert.rejects(owner.publish(virtualFile(200000)),/Temporary metadata failure/);
+  assert.equal(owner.file,file);assert.equal(owner.asset.version,previous.asset.version);
+  assert.equal(await owner.open(previous.asset),url);assert.equal(client.revoked.length,0);
+  owner.clear();
+});
+
+test('the source commits matching new-song state before the HTTP reply and ignores late signaling for the previous song', async () => {
+  const client=peerPage(),owner=new client.api.FilePeer();
+  await owner.publish(virtualFile(500000));
+  let body,finish;
+  client.context.fetch=async(route,options)=>{body=JSON.parse(options.body);return new Promise(resolve=>{finish=()=>resolve({ok:true,json:async()=>({state:{asset:{...body,source:'peer',version:'next'}}})});});};
+  const nextFile=virtualFile(300000),publishing=owner.publish(nextFile);
+  while(!finish)await new Promise(resolve=>setImmediate(resolve));
+  client.events[0].handlers.state({data:JSON.stringify({asset:{...body,source:'peer',version:'next'}})});
+  assert.equal(owner.file,nextFile);assert.equal(owner.asset.version,'next');
+  const generation=owner.generation;finish();await publishing;assert.equal(owner.generation,generation);
+  owner.getPeer=async()=>assert.fail('a previous-song signal must not create a current connection');
+  await owner.onSignal({from:'receiver',assetVersion:'old',candidate:{candidate:'old'}});
   owner.clear();
 });
 

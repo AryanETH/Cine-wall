@@ -1,6 +1,7 @@
 'use strict';
 (() => {
   const uuid = () => crypto.randomUUID?.() || '10000000-1000-4000-8000-100000000000'.replace(/[018]/g, (c) => (c ^ crypto.getRandomValues(new Uint8Array(1))[0] & 15 >> c / 4).toString(16));
+  const sourceChanged = () => Object.assign(new Error('The local source changed. The previous media request was cancelled.'), { name: 'AbortError', code: 'CINEWALL_SOURCE_CHANGED' });
   const HOTSPOT_HELP = 'Instant needs all laptops on the same hotspot or Wi-Fi. Keep the admin tab open. Allow local network access if asked, or choose Upload instead.';
   function localAddress(address) {
     const value = String(address || '').toLowerCase().replace(/^\[|\]$/g, '');
@@ -98,15 +99,21 @@
       this.id = uuid(); this.file = null; this.asset = null; this.connections = new Map(); this.connectionTasks = new Map(); this.waiting = new Map(); this.sequence = 0; this.generation = 0;
       this.fileUrls = new Map(); this.localSource = ''; this.playbackType = null;
       this.sourceReplies = new Set();
+      this.publication = null;
       this.lastConnectionError = '';
       this.local = new BroadcastChannel(`cinewall-file-${window.CineWallSession?.room || 'lan'}`);
       this.local.onmessage = (event) => this.onLocal(event.data);
       this.events = new EventSource(`/events?peer=${this.id}`);
       this.events.addEventListener('state', (event) => {
         const asset = JSON.parse(event.data).asset;
-        if (this.file && asset?.peerId === this.id && asset.fingerprint === this.publishingFingerprint) { this.asset = asset; this.notifyConnectionStatus(); }
+        const publication = this.publication;
+        if (publication && asset?.peerId === this.id && asset.publicationId === publication.id && asset.fingerprint === publication.fingerprint) this.activatePublication(publication, asset);
+        else if (this.file && asset?.version === this.asset?.version && asset.peerId === this.id && asset.fingerprint === this.publishingFingerprint) { this.asset = asset; this.notifyConnectionStatus(); }
       });
-      this.events.addEventListener('peer-signal', (event) => this.onSignal(JSON.parse(event.data)).catch((error) => this.report(error)));
+      this.events.addEventListener('peer-signal', (event) => {
+        const generation = this.generation;
+        return this.onSignal(JSON.parse(event.data)).catch((error) => { if (generation === this.generation) this.report(error); });
+      });
       this.events.addEventListener('source-range', async (event) => {
         const request = JSON.parse(event.data);
         if (this.asset?.transport !== 'relay' || !this.file || request.version !== this.asset?.version || !Number.isSafeInteger(request.start) || !Number.isSafeInteger(request.end) || request.start < 0 || request.end < request.start || request.end >= this.file.size || request.end - request.start >= 512 * 1024) return;
@@ -127,11 +134,12 @@
       if (navigator.serviceWorker) navigator.serviceWorker.addEventListener('message', (event) => {
         if (!['media-meta', 'media-range'].includes(event.data?.type) || !event.ports[0]) return;
         const port = event.ports[0];
+        const generation = this.generation;
         Promise.resolve().then(async () => {
           if (event.data.version !== this.asset?.version) throw new Error('The selected movie changed');
           if (event.data.type === 'media-meta') return { size: this.asset.size, type: this.playbackType ?? mediaType(this.asset) };
           return { buffer: await this.range(event.data.start, event.data.end) };
-        }).then((data) => port.postMessage(data, data.buffer ? [data.buffer] : [])).catch((error) => { if (event.data.version === this.asset?.version) this.report(error); port.postMessage({ error: error.message }); });
+        }).then((data) => { if (generation !== this.generation) throw sourceChanged(); port.postMessage(data, data.buffer ? [data.buffer] : []); }).catch((error) => { if (generation === this.generation && event.data.version === this.asset?.version) this.report(error); port.postMessage({ error: error.message }); });
       });
     }
     connectionStatus() {
@@ -148,15 +156,31 @@
       this.connectionStatusKey = key;
       window.dispatchEvent(new CustomEvent('cinewall-peer-status', { detail: { state, version } }));
     }
-    report(error) { this.lastConnectionError = error.message; this.notifyConnectionStatus(); window.dispatchEvent(new CustomEvent('cinewall-peer-error', { detail: error.message })); }
+    report(error) { if (error.name === 'AbortError' || error.code === 'CINEWALL_SOURCE_CHANGED') return; this.lastConnectionError = error.message; this.notifyConnectionStatus(); window.dispatchEvent(new CustomEvent('cinewall-peer-error', { detail: error.message })); }
     async request(route, body) { const response = await fetch(route, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }); const data = await response.json(); if (!response.ok) throw new Error(data.error); return data; }
     async publish(file, duration = 0, { relay = false, localOnly = false } = {}) {
       if (localOnly && (!window.isSecureContext || !navigator.serviceWorker || typeof RTCPeerConnection !== 'function')) throw new Error('Open CineWall using HTTPS in Chrome or Edge for Instant sharing. You can also choose Upload.');
-      this.clear(); this.file = file; this.fileUrl = this.localUrl();
-      this.publishingFingerprint = await fingerprint(file);
-      const codecs = await inspectCodecs(file);
-      const result = await this.request('/api/local-source', { peerId: this.id, name: file.name, size: file.size, type: mediaType(file), duration, codecs, fingerprint: this.publishingFingerprint, relay: localOnly ? false : relay, localOnly });
-      this.asset = result.state.asset; this.notifyConnectionStatus(); return result.state;
+      const publication = { id: uuid(), file, fingerprint: '', signals: [] };
+      this.publication = publication;
+      try {
+        // Keep serving the previous song until the next file and its metadata
+        // are ready. Old preview retries must never take ownership of this file.
+        publication.fingerprint = await fingerprint(file);
+        const codecs = await inspectCodecs(file);
+        if (this.publication !== publication) throw sourceChanged();
+        const result = await this.request('/api/local-source', { peerId: this.id, publicationId: publication.id, name: file.name, size: file.size, type: mediaType(file), duration, codecs, fingerprint: publication.fingerprint, relay: localOnly ? false : relay, localOnly });
+        if (this.publication !== publication) throw sourceChanged();
+        this.activatePublication(publication, result.state.asset);
+        return result.state;
+      } finally { if (this.publication === publication) this.publication = null; }
+    }
+    activatePublication(publication, asset) {
+      if (this.publication !== publication || this.file === publication.file && this.asset?.version === asset.version) return;
+      this.clear();
+      this.publication = publication;
+      this.file = publication.file; this.asset = asset; this.publishingFingerprint = publication.fingerprint;
+      this.fileUrl = this.localUrl(); this.notifyConnectionStatus();
+      for (const signal of publication.signals.splice(0)) this.onSignal(signal).catch(error => { if (this.asset?.version === asset.version) this.report(error); });
     }
     localUrl(type = mediaType(this.file)) {
       if (!this.fileUrls.has(type)) this.fileUrls.set(type, URL.createObjectURL(mediaBlob(this.file, type)));
@@ -164,9 +188,10 @@
     }
     clear() {
       this.generation++;
+      this.publication = null;
       for (const peer of this.connections.values()) { peer.closed = true; peer.pc.close(); }
       this.connections.clear(); this.connectionTasks.clear();
-      for (const item of this.waiting.values()) { clearTimeout(item.timer); item.reject(new Error('The local source changed')); }
+      for (const item of this.waiting.values()) { clearTimeout(item.timer); item.reject(sourceChanged()); }
       this.waiting.clear();
       for (const url of this.fileUrls.values()) URL.revokeObjectURL(url);
       this.fileUrls.clear(); this.localSource = ''; this.playbackType = null;
@@ -174,6 +199,7 @@
       this.lastConnectionError = '';
     }
     async open(asset, { ranged = false, type = mediaType(asset), retry = 0 } = {}) {
+      if ((this.file || this.publication) && this.asset?.version !== asset.version) throw sourceChanged();
       if (this.asset?.version !== asset.version) { this.clear(); this.asset = asset; }
       const generation = this.generation;
       this.playbackType = type;
@@ -243,17 +269,17 @@
     }
     async range(start, end) {
       const asset = this.asset;
+      const generation = this.generation;
       if (!asset || !Number.isSafeInteger(start) || !Number.isSafeInteger(end) || start < 0 || end > asset.size || end <= start || end - start > 256 * 1024) throw new Error('Invalid movie range');
-      if (this.file) return this.file.slice(start, end).arrayBuffer();
+      if (this.file) { const bytes = await this.file.slice(start, end).arrayBuffer(); if (generation !== this.generation) throw sourceChanged(); return bytes; }
       if (this.localSource) {
-        const generation = this.generation;
         const data = await this.localRequest({ type: 'range', to: this.localSource, version: asset.version, start, end }, 25000);
-        if (generation !== this.generation) throw new Error('The selected movie changed');
+        if (generation !== this.generation) throw sourceChanged();
         if (data.buffer?.byteLength !== end - start) throw new Error('Incomplete local movie range');
         return data.buffer;
       }
-      const generation = this.generation, peer = await this.connect(asset.peerId);
-      if (generation !== this.generation) throw new Error('The selected movie changed');
+      const peer = await this.connect(asset.peerId);
+      if (generation !== this.generation) throw sourceChanged();
       const id = ++this.sequence;
       return new Promise((resolve, reject) => {
         const timer = setTimeout(() => { this.waiting.delete(`rtc-${id}`); reject(new Error(asset.transport === 'hotspot' ? HOTSPOT_HELP : 'The connection to the admin source timed out. Keep the admin tab open and check network access between the Devices.')); }, 20000);
@@ -264,21 +290,22 @@
     }
     async makePeer(id, offer) {
       const generation = this.generation;
+      const assetVersion = this.asset?.version;
       if (this.connections.size + this.connectionTasks.size > 8) throw new Error('Too many file connections');
       const localOnly = this.asset?.transport === 'hotspot';
       const info = localOnly ? {} : await fetch('/api/info').then((r) => r.json());
       if (generation !== this.generation) throw new Error('The selected movie changed');
       // Hotspot media must never use a STUN public route or a TURN relay.
       const pc = new RTCPeerConnection({ iceServers: localOnly ? [] : info.iceServers || [], iceCandidatePoolSize: 0 });
-      const peer = { pc, localOnly, channel: null, candidates: [], queue: Promise.resolve(), queued: 0, closed: false }; this.connections.set(id, peer);
-      pc.onicecandidate = (event) => { if (event.candidate && !peer.closed && (!localOnly || hotspotCandidate(event.candidate))) this.request('/api/peer-signal', { from: this.id, to: id, candidate: event.candidate }).catch((error) => { if (!peer.closed) this.report(error); }); };
+      const peer = { pc, localOnly, assetVersion, channel: null, candidates: [], queue: Promise.resolve(), queued: 0, closed: false }; this.connections.set(id, peer);
+      pc.onicecandidate = (event) => { if (event.candidate && !peer.closed && generation === this.generation && (!localOnly || hotspotCandidate(event.candidate))) this.request('/api/peer-signal', { from:this.id, to:id, assetVersion, candidate:event.candidate }).catch((error) => { if (!peer.closed && generation === this.generation) this.report(error); }); };
       pc.onconnectionstatechange = () => { if (!peer.closed && ['failed', 'closed'].includes(pc.connectionState)) {
         this.dropPeer(id, peer);
         this.report(new Error(localOnly ? HOTSPOT_HELP : 'Connection to the admin source was lost. Keep the admin tab open and check network access between the Devices.'));
       } this.notifyConnectionStatus(); };
       const bind = (channel) => { peer.channel = channel; channel.binaryType = 'arraybuffer'; channel.bufferedAmountLowThreshold = 128 * 1024; channel.onmessage = (event) => this.onData(peer, event.data); channel.onopen = channel.onclose = () => this.notifyConnectionStatus(); };
       pc.ondatachannel = (event) => bind(event.channel);
-      if (offer) { bind(pc.createDataChannel('movie-ranges', { ordered: true })); await pc.setLocalDescription(await pc.createOffer()); await this.request('/api/peer-signal', { from: this.id, to: id, description: localOnly ? hotspotDescription(pc.localDescription) : pc.localDescription }); }
+      if (offer) { bind(pc.createDataChannel('movie-ranges', { ordered: true })); await pc.setLocalDescription(await pc.createOffer()); if (generation !== this.generation) throw sourceChanged(); await this.request('/api/peer-signal', { from:this.id, to:id, assetVersion, description:localOnly ? hotspotDescription(pc.localDescription) : pc.localDescription }); }
       this.notifyConnectionStatus();
       return peer;
     }
@@ -316,18 +343,27 @@
       return peer;
     }
     async onSignal(data) {
+      if (data.assetVersion && data.assetVersion !== this.asset?.version) {
+        if (this.publication && data.publicationId === this.publication.id && this.publication.signals.length < 128) this.publication.signals.push(data);
+        return;
+      }
       if (!this.asset && !this.file) return;
+      const generation = this.generation;
       const peer = await this.getPeer(data.from, false);
+      if (generation !== this.generation || peer.closed) return;
       peer.signalQueue = (peer.signalQueue || Promise.resolve()).then(async () => {
+      if (generation !== this.generation || peer.closed) return;
       if (data.description) {
         await peer.pc.setRemoteDescription(peer.localOnly ? hotspotDescription(data.description) : data.description);
         for (const candidate of peer.candidates.splice(0)) await peer.pc.addIceCandidate(candidate);
-        if (data.description.type === 'offer') { await peer.pc.setLocalDescription(await peer.pc.createAnswer()); await this.request('/api/peer-signal', { from: this.id, to: data.from, description: peer.localOnly ? hotspotDescription(peer.pc.localDescription) : peer.pc.localDescription }); }
+        if (data.description.type === 'offer') { await peer.pc.setLocalDescription(await peer.pc.createAnswer()); if (generation !== this.generation || peer.closed) return; await this.request('/api/peer-signal', { from:this.id, to:data.from, assetVersion:this.asset?.version, description:peer.localOnly ? hotspotDescription(peer.pc.localDescription) : peer.pc.localDescription }); }
       } else if (data.candidate && (!peer.localOnly || hotspotCandidate(data.candidate))) { if (peer.pc.remoteDescription) await peer.pc.addIceCandidate(data.candidate); else if (peer.candidates.length < 128) peer.candidates.push(data.candidate); }
       });
       return peer.signalQueue;
     }
     onData(peer, data) {
+      if (peer.closed || peer.assetVersion && peer.assetVersion !== this.asset?.version) return;
+      const generation = this.generation;
       try {
       if (typeof data === 'string') {
         if (data.length > 2048) throw new Error('Invalid file request');
@@ -336,11 +372,11 @@
         if (message.type === 'range') {
           if (peer.queued >= 8) throw new Error('Too many pending ranges');
           peer.queued++;
-          peer.queue = peer.queue.then(async () => { await this.checkHotspotRoute(peer); await this.sendRange(peer.channel, message); }).catch((error) => { if (peer.channel.readyState === 'open') peer.channel.send(JSON.stringify({ type: 'error', id: message.id, error: error.message })); }).finally(() => { peer.queued--; });
+          peer.queue = peer.queue.then(async () => { if (peer.closed || generation !== this.generation) throw sourceChanged(); await this.checkHotspotRoute(peer); if (peer.closed || generation !== this.generation) throw sourceChanged(); await this.sendRange(peer.channel, message); }).catch((error) => { if (!peer.closed && generation === this.generation && peer.channel.readyState === 'open') peer.channel.send(JSON.stringify({ type:'error', id:message.id, error:error.message, code:error.code })); }).finally(() => { peer.queued--; });
         }
         if (message.type === 'end' || message.type === 'error') {
           const item = this.waiting.get(`rtc-${message.id}`); if (!item) return; clearTimeout(item.timer); this.waiting.delete(`rtc-${message.id}`);
-          if (message.type === 'error' || item.received !== item.expected) item.reject(new Error(message.error || 'Incomplete peer data'));
+          if (message.type === 'error' || item.received !== item.expected) item.reject(message.code === 'CINEWALL_SOURCE_CHANGED' ? sourceChanged() : new Error(message.error || 'Incomplete peer data'));
           else { const output = new Uint8Array(item.expected); let offset = 0; for (const chunk of item.chunks) { output.set(chunk, offset); offset += chunk.length; } item.resolve(output.buffer); }
         }
       } else {
@@ -351,9 +387,12 @@
       } catch (error) { this.report(error); }
     }
     async sendRange(channel, request) {
-      if (!this.file || request.version !== this.asset?.version || !Number.isSafeInteger(request.start) || !Number.isSafeInteger(request.end) || request.start < 0 || request.end > this.file.size || request.end <= request.start || request.end - request.start > 256 * 1024) throw new Error('The local source is unavailable or range is invalid');
-      const bytes = new Uint8Array(await this.file.slice(request.start, request.end).arrayBuffer());
+      const file = this.file, asset = this.asset, generation = this.generation;
+      if (request.version !== asset?.version) throw sourceChanged();
+      if (!file || !Number.isSafeInteger(request.start) || !Number.isSafeInteger(request.end) || request.start < 0 || request.end > file.size || request.end <= request.start || request.end - request.start > 256 * 1024) throw new Error('The local source is unavailable or range is invalid');
+      const bytes = new Uint8Array(await file.slice(request.start, request.end).arrayBuffer());
       for (let offset = 0; offset < bytes.length; offset += 16 * 1024) {
+        if (generation !== this.generation || this.file !== file || this.asset?.version !== asset.version) throw sourceChanged();
         if (channel.readyState !== 'open') throw new Error('Display disconnected');
         if (channel.bufferedAmount > 512 * 1024) await new Promise((resolve, reject) => {
           const cleanup = () => { clearTimeout(timer); channel.removeEventListener('bufferedamountlow', low); channel.removeEventListener('close', closed); };
@@ -363,6 +402,7 @@
           channel.addEventListener('bufferedamountlow', low); channel.addEventListener('close', closed);
           if (channel.readyState !== 'open') closed(); else if (channel.bufferedAmount <= 128 * 1024) low();
         });
+        if (generation !== this.generation) throw sourceChanged();
         const chunk = bytes.subarray(offset, offset + 16 * 1024), packet = new Uint8Array(chunk.length + 4); new DataView(packet.buffer).setUint32(0, request.id); packet.set(chunk, 4); channel.send(packet);
       }
       channel.send(JSON.stringify({ type: 'end', id: request.id }));

@@ -538,7 +538,7 @@ test('dashboard MKV retries preserve the direct asset and are bounded just like 
   const media = { error: { code: 4 }, addEventListener(name, handler) { handlers[name] = handler; }, load() { this.error = null; } };
   const context = vm.createContext({ media, window: {}, $: node, warning: node('#warning'), status: { state: { asset: { source: 'peer', version: 'original-mkv' } } },
     filePeer: { async open(asset, options) { opens.push(options); return `blob:preview-${opens.length}`; } },
-    localPreview: null, loadedMediaVersion: 'original-mkv', previewRecoveryVersion: '', previewRecoveryAttempts: 0, previewRecoveryInFlight: '',
+    localPreview: null, uploadBusy:false, loadedMediaVersion: 'original-mkv', previewRecoveryVersion: '', previewRecoveryAttempts: 0, previewRecoveryInFlight: '',
     VIDEO_FORMAT_HELP: 'This format is not supported. Use MP4 with H.264 video and AAC audio.',
   });
   vm.runInContext(code.slice(code.indexOf("media.addEventListener('error'"), code.indexOf("window.addEventListener('pagehide'")), context);

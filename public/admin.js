@@ -595,7 +595,7 @@ function setPreviewKind() {
     duration = 0;
     if (state.asset.source === 'peer' && filePeer) {
       const version = state.asset.version;
-      filePeer.open(state.asset).then((url) => { if (status.state.asset?.version === version) { media.src = url; media.load(); } }).catch((error) => { warning.textContent = error.message; warning.classList.add('show'); });
+      filePeer.open(state.asset).then((url) => { if (status.state.asset?.version === version) { media.src = url; media.load(); } }).catch((error) => { if (error.name === 'AbortError' || status.state.asset?.version !== version) return; warning.textContent = error.message; warning.classList.add('show'); });
     } else { media.src = window.CineWallSession?.link(`/api/media/stream?v=${encodeURIComponent(state.asset.version)}`) || `/api/media/stream?v=${encodeURIComponent(state.asset.version)}`; media.load(); }
   }
   if (isPresentation) {
@@ -1235,6 +1235,7 @@ media.addEventListener('error', async () => {
     setPreviewKind();
     return;
   }
+  if (uploadBusy) return;
   const asset = status.state.asset;
   if (asset?.source === 'peer' && filePeer && [3, 4].includes(media.error?.code)) {
     if (previewRecoveryInFlight === asset.version) return;
@@ -1253,7 +1254,7 @@ media.addEventListener('error', async () => {
         media.load();
         return;
       } catch (error) {
-        if (status.state.asset?.version !== asset.version) return;
+        if (error.name === 'AbortError' || status.state.asset?.version !== asset.version) return;
         warning.textContent = error.message;
         warning.classList.add('show');
         return;
