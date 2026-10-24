@@ -33,15 +33,20 @@ test('screen status reflects the current movie, not stale readiness; loading and
   const label = { textContent: '' }, notice = {}, loading = {}, toggles = {};
   const badge = { querySelector: () => label };
   const card = { querySelector: selector => selector === '[data-screen-state]' ? badge : selector === '.screen-notice' ? notice : selector === '[data-instant-state]' ? null : loading, classList: { toggle: (key, value) => { toggles[key] = value; } } };
-  const screen = { screen: 2, ready: true, mediaReady: true, assetVersion: 'old', loadProgress: 65 };
+  const playback = require('../public/playback-version');
+  const screen = { screen: 2, ready: true, mediaReady: true, assetVersion: 'old', loadProgress: 65, build:playback.build };
   const context = vm.createContext({ status: { state: { asset: { version: 'current' } } }, logicalScreens: () => [screen], screenLinks: { querySelector: () => card }, isPreparing: () => false,
-    isFullyReady: value => value.assetVersion === 'current' && value.mediaReady && !value.error, Math, Boolean });
+    isFullyReady: value => value.assetVersion === 'current' && value.mediaReady && !value.error, window:{CineWallPlayback:playback}, Math, Boolean });
   const source = read('admin.js');
   vm.runInContext(source.slice(source.indexOf('function renderScreens()'), source.indexOf('function primaryAddress()')), context);
   vm.runInContext('renderScreens()', context);
   assert.equal(label.textContent, 'Loading 65%'); assert.equal(loading.hidden, false); assert.equal(toggles.ready, false);
   screen.assetVersion = 'current'; vm.runInContext('renderScreens()', context);
   assert.equal(label.textContent, 'Ready'); assert.equal(loading.hidden, true);
+  assert.equal(notice.hidden,true,'the current player build must never be flagged as outdated');
+  screen.build='2026.10.05-audio-37'; vm.runInContext('renderScreens()',context);
+  assert.equal(notice.textContent,'Reopen this screen to update.');
+  screen.build=playback.build; vm.runInContext('renderScreens()',context); assert.equal(notice.hidden,true);
   screen.error = 'Connection lost'; vm.runInContext('renderScreens()', context);
   assert.equal(label.textContent, 'Needs attention'); assert.equal(notice.textContent, 'Connection lost'); assert.equal(notice.hidden, false);
 });

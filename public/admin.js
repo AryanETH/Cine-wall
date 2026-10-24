@@ -325,6 +325,14 @@ function renderModeShell() {
   $('#audioModeHint').textContent = state.audioMode === '3d'
     ? state.screenCount < 2 ? 'Add another laptop for 3D sound.' : 'Left and right sound is shared across your laptops.'
     : 'Full sound on every laptop.';
+  const try3d = $('#try3d');
+  try3d.hidden = state.sessionMode !== 'audio';
+  try3d.disabled = sourceLocked() || uploadBusy || isPreparing();
+  const spatial = state.audioMode === '3d';
+  try3d.textContent = spatial ? '3D Sound on' : 'Try in 3D';
+  try3d.setAttribute('aria-pressed', String(spatial));
+  try3d.setAttribute('aria-label', spatial ? 'Turn 3D sound off' : 'Try 3D sound');
+  try3d.classList.toggle('active', spatial);
   $('#presenterTips').hidden = state.sessionMode !== 'presentation';
   $('#mediaControls').hidden = state.sessionMode === 'presentation';
   $('#presentationControls').hidden = state.sessionMode !== 'presentation';
@@ -409,7 +417,8 @@ function renderScreens() {
     const fullyReady = isFullyReady(screen);
     const progress = isPreparing() ? Math.round(state.preparation.progress || 0) : fullyReady ? 100 : Math.round(screen.loadProgress || 0);
     const stateLabel = screen.error ? 'Needs attention' : !screen.ready ? 'Waiting' : isPreparing() ? `Sending ${progress}%` : !state.asset ? 'Connected' : screen.buffering ? 'Buffering' : !fullyReady ? `Loading ${progress}%` : screen.autoplayMuted ? 'Tap for sound' : 'Ready';
-    const outdated = screen.build && screen.build !== '2026.10.05-audio-37';
+    const expectedBuild = window.CineWallPlayback?.build;
+    const outdated = expectedBuild && screen.build && screen.build !== expectedBuild;
     const badge = card.querySelector('[data-screen-state]');
     badge.querySelector('span:last-child').textContent = stateLabel;
     card.classList.toggle('ready', fullyReady);
@@ -812,6 +821,9 @@ $('#audioModeControls').addEventListener('click', (event) => {
   if (button && ['video', 'audio'].includes(status.state.sessionMode)) {
     command({ type: 'audio-mode', audioMode: button.dataset.audioMode });
   }
+});
+$('#try3d').addEventListener('click', () => {
+  if (status.state.sessionMode === 'audio') command({ type: 'audio-mode', audioMode: status.state.audioMode === '3d' ? 'personal' : '3d' });
 });
 
 timeline.addEventListener('pointerdown', () => { scrubbing = true; });

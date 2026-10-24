@@ -47,11 +47,11 @@ test('public server route shares a non-cached demo count across rooms before ses
   assert.deepEqual(responses[0], responses[1]);
 });
 
-test('footer labels the count as demo data and opens GitHub safely in a new tab', () => {
+test('footer retains the traffic counter without the open-source GitHub link', () => {
   const html = fs.readFileSync(path.join(__dirname, '../public/index.html'), 'utf8');
   assert.match(html, /Realtime traffic/);
   assert.doesNotMatch(html, /Back to setup guide/);
-  assert.match(html, /class="home-github-link" href="https:\/\/github.com\/AryanETH\/Cine-wall" target="_blank" rel="noopener noreferrer"/);
+  assert.doesNotMatch(html, /home-github-link|github\.com\/AryanETH\/Cine-wall/);
   assert.match(html, /home-footer\.js\?v=/);
   assert.match(html, /home-live-dot/);
 });

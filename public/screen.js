@@ -1,6 +1,6 @@
 'use strict';
 
-const CLIENT_BUILD = '2026.10.24-audio-38';
+const CLIENT_BUILD = window.CineWallPlayback?.build || '';
 const filePeer = window.CineWallFilePeer ? new window.CineWallFilePeer.FilePeer() : null;
 const $ = (selector) => document.querySelector(selector);
 const video = $('#video');
@@ -36,6 +36,8 @@ let serverOffset = 0;
 let currentState = null;
 let currentAssetVersion = '';
 let endedAssetVersion = '';
+let endedEventId = '';
+let endedSequence = 0;
 let mediaElementVersion = '';
 let documentKey = '';
 let documentReady = false;
@@ -1075,6 +1077,7 @@ async function postStatus() {
         playbackTime: playbackTime, page: currentState?.page || 0,
         paused: isYouTube ? youtubePlayer?.getState() !== 1 : video.paused,
         ended: ['audio', 'video'].includes(sessionMode) && mediaElementVersion === currentAssetVersion && endedAssetVersion === currentAssetVersion,
+        endId: endedAssetVersion === currentAssetVersion ? endedEventId : '',
         playerState: isYouTube ? youtubePlayer?.getState() : null,
         buffering: sessionMode === 'presentation' ? !documentReady : isYouTube ? youtubePlayer?.getState() === 3 : !video.ended && endedAssetVersion !== currentAssetVersion && (video.readyState < 3 || sessionMode === 'audio' && audioWaiting),
         autoplayMuted: localAutoplayMuted || audioRouter?.state() === 'suspended',
@@ -1198,6 +1201,7 @@ video.addEventListener('loadeddata', () => { postStatus(); updateController(); }
 video.addEventListener('progress', postStatus);
 video.addEventListener('playing', () => {
   if (removedScreenNumber) { video.pause(); return; }
+  endedAssetVersion = ''; endedEventId = '';
   if (sessionMode === 'audio' || video.videoWidth > 0 && video.videoHeight > 0) mediaPlayedVersion = currentAssetVersion;
   transferRecoveryAttempts = 0;
   clearTimeout(mediaLoadTimer);
@@ -1209,6 +1213,7 @@ video.addEventListener('playing', () => {
 });
 video.addEventListener('ended', () => {
   endedAssetVersion = currentAssetVersion;
+  endedEventId = `${clientId}:${++endedSequence}`;
   if (screenNumber === 1 && currentState?.playing && sessionMode !== 'youtube') command(currentState.loop ? { type: 'play', position: 0 } : { type: 'pause' });
   postStatus();
 });

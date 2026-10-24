@@ -1010,6 +1010,7 @@ async function handle(req, res, url) {
         page: Number(body.page) || 0,
         paused: Boolean(body.paused),
         ended: Boolean(body.ended) && body.assetVersion === state.asset?.version,
+        endId: Boolean(body.ended) && body.assetVersion === state.asset?.version ? String(body.endId || '').slice(0, 120) : '',
         playerState: Number(body.playerState),
         buffering: Boolean(body.buffering),
         autoplayMuted: Boolean(body.autoplayMuted),

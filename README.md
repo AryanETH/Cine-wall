@@ -172,7 +172,7 @@ A screen's loading percentage measures readiness to start, not a complete movie 
 
 Video supports up to three screens; audio supports up to five speakers. This spreads existing stereo sound rather than creating Dolby Atmos. Mono recordings remain mono. Each laptop's volume and mute control still works.
 
-Add up to ten songs in Audio, then drag them into order. When the current song ends, CineWall loads the next and waits for every selected speaker to be ready before starting it. The source dashboard holds the playlist, so keep it open.
+Add up to ten songs in Audio, then drag them into order. When the current song ends, CineWall loads the next and waits for every selected speaker to be ready before starting it. If there is no next song, the current song starts again automatically. The source dashboard holds the playlist, so keep it open. Use **Try in 3D** at the player's top right or the sound settings to switch 3D sound on and off.
 
 In **3D mode**, a gradient along the bottom of each speaker player follows its actual audio output. Louder sound produces a fuller glow; stereo movement shifts the glow across the numbered laptops. Volume and mute affect the glow, and it fades during silence, pause or buffering. Mono and centered recordings light the speakers evenly. The effect follows the recording's stereo position rather than adding an automatic sound rotation.
 

@@ -86,7 +86,7 @@ test('readiness received during loading starts the next song without needing ano
   assert.equal(queue.pendingPlay, '');
 });
 
-test('all songs advance once, preserve reordering, wait for reconnecting speakers and stop after the final song', async () => {
+test('songs advance in order, wait for reconnecting speakers and repeat the final song without reloading it', async () => {
   const state = { sessionMode: 'audio', asset: null, allReady: false, loop: false };
   const loaded = [], played = [];
   const queue = new AudioQueue({ blocked: () => false, validate: async () => {},
@@ -103,8 +103,28 @@ test('all songs advance once, preserve reordering, wait for reconnecting speaker
     if (name !== 'two') assert.equal(queue.pendingPlay, state.asset.version);
   }
   assert.deepEqual(loaded, ['one', 'three', 'two']);
-  assert.deepEqual(played, ['three', 'two']);
+  state.allReady = true; queue.observe(state, []); await nextTurn();
+  assert.deepEqual(played, ['three', 'two', 'two']);
   assert.equal(queue.currentId, queue.items.at(-1).id);
+});
+
+test('a single song repeats on each new end event, ignores duplicates, and waits for the end pause to complete', async () => {
+  const state = { sessionMode:'audio', asset:null, allReady:true, playing:false };
+  const played = [], loaded = [];
+  const queue = new AudioQueue({ blocked:()=>false, state:()=>state, validate:async()=>{},
+    load:async file=>{loaded.push(file.name);state.asset={version:file.name};return state;},
+    play:async version=>{played.push(version);return true;}, error:message=>assert.fail(message),
+  });
+  await queue.add([{name:'only-song'}]);
+  const source = {screen:1,ready:true,ended:true,assetVersion:'only-song',endId:'end-1'};
+  state.playing = true; queue.observe(state,[source]); await nextTurn();
+  assert.deepEqual(played,[], 'the previous end pause must settle before restarting the same asset');
+  state.playing = false; queue.observe(state,[source]); queue.observe(state,[source]); await nextTurn();
+  assert.deepEqual(played,['only-song']);
+  queue.observe(state,[source]); await nextTurn(); assert.equal(played.length,1);
+  source.endId='end-2'; queue.observe(state,[source]); await nextTurn();
+  assert.deepEqual(played,['only-song','only-song']);
+  assert.deepEqual(loaded,['only-song']);
 });
 
 test('cancel, clear and repeated end reports cannot restart a stale song', async () => {

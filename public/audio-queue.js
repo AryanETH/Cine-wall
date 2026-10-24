@@ -13,6 +13,7 @@
       this.pendingPlay = '';
       this.playRequest = false;
       this.finishedVersion = '';
+      this.finishedEndId = '';
       this.sequence = 0;
       this.generation = 0;
       this.observedState = null;
@@ -29,7 +30,7 @@
     clear() {
       this.generation++;
       this.items = []; this.currentId = ''; this.version = '';
-      this.pendingPlay = ''; this.finishedVersion = ''; this.loadingId = ''; this.changed();
+      this.pendingPlay = ''; this.finishedVersion = ''; this.finishedEndId = ''; this.loadingId = ''; this.changed();
     }
     async add(files) {
       if (this.busy || this.options.blocked()) return;
@@ -71,7 +72,7 @@
         const state = await this.options.load(item.file);
         if (generation !== this.generation || !state?.asset || state.sessionMode !== 'audio') return;
         this.currentId = item.id; this.version = state.asset.version;
-        this.finishedVersion = ''; this.pendingPlay = autoplay && autoplayRevision === this.autoplayRevision ? this.version : '';
+        this.finishedVersion = ''; this.finishedEndId = ''; this.pendingPlay = autoplay && autoplayRevision === this.autoplayRevision ? this.version : '';
       } catch (error) { this.options.error(error.message || 'This song could not be opened.'); }
       finally {
         this.busy = false; this.loadingId = ''; this.changed();
@@ -89,7 +90,7 @@
         this.busy = true; this.pendingPlay = ''; this.changed();
         try { if (!await this.options.removeCurrent()) return; }
         finally { this.busy = false; this.changed(); }
-        this.currentId = ''; this.version = ''; this.finishedVersion = '';
+        this.currentId = ''; this.version = ''; this.finishedVersion = ''; this.finishedEndId = '';
       }
       this.items.splice(index, 1); this.changed();
       if (current && this.items.length) await this.select(this.items[Math.min(index, this.items.length - 1)].id, resume);
@@ -114,10 +115,17 @@
       }
       const source = this.observedScreens.filter(screen => screen.screen === 1 && screen.assetVersion === this.version)
         .sort((a, b) => (b.lastSeen || 0) - (a.lastSeen || 0))[0];
-      if (!source?.ready || source.error || !source.ended || state.loop || this.pendingPlay || this.finishedVersion === this.version) return;
+      const endId = source?.endId || this.version;
+      if (!source?.ready || source.error || !source.ended || state.playing || state.loop || this.pendingPlay || this.finishedVersion === this.version && this.finishedEndId === endId) return;
       this.finishedVersion = this.version;
+      this.finishedEndId = endId;
       const index = this.items.findIndex(item => item.id === this.currentId);
       if (index >= 0 && index + 1 < this.items.length) void this.select(this.items[index + 1].id, true);
+      else if (index >= 0) {
+        // Keep the last file loaded and restart it through the same shared
+        // readiness/start path. An end-event identity prevents duplicate starts.
+        this.pendingPlay = this.version; this.changed(); this.reconcile();
+      }
     }
   }
 

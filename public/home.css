@@ -50,12 +50,7 @@
 .is-live .home-live-dot::after { content: ''; position: absolute; inset: -4px; border: 1px solid var(--accent); border-radius: 50%; animation: home-live-ripple 1.8s ease-out infinite; }
 @keyframes home-live-ripple { from { transform: scale(.5); opacity: .85; } to { transform: scale(1.5); opacity: 0; } }
 @media(prefers-reduced-motion: reduce) { .is-live .home-live-dot::after { animation: none; opacity: .4; } }
-.home-visit-count small, .home-github-link small { display: block; color: var(--muted); font-size: .75rem; }
-.home-github-link { display: inline-flex; align-items: center; gap: 10px; padding: 10px 15px; border: 1px solid var(--line); border-radius: 14px; background: var(--surface); text-decoration: none; }
-.home-github-link strong { display: block; margin-top: 3px; font-size: .9rem; }
-.mode-footer .home-github-link > span { display: block; }
-.home-github-link:hover { border-color: var(--accent); }
-.home-github-link:focus-visible { outline: 3px solid var(--accent); outline-offset: 4px; }
+.home-visit-count small { display: block; color: var(--muted); font-size: .75rem; }
 @media(max-width: 1100px) { .home-nav { order: 3; flex-basis: 100%; } }
 @media(max-width: 1050px) { .home-demo, .home-about, .home-faq { gap: 28px; } .home-steps, .home-use-grid { gap: 18px; } }
 @media(max-width: 720px) {
