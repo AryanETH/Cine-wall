@@ -5,7 +5,7 @@ const MAX_SCREENS = 10;
 
 // This service exchanges connection messages only. Captured audio/video travels
 // over WebRTC between browsers, never through an upload or server media route.
-module.exports = function createScreenSharing({ identity, readJson, json }) {
+module.exports = function createScreenSharing({ identity, readJson, json, authorizeHost, authorizeJoin, onCount }) {
   const peers = new Map();
   const callVersion = randomUUID();
   let source = null;
@@ -69,6 +69,7 @@ module.exports = function createScreenSharing({ identity, readJson, json }) {
     if (!uuid.test(body.peerId || '')) fail('Invalid screen identity.');
     if (url.pathname === '/api/share/join') {
       const device = identity(req), screen = Number(body.screen);
+      authorizeJoin?.(req, screen);
       if (!Number.isInteger(screen) || screen < 0 || screen > MAX_SCREENS) fail('Choose a screen from 1 to 10.');
       const existing = peers.get(body.peerId);
       if (existing && (existing.device.id !== device.id || existing.device.hash !== device.hash)) fail('This screen belongs to another laptop.', 403);
@@ -100,6 +101,7 @@ module.exports = function createScreenSharing({ identity, readJson, json }) {
       json(res, 200, snapshot()); return true;
     }
     if (url.pathname === '/api/share/start') {
+      authorizeHost?.(req);
       if (peer.screen !== 0) fail('Open the sharing dashboard to start.');
       if (source && source.peerId !== peer.id) fail('Another laptop is sharing. Wait for it to stop.', 423);
       source = { peerId: peer.id, deviceId: peer.device.id, version: randomUUID(), name: String(body.name || 'Shared screen').slice(0, 160), audio: body.audio === true };
@@ -107,12 +109,14 @@ module.exports = function createScreenSharing({ identity, readJson, json }) {
     }
     if (url.pathname === '/api/share/stop') { host(req, peer.id); endShare(); json(res, 200, snapshot()); return true; }
     if (url.pathname === '/api/share/settings') {
+      authorizeHost?.(req);
       if (source) host(req, peer.id);
       else if (peer.screen !== 0) fail('Change settings on the sharing dashboard.', 403);
       if (body.count !== undefined && (!Number.isInteger(body.count) || body.count < 1 || body.count > MAX_SCREENS)) fail('Use up to 10 screens.');
       if (body.layout !== undefined && body.layout !== 'mirror') fail('Screen sharing uses the full view.');
       if (body.quality !== undefined && !['auto', '720p', '1080p'].includes(body.quality)) fail('Choose Auto, 720p or 1080p.');
       settings = { ...settings, ...Object.fromEntries(['count', 'layout', 'quality'].filter(key => body[key] !== undefined).map(key => [key, body[key]])) };
+      if (body.count !== undefined) onCount?.(body.count);
       for (const key of ['flip', 'pointers']) if (typeof body[key] === 'boolean') settings[key] = body[key];
       for (const other of peers.values()) if (!eligible(other)) Object.assign(other, { joined: false, mic: false, camera: false });
       broadcast(); json(res, 200, snapshot()); return true;
@@ -132,5 +136,5 @@ module.exports = function createScreenSharing({ identity, readJson, json }) {
     }
     fail('Not found', 404);
   }
-  return { handle, pulse() { prune(); for (const peer of peers.values()) emit(peer, 'share-state', snapshot()); }, idle: () => peers.size === 0, close() { for (const peer of peers.values()) peer.response?.end(); peers.clear(); } };
+  return { handle, ensureCount(count) { if (Number.isInteger(count) && count > settings.count && count <= MAX_SCREENS) { settings.count = count; broadcast(); } }, removeDevice(device) { for (const peer of [...peers.values()]) if (peer.device.id === device.id && peer.device.hash === device.hash) { peers.delete(peer.id); peer.response?.end(); if (source?.peerId === peer.id) source = null; } broadcast(); }, pulse() { prune(); for (const peer of peers.values()) emit(peer, 'share-state', snapshot()); }, idle: () => peers.size === 0, close() { source = null; for (const peer of peers.values()) peer.response?.end(); peers.clear(); } };
 };

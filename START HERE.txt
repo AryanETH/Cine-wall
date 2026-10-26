@@ -1,6 +1,6 @@
 CINEWALL - START HERE
 
-1. Extract the ZIP completely and install Node.js 18 or newer.
+1. Extract the ZIP completely and install Node.js 18.15 or newer.
 2. Double-click START CINEMA.cmd and keep the server window open.
 3. Open the Start address printed in that window.
 4. Choose Video, Audio, Screen sharing, or Mic and Speaker.

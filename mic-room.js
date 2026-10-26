@@ -2,7 +2,7 @@
 const { randomUUID, randomBytes } = require('node:crypto');
 
 // Room-scoped signaling only; audio stays on direct WebRTC connections.
-module.exports = function createMicRoom({ identity, readJson, json, now = Date.now }) {
+module.exports = function createMicRoom({ identity, readJson, json, now = Date.now, authorizeManager, authorizeJoin, onRemoveSlot }) {
   const peers = new Map();
   const version = randomUUID();
   const laptops = new Set([1]), removed = new Set();
@@ -39,7 +39,11 @@ module.exports = function createMicRoom({ identity, readJson, json, now = Date.n
     if (req.method !== 'POST') fail('Method not allowed.', 405);
     const body = await readJson(req);
     if (url.pathname === '/api/mic/laptops') {
-      identity(req);
+      if (authorizeManager) authorizeManager(req);
+      else {
+        const device = identity(req);
+        if (![...peers.values()].some(p => p.role === 'phone' && p.device.id === device.id && p.device.hash === device.hash)) fail('Only the phone or room admin can manage laptops.', 403);
+      }
       if (body.action === 'add') {
         const slot = [1, 2, 3].find(n => !laptops.has(n));
         if (!slot) fail('Maximum 3 laptops.', 409);
@@ -51,12 +55,14 @@ module.exports = function createMicRoom({ identity, readJson, json, now = Date.n
           if (removed.size > 256) removed.delete(removed.values().next().value);
           emit(peer, 'mic-removed', { slot: body.slot }); remove(peer);
         }
+        onRemoveSlot?.(body.slot);
       } else fail('Choose a laptop to remove.');
       broadcast(); json(res, 200, snapshot()); return true;
     }
     if (!/^[a-f0-9-]{36}$/.test(body.peerId || '')) fail('Invalid device identity.');
     if (url.pathname === '/api/mic/join') {
       const device = identity(req), role = body.role, slot = role === 'speaker' ? body.slot : 0;
+      authorizeJoin?.(req, role, slot);
       if (!['phone', 'speaker'].includes(role) || (role === 'speaker' && (!Number.isInteger(slot) || slot < 1 || slot > 3))) fail('Choose one phone or speaker 1–3.');
       if (removed.has(body.peerId) || (role === 'speaker' && !laptops.has(slot))) fail('Laptop removed. Open a new laptop link to rejoin.', 410);
       const existing = peers.get(body.peerId);
@@ -91,5 +97,5 @@ module.exports = function createMicRoom({ identity, readJson, json, now = Date.n
     if (url.pathname === '/api/mic/leave') { remove(peer); broadcast(); json(res, 200, { ok: true }); return true; }
     fail('Not found.', 404);
   }
-  return { handle, pulse() { prune(); broadcast(); }, idle: () => peers.size === 0, close() { for (const p of [...peers.values()]) remove(p); } };
+  return { handle, removeDevice(device) { for (const p of [...peers.values()]) if (p.device.id === device.id && p.device.hash === device.hash) remove(p); broadcast(); }, ensureSlot(slot) { if (Number.isInteger(slot) && slot >= 1 && slot <= 3) { laptops.add(slot); broadcast(); } }, pulse() { prune(); broadcast(); }, idle: () => peers.size === 0, close() { for (const p of [...peers.values()]) remove(p); } };
 };

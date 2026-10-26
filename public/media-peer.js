@@ -96,7 +96,7 @@
   }
   class FilePeer {
     constructor() {
-      this.id = uuid(); this.file = null; this.asset = null; this.connections = new Map(); this.connectionTasks = new Map(); this.waiting = new Map(); this.sequence = 0; this.generation = 0;
+      this.id = window.CineWallSession?.peerId || uuid(); this.file = null; this.asset = null; this.connections = new Map(); this.connectionTasks = new Map(); this.waiting = new Map(); this.sequence = 0; this.generation = 0;
       this.fileUrls = new Map(); this.localSource = ''; this.playbackType = null;
       this.sourceReplies = new Set();
       this.publication = null;

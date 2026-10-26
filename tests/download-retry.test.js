@@ -18,7 +18,7 @@ function info(videoId = 'YE7VzlLtp-4', fresh = false) {
 }
 
 function downloader({ freshInfo = info(undefined, true), holdRefresh = false, outputFile = 'media.mp4', inspectionErrors = [] } = {}) {
-  const children = [], extractions = [], writes = [];
+  const children = [], extractions = [], writes = [], budgets = [];
   const child = () => { const value = new EventEmitter(); value.stdout = new EventEmitter(); value.stderr = new EventEmitter(); value.kill = () => {}; return value; };
   const module = { exports: {} };
   const fileSystem = {
@@ -39,17 +39,23 @@ function downloader({ freshInfo = info(undefined, true), holdRefresh = false, ou
     spawn(file, args) { const value = child(); value.args = args; children.push(value); return value; },
   };
   vm.runInNewContext(fs.readFileSync(path.join(__dirname, '../youtube-downloads.js'), 'utf8'), {
-    require(name) { return name === 'node:fs' ? fileSystem : name === 'node:child_process' ? processes : name === 'node:crypto' ? { randomUUID } : require(name); },
+    require(name) { return name === './cache-budget' ? { reserve: (id, bytes) => { budgets.push(bytes); return () => {}; }, removeExpired() {} } : name === 'node:fs' ? fileSystem : name === 'node:child_process' ? processes : name === 'node:crypto' ? { randomUUID } : require(name); },
     module, process: { platform: 'linux', execPath: process.execPath, env: { CINEWALL_CACHE_DIR: path.join(__dirname, 'virtual-cache') } }, __dirname: path.join(__dirname, '..'),
-    setTimeout, clearTimeout, AbortController,
+    setTimeout, clearTimeout, setInterval, clearInterval, AbortController, queueMicrotask,
   });
-  return { api: module.exports, children, extractions, writes, fail(index, error) { children[index].stderr.emit('data', Buffer.from(error)); children[index].emit('close', 1); } };
+  return { api: module.exports, children, extractions, writes, budgets, fail(index, error) { children[index].stderr.emit('data', Buffer.from(error)); children[index].emit('close', 1); } };
 }
 
 async function startVideo(client) {
   const inspection = await client.api.inspect('YE7VzlLtp-4');
   return client.api.start(inspection.id, inspection.formats.find((format) => format.height === 1080).id, 'test-room');
 }
+
+test('a small or unknown-size download starts with a modest estimate rather than a 30 GiB reservation', async () => {
+  const client = downloader(), job = await startVideo(client);
+  assert(client.budgets[0] > 0 && client.budgets[0] < 512 * 1024 ** 2);
+  client.api.cancel(job.id); client.children[0].emit('close',1); await turn();
+});
 
 test('video 403 refreshes formats once, retries equivalent quality and stops after available same-quality streams', async () => {
   const client = downloader(), job = await startVideo(client);

@@ -17,7 +17,7 @@ test('hotspot room elects one source, blocks replacements, relays original range
   const port = listener.address().port; await new Promise((resolve) => listener.close(resolve));
   const base = `http://127.0.0.1:${port}`, devices = [0, 1].map(() => ({ id: randomUUID(), key: randomUUID() }));
   const headers = (device) => ({ 'X-CineWall-Device': device.id, 'X-CineWall-Key': device.key });
-  const server = spawn(process.execPath, ['server.js'], { cwd: root, windowsHide: true, env: { ...process.env, PORT: String(port), CINEWALL_CACHE_DIR: temporary }, stdio: ['ignore', 'pipe', 'pipe'] });
+  const server = spawn(process.execPath, ['server.js'], { cwd: root, windowsHide: true, env: { ...process.env, PORT: String(port), CINEWALL_LEGACY_LOCAL: '1', CINEWALL_CACHE_DIR: temporary }, stdio: ['ignore', 'pipe', 'pipe'] });
   let output = '', stream;
   server.stdout.on('data', (bytes) => { output += bytes; }); server.stderr.on('data', (bytes) => { output += bytes; });
   t.after(async () => {
@@ -59,7 +59,7 @@ test('hotspot room elects one source, blocks replacements, relays original range
 
   const served = [], errors = []; let skipNextReply = false;
   const connectSource = () => new Promise((resolve, reject) => {
-    stream = http.get(`${base}/events?peer=${peerId}`, (response) => {
+    stream = http.get(`${base}/events?peer=${peerId}`, { headers: headers(winner) }, (response) => {
       let buffered = ''; resolve();
       response.on('data', (chunk) => {
         buffered += chunk.toString();

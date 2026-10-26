@@ -60,7 +60,7 @@ let previewRecoveryAttempts = 0;
 let previewRecoveryVersion = '';
 let previewRecoveryInFlight = '';
 const volumeTimers = new Map();
-let controlsQueue = Promise.resolve();
+const controlsQueues = new Map();
 let controlSequence = 0;
 const pendingControls = new Map();
 const queuedRevisions = new Map();
@@ -279,6 +279,7 @@ async function command(payload) {
   try {
     const response = await fetch('/api/command', {
       method: 'POST',
+      ...(typeof AbortSignal !== 'undefined' && AbortSignal.timeout ? { signal: AbortSignal.timeout(8000) } : {}),
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
     });
@@ -296,8 +297,10 @@ async function command(payload) {
     return null;
   }
   };
-  const result = controlsQueue.then(send, send);
-  controlsQueue = result.catch(() => {});
+  const queueKey = payload.type === 'screen-audio' ? `audio-${payload.screen}` : ['mute-all', 'audio-output', 'youtube-audio-mode'].includes(payload.type) ? 'mixer' : 'playback';
+  const previous = controlsQueues.get(queueKey) || Promise.resolve();
+  const result = previous.then(send, send);
+  controlsQueues.set(queueKey, result.catch(() => {}));
   return result;
 }
 
@@ -776,7 +779,6 @@ function playOnAdminDisplay() {
   if (!playbackReady()) return;
   // An already-ready display may have been opened using its copied link.
   // Do not navigate/reload it just as the synchronized play command arrives.
-  if (adminDisplayWindow && !adminDisplayWindow.closed) adminDisplayWindow.focus();
   command({ type: 'play', position: videoFinished() ? 0 : positionNow() });
 }
 

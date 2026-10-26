@@ -15,7 +15,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/Node.js-18%2B-339933?logo=nodedotjs&logoColor=white" alt="Node.js 18 or newer">
+  <img src="https://img.shields.io/badge/Node.js-18.15%2B-339933?logo=nodedotjs&logoColor=white" alt="Node.js 18.15 or newer">
   <img src="https://img.shields.io/badge/Player-Browser%20based-1769ff" alt="Browser-based player">
   <img src="https://img.shields.io/badge/Sharing-WebRTC-713fd4" alt="WebRTC sharing">
 </p>
@@ -103,7 +103,7 @@ Open **Mic and Speaker** on the homepage. Connect everyone to the same Wi-Fi/hot
 
 | Requirement | What you need |
 | --- | --- |
-| Local server | Node.js 18 or newer on the source laptop |
+| Local server | Node.js 18.15 or newer on the source laptop |
 | Playback | A current browser that supports the selected video/audio tracks; desktop Chrome or Edge is the recommended setup |
 | Connection | The same Wi-Fi or hotspot for local sharing, with device-to-device connections allowed |
 | Screen capture | Desktop browser capture support; open the HTTPS website or localhost on the source laptop |
@@ -118,11 +118,11 @@ The Windows launchers and Office conversion tools are designed for Windows. The 
 
 1. Open [watch.aitoyz.in](https://watch.aitoyz.in/) on the source laptop.
 2. Connect your other laptops to the same Wi-Fi or hotspot for Instant sharing.
-3. Choose Video or Audio and select your file.
-4. Add only the screens or speakers you need. Open each numbered link on its matching laptop.
+3. Choose Video, Audio, Mic and Speaker, or Screen sharing, then click **Create room**.
+4. Copy the short **Room ID** from the dashboard. On the other laptops, open the same website/server, choose the same mode, click **Join room**, and enter that ID. Screens and speakers are assigned automatically.
 5. Wait for them to be ready, then press Play. Tap to enable sound on a laptop if asked.
 
-The first laptop to choose a file becomes admin. Display/Speaker 1 is that laptop, and its player opens in a separate tab. Keep the source dashboard open for Instant mode.
+The laptop that creates the room is admin. In Video and Audio, Display/Speaker 1 belongs to that laptop and opens in a separate player tab. Choose your file on the admin laptop and keep its dashboard open for Instant mode. Save the separate **Admin recovery key** privately; it restores admin access after browser data is lost. Room IDs and numbered invitation links let guests join, but do not grant admin controls.
 
 ### Run locally on Windows
 
@@ -130,7 +130,7 @@ The first laptop to choose a file becomes admin. Display/Speaker 1 is that lapto
 2. Double-click **START CINEMA.cmd** and keep the server window open.
 3. Allow Node.js on **Private networks** if Windows Firewall asks.
 4. Open the printed Start address, normally `http://localhost:4173/`.
-5. Choose Video or Audio, select a file and open the generated screen links on the other laptops.
+5. Choose a mode and **Create room**. Other devices open the same server's LAN address and use **Join room** with the shared Room ID.
 
 The local setup works without internet for local movie/audio files. If port 4173 is busy, CineWall tries the next free port. Use the links from the current dashboard rather than an old saved address. Stop the server with `Ctrl+C`.
 
@@ -249,7 +249,7 @@ No. Select it on the source laptop only. The other laptops receive it through th
 
 ### Why are rooms different on the same hotspot?
 
-Wi-Fi connects devices, but it does not identify a room on the public website. Open the admin's numbered links, which contain the same room ID. Laptops using the same local CineWall server share its local room.
+Wi-Fi connects devices, but it does not identify a room. Choose the same mode, click **Join room**, and enter the admin's short Room ID. Numbered invitation links also work. For a local installation, every laptop must open the same server's LAN address; a code created on one server cannot be looked up on another server or on the public website.
 
 ### Why does Play wait for other screens?
 

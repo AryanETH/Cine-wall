@@ -20,7 +20,7 @@ test('Play waits for readiness and never opens or navigates a copied audio link;
   context.status.state.allReady = true;
   vm.runInContext('playOnAdminDisplay()', context); assert.equal(commands.length, 1); assert.equal(opens.length, 0, 'copied link already loaded: never navigate');
   vm.runInContext('openDisplayOne(); openDisplayOne(); playOnAdminDisplay()', context);
-  assert.equal(opens.length, 1); assert.equal(focused, 3); assert.equal(commands.length, 2);
+  assert.equal(opens.length, 1); assert.equal(focused, 2, 'Play keeps the dashboard in focus'); assert.equal(commands.length, 2);
   context.status.state.ownerId = 'another-device';
   vm.runInContext('playOnAdminDisplay()', context); assert.equal(commands.length, 2);
   const html = read('admin.html');
@@ -96,8 +96,11 @@ test('another laptop sees only its screen opener; the whole source editor stays 
   vm.runInContext('renderViewerSource()', context); assert.equal(node('#openViewerScreen').disabled, true);
 });
 
-test('landing page removes room buttons and their handlers, without removing session-scoped links', () => {
-  assert.doesNotMatch(read('index.html'), /Copy room link|Join room|copyRoomLink|joinRoomForm/);
+test('landing mode choices use the create/join flow and the health check does not allocate a room', () => {
+  assert.doesNotMatch(read('index.html'), /copyRoomLink|joinRoomForm/);
+  assert.match(read('index.html'), /Join room/);
   assert.doesNotMatch(read('launcher.js'), /copyRoomLink|joinRoomForm|roomMessage/);
-  assert.match(read('launcher.js'), /CineWallSession.*link/);
+  assert.match(read('index.html'), /rooms-ui\.js/);
+  assert.match(read('rooms-ui.js'), /session\.roomRequest\(action, body\)/);
+  assert.match(read('launcher.js'), /fetch\('\/api\/health'/);
 });

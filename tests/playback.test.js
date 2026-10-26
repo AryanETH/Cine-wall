@@ -8,6 +8,45 @@ const vm = require('node:vm');
 const { downloadChoices, downloadError, common } = require('../youtube-downloads');
 const nextTurn = () => new Promise(resolve => setImmediate(resolve));
 
+test('player mute and unmute apply before a slow reply and pending sound survives stale state', async () => {
+  const client = player(1); await nextTurn();
+  const requests = [];
+  client.context.fetch = async (route, init) => new Promise(resolve => requests.push({ body: JSON.parse(init.body), resolve }));
+  client.evaluate('localAutoplayMuted = false; currentState.audioSettings[1].muted = false; applyAudioSettings()');
+  const video = client.nodes.get('#video');
+  const mute = client.evaluate("command({ type: 'screen-audio', screen: 1, muted: true })");
+  assert.equal(video.muted, true, 'sound changes within the click, before fetch completes');
+  client.evaluate('applyStateAppearance({ ...currentState, audioSettings: { 1: { volume: 1, muted: false } } })');
+  assert.equal(video.muted, true, 'a stale state event cannot undo the pending mute');
+  const unmute = client.evaluate("command({ type: 'screen-audio', screen: 1, muted: false })");
+  assert.equal(video.muted, false, 'the second click is immediate even while the first request waits');
+  await nextTurn();
+  const reply = (index, muted, commandId) => requests[index].resolve({ ok: true, json: async () => ({ command: { ...client.state, type: 'screen-audio', executeAt: Date.now(), commandId, audioSettings: { 1: { volume: 1, muted } } } }) });
+  reply(0, true, 8); await mute; await nextTurn();
+  assert.equal(video.muted, false, 'an older acknowledgement preserves the newest click');
+  reply(1, false, 9); await unmute;
+  client.evaluate('localAutoplayMuted = true; applyAudioSettings()');
+  client.nodes.get('#screenMute').handlers.click();
+  assert.equal(client.evaluate('localAutoplayMuted'), false, 'an explicit unmute also releases the autoplay-muted fallback');
+  assert.equal(video.muted, false);
+  await nextTurn(); reply(2, false, 10); await nextTurn();
+});
+
+test('player seek and pause change the local media before network acknowledgement', async () => {
+  const client = player(1); await nextTurn(); const pending = [];
+  client.context.fetch = async (route, init) => new Promise(resolve => pending.push({ body: JSON.parse(init.body), resolve }));
+  const video = client.nodes.get('#video'); video.paused = false;
+  const seek = client.evaluate("command({ type: 'seek', position: 50 })");
+  assert.equal(video.currentTime, 50);
+  const pause = client.evaluate("command({ type: 'pause' })");
+  assert.equal(video.paused, true);
+  await nextTurn();
+  pending[0].resolve({ ok: true, json: async () => ({ command: { ...client.state, type: 'seek', commandId: 8, executeAt: Date.now(), position: 50 } }) });
+  await seek; await nextTurn();
+  pending[1].resolve({ ok: true, json: async () => ({ command: { ...client.state, type: 'pause', commandId: 9, executeAt: Date.now(), position: 50, playing: false } }) });
+  await pause;
+});
+
 function player(screen, mode = 'video', peer = null, fullscreen = async () => {}) {
   const nodes = new Map();
   const node = (selector) => {

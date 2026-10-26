@@ -21,6 +21,7 @@ test('ready audio downloads load into private audio sessions, retain bytes/MIME 
     fs.writeFileSync(path.join(directory, 'job.json'), JSON.stringify({ id, room, title: 'Test audio', fileName: `test.${container}`, option: { kind: 'audio', container } }));
     jobs.push({ id, container, type, directory });
   }
+  for (const id of [room, otherRoom]) require('./room-fixture').seedRoom(temporary, id, identityHeaders);
   const listener = net.createServer(); await new Promise((resolve) => listener.listen(0, '127.0.0.1', resolve));
   const port = listener.address().port; await new Promise((resolve) => listener.close(resolve));
   const base = `http://127.0.0.1:${port}`;
@@ -33,7 +34,7 @@ test('ready audio downloads load into private audio sessions, retain bytes/MIME 
   for (let i = 0; i < 100 && !output.includes(`http://localhost:${port}/`); i++) await pause(50);
   assert.ok(output.includes(`http://localhost:${port}/`), output);
   async function api(route, body, session = room) {
-    const response = await fetch(`${base}${route}${route.includes('?') ? '&' : '?'}room=${session}`, body === undefined ? {} : { method: 'POST', headers: { 'Content-Type': 'application/json', ...identityHeaders }, body: JSON.stringify(body) });
+    const response = await fetch(`${base}${route}${route.includes('?') ? '&' : '?'}room=${session}`, body === undefined ? { headers: identityHeaders } : { method: 'POST', headers: { 'Content-Type': 'application/json', ...identityHeaders }, body: JSON.stringify(body) });
     return { status: response.status, data: await response.json() };
   }
   assert.equal((await api(`/api/youtube/downloads/${jobs[0].id}/load`, {})).status, 409, 'audio cannot load into the initial video session');
@@ -45,10 +46,10 @@ test('ready audio downloads load into private audio sessions, retain bytes/MIME 
     assert.equal(loaded.data.state.asset.kind, 'audio');
     assert.equal(loaded.data.state.asset.type, job.type);
     assert.equal(loaded.data.state.asset.name, `test.${job.container}`);
-    const stream = await fetch(`${base}/api/media/stream?room=${room}&v=${loaded.data.state.asset.version}`);
+    const stream = await fetch(`${base}/api/media/stream?room=${room}&v=${loaded.data.state.asset.version}`, { headers: identityHeaders });
     assert.equal(stream.status, 200); assert.equal(stream.headers.get('content-type'), job.type);
     assert.deepEqual(Buffer.from(await stream.arrayBuffer()), bytes);
-    const download = await fetch(`${base}/api/youtube/downloads/${job.id}/file?room=${room}`);
+    const download = await fetch(`${base}/api/youtube/downloads/${job.id}/file?room=${room}`, { headers: identityHeaders });
     assert.equal(download.headers.get('content-type'), job.type);
     assert.deepEqual(Buffer.from(await download.arrayBuffer()), bytes);
     assert.ok(fs.existsSync(path.join(job.directory, `media.${job.container}`)), 'original saved audio survives loading/replacing the current track');

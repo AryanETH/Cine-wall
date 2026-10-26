@@ -19,6 +19,8 @@ async function freePort() {
 test('hosted server separates sessions, signals only within a room, and stores no movie bytes for direct source', { timeout: 30000 }, async (t) => {
   const temporary = fs.mkdtempSync(path.join(os.tmpdir(), 'cinewall-hosting-test-'));
   const port = await freePort(), base = `http://127.0.0.1:${port}`, roomA = randomUUID(), roomB = randomUUID(), peerA = randomUUID(), peerB = randomUUID();
+  const identityHeaders = { 'X-CineWall-Device': peerA, 'X-CineWall-Key': peerB };
+  for (const room of [roomA, roomB]) require('./room-fixture').seedRoom(temporary, room, identityHeaders);
   const server = spawn(process.execPath, ['server.js'], { cwd: root, windowsHide: true, env: { ...process.env, PORT: String(port), CINEWALL_HOSTED: '1', CINEWALL_CACHE_DIR: temporary }, stdio: ['ignore', 'pipe', 'pipe'] });
   const streams = []; let output = '';
   server.stdout.on('data', (data) => { output += data; }); server.stderr.on('data', (data) => { output += data; });
@@ -41,7 +43,7 @@ test('hosted server separates sessions, signals only within a room, and stores n
   }
   assert.equal((await fetch(base+'/')).headers.get('x-robots-tag'),null);
   for(const route of ['/admin.html','/screen.html','/share.html','/mic.html',`/?room=${roomA}`,`/api/info?room=${roomA}`]) {
-    const response=await fetch(base+route);assert.equal(response.status,200,route);assert.match(response.headers.get('x-robots-tag'),/noindex/,route);await response.arrayBuffer();
+    const response=await fetch(base+route, { headers: identityHeaders });assert.equal(response.status,200,route);assert.match(response.headers.get('x-robots-tag'),/noindex/,route);await response.arrayBuffer();
   }
   async function api(route, room, body, headers = {}) {
     const url = new URL(base + route); if (room) url.searchParams.set('room', room);
@@ -57,7 +59,7 @@ test('hosted server separates sessions, signals only within a room, and stores n
     let request;
     const messages = [];
     await new Promise((resolve, reject) => {
-      request = http.get(`${base}/events?room=${room}&peer=${peer}`, (response) => {
+      request = http.get(`${base}/events?room=${room}&peer=${peer}`, { headers: identityHeaders }, (response) => {
         assert.equal(response.statusCode, 200);
         let data = ''; response.on('data', (chunk) => {
           data += chunk;
@@ -93,7 +95,7 @@ test('hosted server separates sessions, signals only within a room, and stores n
   assert.equal((await api('/api/peer-signal',roomA,{from:peerA,to:peerB,assetVersion:'previous-song',candidate:{candidate:'old'}})).status,409,'old-song negotiation must not reach the new song');
   for (const route of ['/api/media/stream', '/api/movie/stream']) {
     const url = `${base}${route}?room=${roomA}&v=${published.data.state.asset.version}`;
-    for (const method of ['GET', 'HEAD']) assert.equal((await fetch(url, { method })).status, 409, 'hotspot files cannot be forwarded through the host');
+    for (const method of ['GET', 'HEAD']) assert.equal((await fetch(url, { method, headers: identityHeaders })).status, 409, 'hotspot files cannot be forwarded through the host');
   }
   assert.equal((await api('/api/source/range?id=never-relayed', roomA, {})).status, 409);
   const listing = fs.readdirSync(path.join(temporary, 'rooms', roomA));
@@ -103,7 +105,7 @@ test('hosted server separates sessions, signals only within a room, and stores n
   assert.equal((await api('/api/command', roomA, { type: 'play', position: 0 })).status, 409);
   for (const screen of [1, 2]) await api('/api/status', roomA, { clientId: `test-${screen}`, screen, ready: true, mediaReady: true, assetVersion: published.data.state.asset.version, loadProgress: 100 });
   const play = await api('/api/command', roomA, { type: 'play', position: 0 });
-  assert.equal(play.status, 200); assert.equal(play.data.command.executeAt - play.data.command.serverTime, 350);
+  assert.equal(play.status, 200); assert.equal(play.data.command.executeAt - play.data.command.serverTime, 120);
   const audio = await api('/api/command', roomA, { type: 'screen-audio', screen: 2, volume: .37 });
   assert.equal(audio.data.command.audioSettings['2'].volume, .37); assert.ok(audio.data.command.executeAt - audio.data.command.serverTime <= 5);
   assert.equal((await api('/api/status', roomB)).data.state.playing, false);

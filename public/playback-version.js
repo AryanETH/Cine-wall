@@ -1,7 +1,7 @@
 'use strict';
 // The dashboard and numbered players must compare the same shipped build.
 (function (root) {
-  const version = { build: '2026.10.25-audio-40' };
+  const version = { build: '2026.10.26-rooms-1' };
   if (typeof module !== 'undefined' && module.exports) module.exports = version;
   else root.CineWallPlayback = version;
 })(typeof window !== 'undefined' ? window : globalThis);

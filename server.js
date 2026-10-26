@@ -7,6 +7,8 @@ const os = require('node:os');
 const zlib = require('node:zlib');
 const { execFile } = require('node:child_process');
 const downloads = require('./youtube-downloads');
+const cacheBudget = require('./cache-budget');
+const createRooms = require('./rooms');
 const createScreenSharing = require('./screen-sharing');
 const createMicRoom = require('./mic-room');
 const { getDemoVisitSnapshot } = require('./public/home-footer');
@@ -44,7 +46,7 @@ const contentTypes = {
   '.ico': 'image/x-icon',
 };
 
-function createSession(room = '') {
+function createSession(room = '', record = null) {
 const CACHE_DIR = room ? path.join(CACHE_ROOT, 'rooms', room) : CACHE_ROOT;
 const SESSION_FILE = path.join(CACHE_DIR, 'session.json');
 const validExtensions = {
@@ -69,13 +71,13 @@ function defaultAudioSettings(all = false) {
 }
 
 let state = {
-  sessionMode: 'video',
+  sessionMode: record && ['video', 'audio'].includes(record.mode) ? record.mode : 'video',
   playing: false,
   loop: false,
   position: 0,
   anchorTime: Date.now(),
   mode: 'stretch',
-  screenCount: 2,
+  screenCount: record ? 1 : 2,
   audioMode: 'personal',
   audioSettings: defaultAudioSettings(true),
   youtubeAudioMode: 'admin',
@@ -147,10 +149,11 @@ function currentPosition(at = Date.now()) {
 }
 
 function snapshot() {
-  return { ...state, ownerId: sourceOwner?.id || '', roomId: room || 'hotspot', allReady: allDisplaysReady(), preparation, serverId: SERVER_ID, serverTime: Date.now() };
+  return { ...state, ownerId: record?.admin.id || sourceOwner?.id || '', roomId: room || 'hotspot', allReady: allDisplaysReady(), preparation, serverId: SERVER_ID, serverTime: Date.now() };
 }
 
 function identity(req) {
+  if (req.cinewallDevice) return req.cinewallDevice;
   const id = String(req.headers['x-cinewall-device'] || '');
   const token = String(req.headers['x-cinewall-key'] || '');
   if (!/^[a-f0-9-]{36}$/.test(id) || !/^[a-f0-9-]{36}$/.test(token)) {
@@ -161,7 +164,7 @@ function identity(req) {
 
 function checkOwner(req, claim = false) {
   if (sourceOwner && !state.asset && !uploadInProgress && Date.now() - sourceOwner.claimedAt > 60000) sourceOwner = null;
-  const device = identity(req);
+  const device = record ? roomRegistry.requireAdmin(record, req) : identity(req);
   if (sourceOwner && (sourceOwner.id !== device.id || sourceOwner.hash !== device.hash)) {
     const error = new Error('Another laptop is the admin. Wait until it removes the file.'); error.status = 423; throw error;
   }
@@ -171,8 +174,24 @@ function checkOwner(req, claim = false) {
   return device;
 }
 
-const screenSharing = createScreenSharing({ identity, readJson, json });
-const micRoom = createMicRoom({ identity, readJson, json });
+const screenSharing = createScreenSharing({ identity, readJson, json,
+  onCount: count => { if (record) revokeMembers(member => member.screen > count); },
+  authorizeHost: req => { if (record) roomRegistry.requireAdmin(record, req); },
+  authorizeJoin: (req, screen) => { if (record && !roomRegistry.isAdmin(record, identity(req)) && screen !== req.cinewallMember.screen) throw Object.assign(new Error('Use your assigned screen.'), { status: 403 }); },
+});
+const micRoom = createMicRoom({ identity, readJson, json,
+  onRemoveSlot: slot => { if (record) revokeMembers(member => member.role === 'screen' && member.screen === slot); },
+  authorizeManager: req => record ? roomRegistry.requireAdmin(record, req) : checkOwner(req, true),
+  authorizeJoin: (req, role, slot) => { if (record && !roomRegistry.isAdmin(record, identity(req)) && (role === 'phone' ? req.cinewallMember.role !== 'phone' : req.cinewallMember.role === 'phone' || slot !== req.cinewallMember.screen)) throw Object.assign(new Error('Use the microphone or speaker assigned to this device.'), { status: 403 }); },
+});
+
+function revokeMembers(predicate) {
+  for (const member of roomRegistry.removeMembers(record, predicate)) {
+    for (const viewer of [...viewers]) if (viewer.device?.id === member.device.id) { viewers.delete(viewer); viewer.end(); }
+    for (const [id, screen] of screens) if (screen.deviceId === member.device.id) screens.delete(id);
+    screenSharing.removeDevice(member.device); micRoom.removeDevice(member.device);
+  }
+}
 
 function releaseReservation() {
   if (!state.asset && !uploadInProgress) { sourceOwner = null; saveSession(); broadcast('state', snapshot()); }
@@ -251,11 +270,12 @@ function applyCommand(input) {
   const now = Date.now();
   // Give every ready browser time to receive the same start, rather than
   // starting the source first. Mixer changes remain immediate.
-  const executeAt = now + (['screen-audio', 'mute-all', 'audio-mode', 'youtube-audio-mode', 'audio-output'].includes(input.type) ? 0 : input.type === 'play' ? 350 : 90);
+  const executeAt = now + (input.type === 'play' ? 120 : 0);
   const type = String(input.type || '');
   let position = currentPosition(executeAt);
 
   if (type === 'session-mode') {
+    if (input.sessionMode === 'presentation') throw new Error('Presentation preparation is unavailable. Use Screen sharing for documents.');
     const sessionMode = String(input.sessionMode || '');
     if (!['video', 'audio', 'presentation', 'youtube'].includes(sessionMode)) throw new Error('Unknown session mode');
     if (sessionMode !== state.sessionMode) {
@@ -314,12 +334,14 @@ function applyCommand(input) {
   } else if (type === 'play') {
     if (!state.asset || !['video', 'audio', 'youtube'].includes(state.sessionMode)) throw new Error('Choose a video, audio file, or YouTube link first');
     if (!allDisplaysReady()) { const error = new Error('Wait until every display is ready.'); error.status = 409; throw error; }
+    if (input.position !== undefined && !Number.isFinite(input.position)) throw new Error('Invalid playback position');
     if (Number.isFinite(input.position)) position = Math.max(0, Number(input.position));
     state = { ...state, playing: true, position, anchorTime: executeAt };
   } else if (type === 'pause') {
     state = { ...state, playing: false, position, anchorTime: executeAt };
   } else if (type === 'seek') {
     if (!['video', 'audio', 'youtube'].includes(state.sessionMode)) throw new Error('Seeking is only available for video, audio, and YouTube');
+    if (!Number.isFinite(Number(input.position))) throw new Error('Invalid playback position');
     position = Math.max(0, Number(input.position) || 0);
     state = { ...state, position, anchorTime: executeAt };
   } else if (type === 'restart') {
@@ -418,7 +440,7 @@ function activeScreens() {
   for (const [id, info] of screens) {
     if (info.lastSeen < cutoff) screens.delete(id);
   }
-  return [...screens.values()].sort((a, b) => a.screen - b.screen || b.lastSeen - a.lastSeen);
+  return [...screens.values()].map(({ deviceHash, ...screen }) => screen).sort((a, b) => a.screen - b.screen || b.lastSeen - a.lastSeen);
 }
 
 function convertOfficeToPdf(inputPath, outputPath, extension) {
@@ -462,13 +484,16 @@ function decodeXml(value) {
 }
 
 function unzipEntries(filePath) {
+  if (fs.statSync(filePath).size > 16 * 1024 * 1024) throw new Error('Document is too large. Save it as PDF or use Screen sharing.');
   const archive = fs.readFileSync(filePath);
+  let expanded = 0;
   let end = -1;
   for (let index = archive.length - 22; index >= Math.max(0, archive.length - 65557); index -= 1) {
     if (archive.readUInt32LE(index) === 0x06054b50) { end = index; break; }
   }
   if (end < 0) throw new Error('The Office file is not a valid ZIP document');
   const entryCount = archive.readUInt16LE(end + 10);
+  if (entryCount > 2048) throw new Error('Too many document entries');
   let offset = archive.readUInt32LE(end + 16);
   const entries = new Map();
   for (let index = 0; index < entryCount; index += 1) {
@@ -486,7 +511,9 @@ function unzipEntries(filePath) {
     const dataStart = localOffset + 30 + localNameLength + localExtraLength;
     const compressed = archive.subarray(dataStart, dataStart + compressedSize);
     if (method === 0) entries.set(name, Buffer.from(compressed));
-    else if (method === 8) entries.set(name, zlib.inflateRawSync(compressed));
+    else if (method === 8) entries.set(name, zlib.inflateRawSync(compressed, { maxOutputLength: 8 * 1024 * 1024 }));
+    expanded += entries.get(name)?.length || 0;
+    if (expanded > 32 * 1024 * 1024) throw new Error('Expanded document is too large');
     offset += 46 + nameLength + extraLength + commentLength;
   }
   return entries;
@@ -573,6 +600,7 @@ async function receiveAsset(req, res, url) {
     return;
   }
 
+  if (kind === 'presentation') { json(res, 409, { error: 'Use Screen sharing for presentations and documents.' }); return; }
   const size = Number(req.headers['content-length'] || 0);
   if (!Number.isFinite(size) || size <= 0 || size > MAX_ASSET_SIZE) {
     json(res, 400, { error: 'File size is missing, empty, or larger than 50 GB' });
@@ -592,6 +620,7 @@ async function receiveAsset(req, res, url) {
   const temporaryPath = path.join(CACHE_DIR, `upload-${version}.tmp`);
   const rawPath = path.join(CACHE_DIR, `asset-${version}${extension}`);
   checkOwner(req, true);
+  const releaseBudget = cacheBudget.reserve(temporaryPath, size);
   uploadInProgress = true;
   preparationController = new AbortController();
   const signal = preparationController.signal;
@@ -685,6 +714,7 @@ async function receiveAsset(req, res, url) {
     broadcast('state', snapshot());
     if (!res.headersSent && !res.destroyed) json(res, signal.aborted ? 409 : kind === 'video' && /MP4|WebM|video track|audio track|browser/i.test(preparation.error) ? 415 : 500, { error: preparation.error, preparation });
   } finally {
+    releaseBudget();
     uploadInProgress = false;
     releaseReservation();
     preparationController = null;
@@ -807,42 +837,26 @@ function serveAsset(req, res) {
   stream.pipe(res);
 }
 
-function serveStatic(req, res, pathname) {
-  const route = pathname === '/' ? '/index.html' : pathname === '/favicon.ico' ? '/favicon.svg' : pathname;
-  const decoded = decodeURIComponent(route);
-  const resolved = path.resolve(PUBLIC_DIR, `.${decoded}`);
-  if (!resolved.startsWith(`${PUBLIC_DIR}${path.sep}`)) {
-    json(res, 403, { error: 'Forbidden' });
-    return;
-  }
-  fs.readFile(resolved, (error, data) => {
-    if (error) {
-      json(res, error.code === 'ENOENT' ? 404 : 500, { error: 'Not found' });
-      return;
-    }
-    res.writeHead(200, {
-      'Content-Type': route === '/manifest.json' ? 'application/manifest+json; charset=utf-8' : contentTypes[path.extname(resolved).toLowerCase()] || 'application/octet-stream',
-      'Content-Length': data.length,
-      'Cache-Control': 'no-cache',
-      'Referrer-Policy': 'strict-origin-when-cross-origin',
-      'Permissions-Policy': 'autoplay=(self "https://www.youtube.com" "https://www.youtube-nocookie.com")',
-      'X-Content-Type-Options': 'nosniff',
-      'Content-Security-Policy': "default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self' https://www.youtube.com https://s.ytimg.com; media-src 'self' blob:; img-src 'self' data: blob: https://i.ytimg.com https://yt3.ggpht.com https://api.qrserver.com; connect-src 'self' https://www.youtube.com; frame-src 'self' blob: https://www.youtube.com https://www.youtube-nocookie.com; object-src 'self'",
-    });
-    res.end(req.method === 'HEAD' ? undefined : data);
-  });
-}
-
 async function handle(req, res, url) {
   try {
+    if (req.method === 'POST' && url.pathname === '/api/rooms/leave') {
+      const device = identity(req);
+      if (!record || roomRegistry.isAdmin(record, device)) throw new Error('Only guest devices can leave using this control.');
+      revokeMembers(member => member.device.id === device.id); json(res, 200, { ok: true }); return;
+    }
     if (await screenSharing.handle(req, res, url)) return;
     if (await micRoom.handle(req, res, url)) return;
     if (req.method === 'GET' && url.pathname === '/api/time') {
       json(res, 200, { serverTime: Date.now() });
       return;
     }
+    if (req.method === 'GET' && url.pathname === '/api/rooms/current') {
+      if (!record) throw new Error('Create a room first.');
+      json(res, 200, roomRegistry.result(record, req.cinewallMember)); return;
+    }
     if (req.method === 'GET' && url.pathname === '/api/info') {
-      json(res, 200, { port: activePort, hosted: Boolean(room), room, iceServers: iceServers(), addresses: room ? [] : networkDetails().map((item) => item.address), networks: room ? [] : networkDetails(), state: snapshot() });
+      const hosted = process.env.CINEWALL_HOSTED === '1' || Boolean(process.env.RAILWAY_ENVIRONMENT) || !isLocalHost(String(req.headers['x-forwarded-host'] || req.headers.host || 'localhost').split(',')[0].trim());
+      json(res, 200, { port: activePort, hosted, room, iceServers: iceServers(), addresses: hosted ? [] : networkDetails().map((item) => item.address), networks: hosted ? [] : networkDetails(), state: snapshot() });
       return;
     }
     if (req.method === 'GET' && url.pathname === '/api/status') {
@@ -890,11 +904,13 @@ async function handle(req, res, url) {
       saveSession(); broadcast('state', snapshot()); json(res, 200, { state: snapshot() }); return;
     }
     if (req.method === 'POST' && url.pathname === '/api/peer-signal') {
+      const device = identity(req);
       const body = await readJson(req);
       if (body.assetVersion && body.assetVersion !== state.asset?.version) { json(res, 409, { error: 'The selected media changed.' }); return; }
       if (![body.from, body.to].every((id) => /^[a-f0-9-]{36}$/.test(id || ''))) throw new Error('Invalid peer identity');
-      if (![...viewers].some((viewer) => viewer.peerId === body.from)) { json(res, 403, { error: 'Connect your file-sharing tab before signaling' }); return; }
+      if (![...viewers].some((viewer) => viewer.peerId === body.from && viewer.device?.id === device.id && viewer.device?.hash === device.hash)) { json(res, 403, { error: 'Connect your file-sharing tab before signaling' }); return; }
       if (body.description && (!['offer', 'answer'].includes(body.description.type) || typeof body.description.sdp !== 'string' || body.description.sdp.length > 64000)) throw new Error('Invalid peer description');
+      if (body.candidate && (typeof body.candidate.candidate !== 'string' || body.candidate.candidate.length > 2048)) throw new Error('Invalid peer candidate');
       const target = [...viewers].find((viewer) => viewer.peerId === body.to);
       if (!target) { json(res, 409, { error: 'The admin source is offline. Keep its dashboard tab open.' }); return; }
       sendEvent(target, 'peer-signal', { from: body.from, assetVersion:state.asset?.version, publicationId:state.asset?.publicationId, description: body.description, candidate: body.candidate }); json(res, 200, { ok: true }); return;
@@ -914,11 +930,13 @@ async function handle(req, res, url) {
     }
     if (req.method === 'POST' && url.pathname === '/api/youtube/formats') {
       const body = await readJson(req);
+      checkOwner(req, true);
       json(res, 200, await downloads.inspect(extractYouTubeId(body.url)));
       return;
     }
     if (req.method === 'POST' && url.pathname === '/api/youtube/downloads') {
       const body = await readJson(req);
+      checkOwner(req, true);
       json(res, 202, downloads.start(String(body.inspectionId), String(body.optionId), room));
       return;
     }
@@ -928,13 +946,13 @@ async function handle(req, res, url) {
       if ((job.room || '') !== room) throw new Error('Download not found in this session');
       const action = downloadRoute[2];
       if (req.method === 'GET' && !action) { json(res, 200, downloads.publicJob(job)); return; }
-      if (req.method === 'POST' && action === 'cancel') { json(res, 200, downloads.cancel(job.id)); return; }
+      if (req.method === 'POST' && action === 'cancel') { checkOwner(req); json(res, 200, downloads.cancel(job.id)); return; }
       if (['GET', 'HEAD'].includes(req.method) && action === 'file') {
         if (job.state !== 'ready' || !job.path) { json(res, 409, { error: 'This download is not ready yet.' }); return; }
         res.writeHead(200, { 'Content-Type': job.option.kind === 'video' ? `video/${job.option.container}` : job.option.container === 'mp3' ? 'audio/mpeg' : job.option.container === 'm4a' ? 'audio/mp4' : job.option.container === 'aac' ? 'audio/aac' : 'audio/wav',
           'Content-Length': fs.statSync(job.path).size, 'Content-Disposition': `attachment; filename*=UTF-8''${safeDownloadName(job.fileName)}`, 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' });
         if (req.method === 'HEAD') res.end();
-        else { const stream = fs.createReadStream(job.path); stream.on('error', () => res.destroy()); stream.pipe(res); res.on('close', () => stream.destroy()); }
+        else { job.activeReads = (job.activeReads || 0) + 1; const stream = fs.createReadStream(job.path); stream.on('error', () => res.destroy()); stream.pipe(res); res.on('close', () => { stream.destroy(); job.activeReads = Math.max(0, job.activeReads - 1); }); }
         return;
       }
       if (req.method === 'POST' && action === 'load') {
@@ -942,9 +960,10 @@ async function handle(req, res, url) {
         const validDownload = targetMode === 'audio' ? job.option.kind === 'audio' && ['mp3', 'm4a', 'aac', 'wav'].includes(job.option.container) : targetMode === 'video' && job.option.kind === 'video' && job.option.container === 'mp4';
         if (!validDownload || uploadInProgress) { json(res, 409, { error: 'Open the matching video/audio dashboard and finish any current upload first.' }); return; }
         checkOwner(req, true);
-        uploadInProgress = true;
         const version = `download-${Date.now()}-${job.id}`;
         const destination = path.join(CACHE_DIR, `asset-${version}.${job.option.container}`);
+        const releaseBudget = job.path ? cacheBudget.reserve(destination, fs.statSync(job.path).size) : () => {};
+        uploadInProgress = true;
         try {
           const file = targetMode === 'audio' ? await downloads.copyForSpeakers(job.id, destination) : await downloads.copyForWall(job.id, destination);
           if (state.sessionMode !== targetMode) throw new Error('The mode changed during preparation. Return to the matching dashboard and try again.');
@@ -960,7 +979,7 @@ async function handle(req, res, url) {
         } catch (error) {
           await fs.promises.unlink(destination).catch(() => {});
           throw error;
-        } finally { uploadInProgress = false; releaseReservation(); }
+        } finally { releaseBudget(); uploadInProgress = false; releaseReservation(); }
         return;
       }
       json(res, 405, { error: 'Method not allowed' });
@@ -979,6 +998,14 @@ async function handle(req, res, url) {
       return;
     }
     if (req.method === 'GET' && url.pathname === '/events') {
+      const device = identity(req);
+      const peerId = url.searchParams.get('peer') || '';
+      if (peerId && !/^[a-f0-9-]{36}$/.test(peerId)) throw new Error('Invalid peer identity');
+      if (peerId && peerId === state.asset?.peerId && sourceOwner && (sourceOwner.id !== device.id || sourceOwner.hash !== device.hash)) { json(res, 403, { error: 'This file source belongs to the admin.' }); return; }
+      if (viewers.size >= 32) { json(res, 429, { error: 'Too many room connections.' }); return; }
+      const previous = peerId && [...viewers].find(viewer => viewer.peerId === peerId);
+      if (previous && (previous.device.id !== device.id || previous.device.hash !== device.hash)) { json(res, 403, { error: 'This connection belongs to another device.' }); return; }
+      res.device = device;
       res.writeHead(200, {
         'Content-Type': 'text/event-stream',
         'Cache-Control': 'no-cache, no-transform',
@@ -995,12 +1022,17 @@ async function handle(req, res, url) {
     }
     if (req.method === 'POST' && url.pathname === '/api/status') {
       const body = await readJson(req);
+      const device = identity(req);
       const screen = Number(body.screen);
+      if (record && !roomRegistry.isAdmin(record, device) && req.cinewallMember.screen !== screen) { json(res, 403, { error: 'Report only your assigned screen.' }); return; }
       const id = String(body.clientId || '').slice(0, 80);
       if (!id || !Number.isInteger(screen) || screen < 1 || screen > 5) throw new Error('Invalid screen status');
+      const existing = screens.get(id);
+      if (existing && (existing.deviceId !== device.id || existing.deviceHash !== device.hash)) { json(res, 403, { error: 'That player belongs to another device.' }); return; }
+      if (!existing && screens.size >= 20) { json(res, 429, { error: 'Too many players.' }); return; }
       screens.set(id, {
         clientId: id,
-        deviceId: /^[a-f0-9-]{36}$/i.test(String(req.headers['x-cinewall-device'] || '')) ? String(req.headers['x-cinewall-device']) : '',
+        deviceId: device.id, deviceHash: device.hash,
         screen,
         build: String(body.build || '').slice(0, 80),
         ready: Boolean(body.ready),
@@ -1029,9 +1061,12 @@ async function handle(req, res, url) {
     }
     if (req.method === 'POST' && url.pathname === '/api/command') {
       const input = await readJson(req);
+      if (record && !['identify', 'screen-audio'].includes(input.type)) roomRegistry.requireAdmin(record, req);
+      if (record && input.type === 'screen-audio' && !roomRegistry.isAdmin(record, identity(req)) && Number(input.screen) !== req.cinewallMember.screen) { json(res, 403, { error: 'You can change only your own speaker.' }); return; }
       if (sourceOwner && !['identify', 'screen-audio'].includes(input.type)) checkOwner(req);
       if (input.type === 'load-youtube') { extractYouTubeId(input.url); checkOwner(req, true); }
       const command = applyCommand(input);
+      if (record && input.type === 'layout') revokeMembers(member => member.screen > state.screenCount);
       json(res, 200, { ok: true, command });
       return;
     }
@@ -1045,7 +1080,28 @@ async function handle(req, res, url) {
   }
 }
 
-return { handle, pulse() { broadcast('pulse', snapshot()); activeScreens(); screenSharing.pulse(); micRoom.pulse(); }, lastUsed: Date.now(), idle() { return !viewers.size && !uploadInProgress && screenSharing.idle() && micRoom.idle(); }, close() { for (const viewer of viewers) viewer.end(); screenSharing.close(); micRoom.close(); } };
+return {
+  handle,
+  joinMember(member) {
+    if (!member) return;
+    if (['video', 'audio'].includes(record?.mode) && member.screen > state.screenCount) applyCommand({ type: 'layout', screenCount: member.screen });
+    if (record?.mode === 'mic' && member.screen) micRoom.ensureSlot(member.screen);
+    if (record?.mode === 'share' && member.screen) screenSharing.ensureCount(member.screen);
+  },
+  recover(device) {
+    const position = currentPosition();
+    sourceOwner = { ...device, claimedAt: Date.now() };
+    if (state.asset?.source === 'peer') { removeCurrentAsset(); state.asset = null; }
+    state = { ...state, playing: false, position: state.asset ? position : 0, anchorTime: Date.now(), notBefore: 0, commandId: ++commandSequence };
+    screens.clear(); saveSession(); broadcast('state', snapshot());
+    for (const viewer of viewers) viewer.end(); viewers.clear();
+    screenSharing.close(); micRoom.close();
+  },
+  pulse() { broadcast('pulse', snapshot()); activeScreens(); screenSharing.pulse(); micRoom.pulse(); },
+  lastUsed: Date.now(),
+  idle() { return !viewers.size && !uploadInProgress && screenSharing.idle() && micRoom.idle(); },
+  close() { preparationController?.abort(); for (const viewer of viewers) viewer.end(); viewers.clear(); screenSharing.close(); micRoom.close(); },
+};
 }
 
 function iceServers() {
@@ -1060,32 +1116,85 @@ const sessions = new Map();
 const tlsEnabled = Boolean(process.env.CINEWALL_TLS_CERT && process.env.CINEWALL_TLS_KEY);
 if (Boolean(process.env.CINEWALL_TLS_CERT) !== Boolean(process.env.CINEWALL_TLS_KEY)) throw new Error('Set both CINEWALL_TLS_CERT and CINEWALL_TLS_KEY for HTTPS.');
 const protocol = tlsEnabled ? 'https' : 'http';
+function respondJson(res, status, data) { const body = JSON.stringify(data); res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' }); res.end(body); }
+async function bodyJson(req) { let size = 0; const chunks = []; for await (const chunk of req) { size += chunk.length; if (size > MAX_JSON_BODY) throw Object.assign(new Error('Request is too large'), { status: 413 }); chunks.push(chunk); } try { return JSON.parse(Buffer.concat(chunks).toString() || '{}'); } catch { throw new Error('Invalid JSON'); } }
+function serveStatic(req, res, pathname) {
+  const route = pathname === '/' ? '/index.html' : pathname === '/favicon.ico' ? '/favicon.svg' : pathname;
+  const decoded = decodeURIComponent(route);
+  const resolved = path.resolve(PUBLIC_DIR, `.${decoded}`);
+  if (!resolved.startsWith(`${PUBLIC_DIR}${path.sep}`)) {
+    respondJson(res, 403, { error: 'Forbidden' });
+    return;
+  }
+  fs.readFile(resolved, (error, data) => {
+    if (error) {
+      respondJson(res, error.code === 'ENOENT' ? 404 : 500, { error: 'Not found' });
+      return;
+    }
+    res.writeHead(200, {
+      'Content-Type': route === '/manifest.json' ? 'application/manifest+json; charset=utf-8' : contentTypes[path.extname(resolved).toLowerCase()] || 'application/octet-stream',
+      'Content-Length': data.length,
+      'Cache-Control': 'no-cache',
+      'Referrer-Policy': 'strict-origin-when-cross-origin',
+      'Permissions-Policy': 'autoplay=(self "https://www.youtube.com" "https://www.youtube-nocookie.com")',
+      'X-Content-Type-Options': 'nosniff',
+      'Content-Security-Policy': "default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self' https://www.youtube.com https://s.ytimg.com; media-src 'self' blob:; img-src 'self' data: blob: https://i.ytimg.com https://yt3.ggpht.com https://api.qrserver.com; connect-src 'self' https://www.youtube.com; frame-src 'self' blob: https://www.youtube.com https://www.youtube-nocookie.com; object-src 'self'",
+    });
+    res.end(req.method === 'HEAD' ? undefined : data);
+  });
+}
+
+
+const roomRegistry = createRooms(CACHE_ROOT);
+function getSession(record) {
+  if (!sessions.has(record.id)) sessions.set(record.id, createSession(record.id, record));
+  return sessions.get(record.id);
+}
 const requestHandler = async (req, res) => {
+ try {
   let url;
   try { url = new URL(req.url, 'http://localhost'); }
-  catch { res.writeHead(400, { 'Content-Type':'application/json; charset=utf-8' }); res.end(JSON.stringify({error:'Invalid request URL'})); return; }
+  catch { respondJson(res, 400, { error: 'Invalid request URL' }); return; }
   // Public demo counter: shared across rooms, instances and server restarts.
   if (req.method === 'GET' && url.pathname === '/api/demo-visits') {
     res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store', 'X-Robots-Tag':'noindex, nofollow' });
     res.end(JSON.stringify(getDemoVisitSnapshot()));
     return;
   }
+
+  if (req.method === 'GET' && url.pathname === '/api/health') { respondJson(res, 200, { ok: true }); return; }
   const room = url.searchParams.get('room') || '';
   if (room || /^\/(?:api\/|events$|share-events$|mic-events$|__cinewall_peer__\/|(?:admin|screen|share|mic)\.html$)/.test(url.pathname)) res.setHeader('X-Robots-Tag', 'noindex, nofollow');
+  if (room && !/^[a-f0-9-]{36}$/.test(room)) { respondJson(res, 400, { error: 'Invalid room link.' }); return; }
+  const dynamic = url.pathname.startsWith('/api/') || ['/events', '/share-events', '/mic-events'].includes(url.pathname);
+  if (!dynamic) { if (['GET','HEAD'].includes(req.method)) serveStatic(req, res, url.pathname); else respondJson(res, 405, { error: 'Method not allowed' }); return; }
+  if (req.method === 'POST' && req.headers.origin) {
+    const allowed = String(req.headers['x-forwarded-host'] || req.headers.host || '').split(',')[0].trim();
+    if (new URL(req.headers.origin).host !== allowed) { respondJson(res, 403, { error: 'Open CineWall directly to use this room.' }); return; }
+  }
+  if (req.method === 'POST' && ['/api/rooms/create', '/api/rooms/join', '/api/rooms/resume', '/api/rooms/recover'].includes(url.pathname)) {
+    const body = await bodyJson(req);
+    const data = url.pathname.endsWith('/create') ? roomRegistry.create(req, body.mode) : url.pathname.endsWith('/recover') ? roomRegistry.recover(req, body) : url.pathname.endsWith('/resume') ? roomRegistry.resume(req, body) : roomRegistry.join(req, body);
+    const record = roomRegistry.lookup(data.room), session = getSession(record);
+    if (url.pathname.endsWith('/recover')) session.recover(roomRegistry.identity(req));
+    session.joinMember(record.members.find(member => member.ticket === data.ticket));
+    respondJson(res, 200, data); return;
+  }
   const hosted = process.env.CINEWALL_HOSTED === '1' || Boolean(process.env.RAILWAY_ENVIRONMENT) || !isLocalHost(String(req.headers['x-forwarded-host'] || req.headers.host || 'localhost').split(',')[0].trim());
-  if ((room && !/^[a-f0-9-]{36}$/.test(room)) || (hosted && !room && (url.pathname.startsWith('/api/') || url.pathname === '/events' || url.pathname === '/share-events' || url.pathname === '/mic-events'))) {
-    res.writeHead(400, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ error: 'Open your private CineWall session link first.' })); return;
+  if (!room) {
+    if (hosted || process.env.CINEWALL_LEGACY_LOCAL !== '1') { respondJson(res, 400, { error: 'Create or join a room first.' }); return; }
+    if (!sessions.has('')) sessions.set('', createSession(''));
+    const local = sessions.get(''); local.lastUsed = Date.now(); await local.handle(req, res, url); return;
   }
-  const key = room || '';
-  if (!sessions.has(key)) {
-    if (sessions.size >= 64) { res.writeHead(503); res.end('Too many active sessions. Try later.'); return; }
-    sessions.set(key, createSession(key));
-  }
-  const session = sessions.get(key);
-  session.lastUsed = Date.now();
+  const record = roomRegistry.lookup(room);
+  roomRegistry.authorize(req, url, record);
+  const session = getSession(record); session.lastUsed = Date.now();
   await session.handle(req, res, url);
+ } catch (error) { if (!res.headersSent) respondJson(res, error.status || 400, { error: error.message || 'Request failed' }); else res.destroy(); }
 };
 const server = tlsEnabled ? require('node:https').createServer({ cert: fs.readFileSync(process.env.CINEWALL_TLS_CERT), key: fs.readFileSync(process.env.CINEWALL_TLS_KEY) }, requestHandler) : http.createServer(requestHandler);
+server.requestTimeout = 2 * 60 * 60 * 1000;
+server.headersTimeout = 30000;
 
 const pulse = setInterval(() => {
   for (const [key, session] of sessions) {
@@ -1094,6 +1203,17 @@ const pulse = setInterval(() => {
   }
 }, 2000);
 pulse.unref();
+const cleanup = setInterval(() => {
+  for (const id of roomRegistry.prune()) {
+    sessions.get(id)?.close(); sessions.delete(id);
+    const directory = path.resolve(CACHE_ROOT, 'rooms', id);
+    if (directory.startsWith(path.resolve(CACHE_ROOT, 'rooms') + path.sep)) fs.rm(directory, { recursive: true, force: true }, () => {});
+  }
+  downloads.cleanup?.();
+  cacheBudget.removeExpired(path.join(CACHE_ROOT, 'rooms'), 24 * 60 * 60 * 1000, new Set([...roomRegistry.records.keys()].map(id => path.join(CACHE_ROOT, 'rooms', id))));
+}, 60000); cleanup.unref();
+function shutdown() { clearInterval(pulse); clearInterval(cleanup); for (const session of sessions.values()) session.close(); downloads.shutdown(); server.close(); server.closeIdleConnections?.(); const timer = setTimeout(() => process.exit(0), 5000); timer.unref(); }
+process.once('SIGTERM', shutdown); process.once('SIGINT', shutdown);
 
 server.on('error', (error) => {
   if (error.code === 'EADDRINUSE' && activePort < PREFERRED_PORT + MAX_PORT_ATTEMPTS - 1) {

@@ -12,10 +12,10 @@ const turn = () => new Promise(setImmediate);
 
 function sessionPage(href, savedRoom, storageBlocked = false) {
   const location = new URL(href), calls = [], clicks = [], storage = new Map(savedRoom ? [['cinewall-room', savedRoom]] : []);
-  class XHR { open(...args) { calls.push(args); } setRequestHeader() {} }
-  class Events { constructor(url) { calls.push(['events', url]); } }
-  const window = { fetch: async (...args) => { calls.push(['fetch', ...args]); return {}; }, EventSource: Events };
-  const context = vm.createContext({ URL, Request, Headers, location, window, XMLHttpRequest: XHR, crypto: crypto.webcrypto,
+  class XHR { open(...args) { calls.push(args); } setRequestHeader(...args) { calls.push(['header', ...args]); } send(body) { calls.push(['send', body]); } }
+  class Events extends EventTarget { constructor(url) { super(); calls.push(['events', url]); } close() { calls.push(['events-close']); } }
+  const window = { dispatchEvent() {}, fetch: async (...args) => { calls.push(['fetch', ...args]); return { ok: true, json: async () => ({ room: new URL(location).searchParams.get('room') || '01234567-89ab-4cde-8fab-0123456789ab', ticket: 'ticket', code: 'ABCD-EFGH', screen: 1 }) }; }, EventSource: Events };
+  const context = vm.createContext({ EventTarget, Event, MessageEvent, CustomEvent, Promise, URL, Request, Headers, location, window, XMLHttpRequest: XHR, crypto: crypto.webcrypto,
     localStorage: { getItem: (key) => {if(storageBlocked)throw Error('Storage denied');return storage.get(key);}, setItem: (key, value) => {if(storageBlocked)throw Error('Storage denied');storage.set(key,value);} },
     history: { replaceState(a, b, value) { calls.push(['history', String(value)]); } },
     document: { addEventListener(type, handler) { clicks.push(handler); } },
@@ -25,13 +25,13 @@ function sessionPage(href, savedRoom, storageBlocked = false) {
 }
 
 test('hosted page creates private domain links, never localhost or internal Railway IP/port', async () => {
-  const client = sessionPage('https://watch.aitoyz.in/admin.html?mode=video', room);
+  const client = sessionPage(`https://watch.aitoyz.in/admin.html?mode=video&room=${room}`, room);
   assert.equal(client.window.CineWallSession.hosted, true);
   for (const screen of [1, 2, 3]) assert.equal(client.window.CineWallSession.link(`/screen.html?screen=${screen}`), `https://watch.aitoyz.in/screen.html?screen=${screen}&room=${room}`);
   await client.window.fetch('/api/status');
-  new client.window.EventSource('/events');
+  new client.window.EventSource('/events'); await turn();
   new client.XHR().open('POST', '/api/media');
-  assert.ok(client.calls.filter((call) => ['fetch', 'events', 'POST'].includes(call[0])).every((call) => call[1].includes(`room=${room}`)));
+  assert.ok(client.calls.filter((call) => ['fetch', 'events', 'POST'].includes(call[0]) && !call[1].includes('/api/rooms/join')).every((call) => call[1].includes(`room=${room}`)));
   const link = { href: 'https://watch.aitoyz.in/api/youtube/downloads/id/file' };
   client.clicks[0]({ target: { closest: () => link } });
   assert.ok(link.href.includes(`room=${room}`));
@@ -51,14 +51,39 @@ test('an explicit private link wins over another session saved in the browser; L
   assert.equal(lan.window.CineWallSession.link('/screen.html?screen=2'), 'http://192.168.137.1:4173/screen.html?screen=2');
 });
 
-test('hosted startup still creates a usable room when storage is blocked or contains an invalid room', async () => {
-  for(const [saved,blocked] of [[undefined,true],['invalid-saved-room',false]]) {
-    const client=sessionPage('https://watch.aitoyz.in/admin.html?mode=audio',saved,blocked);
-    assert.match(client.window.CineWallSession.room,/^[a-f0-9-]{36}$/);
-    await client.window.fetch('/api/status');
-    assert.equal(new URL(client.calls.at(-1)[1]).searchParams.get('room'),client.window.CineWallSession.room);
-  }
-  assert.equal(sessionPage(`https://watch.aitoyz.in/screen.html?room=${room}`,undefined,true).window.CineWallSession.room,room);
+test('file transport and dashboard subscriptions share one authenticated event connection', async () => {
+  const client = sessionPage(`https://watch.aitoyz.in/admin.html?room=${room}`);
+  const one = new client.window.EventSource('/events?peer=' + crypto.randomUUID());
+  const two = new client.window.EventSource('/events');
+  await client.window.CineWallSession.ready; await turn();
+  const streams = client.calls.filter(call => call[0] === 'events');
+  assert.equal(streams.length,1);
+  assert.equal(new URL(streams[0][1]).searchParams.get('peer'),client.window.CineWallSession.peerId);
+  assert.equal(new URL(streams[0][1]).searchParams.get('ticket'),'ticket');
+  one.close(); assert.equal(client.calls.filter(call=>call[0]==='events-close').length,0);
+  two.close(); assert.equal(client.calls.filter(call=>call[0]==='events-close').length,1);
+});
+
+test('room credentials and tickets never attach to third-party XHR or download links', async () => {
+  const client = sessionPage(`https://watch.aitoyz.in/admin.html?room=${room}`);
+  await client.window.CineWallSession.ready;
+  const before = client.calls.length;
+  const external = new client.XHR(); external.open('POST','https://external.invalid/api/upload'); external.send('fixture'); await turn();
+  assert.equal(client.calls.slice(before).filter(call=>call[0]==='header').length,0);
+  assert.equal(new URL(client.window.CineWallSession.link('https://external.invalid/api/file')).searchParams.has('ticket'),false);
+  assert.equal(new URL(client.window.CineWallSession.link('https://external.invalid/api/file')).searchParams.has('room'),false);
+  const internal = new client.XHR(); internal.open('POST','/api/media'); internal.send('fixture'); await turn();
+  assert(client.calls.slice(before).some(call=>call[0]==='header'&&call[1]==='X-CineWall-Ticket'&&call[2]==='ticket'));
+});
+
+test('homepage never invents rooms; explicit room enrollment works with blocked storage', async () => {
+   const home = sessionPage('https://watch.aitoyz.in/', 'invalid-saved-room', true);
+   assert.equal(home.window.CineWallSession.room, '');
+   assert.equal(home.calls.length, 0);
+   const client = sessionPage('https://watch.aitoyz.in/screen.html?room='+room, undefined, true);
+   await client.window.CineWallSession.ready;
+   assert.equal(client.window.CineWallSession.room, room);
+   assert.equal(client.window.CineWallSession.membership.code, 'ABCD-EFGH');
 });
 
 test('dashboard renders every hosted display on the domain even when server info advertises internal addresses', () => {
@@ -478,7 +503,7 @@ function controller() {
     renderPlayer() {}, renderMixer() {}, render() {}, updateServerTime() {}, refresh: async () => {}, sourceLocked: () => false, playbackReady: () => true,
     fetch: async (route, init) => new Promise((resolve) => requests.push({ payload: JSON.parse(init.body), resolve })),
   });
-  vm.runInContext(`let controlsQueue = Promise.resolve(), controlSequence = 0, serverOffset = 0; const pendingControls = new Map(), queuedRevisions = new Map(); let status = { state: { sessionMode: 'video', serverId: 's', commandId: 1, asset: { version: 'movie' }, playing: false, position: 0, anchorTime: Date.now(), audioSettings: {1:{volume:1,muted:false}} } }; function positionNow() { return status.state.position; } function audioSetting(screen) { return status.state.audioSettings[screen] || {volume:1,muted:false}; }`, context);
+  vm.runInContext(`const controlsQueues = new Map(); let controlSequence = 0, serverOffset = 0; const pendingControls = new Map(), queuedRevisions = new Map(); let status = { state: { sessionMode: 'video', serverId: 's', commandId: 1, asset: { version: 'movie' }, playing: false, position: 0, anchorTime: Date.now(), audioSettings: {1:{volume:1,muted:false}} } }; function positionNow() { return status.state.position; } function audioSetting(screen) { return status.state.audioSettings[screen] || {volume:1,muted:false}; }`, context);
   vm.runInContext(code.slice(code.indexOf('function acceptState('), code.indexOf('function isPreparing()')), context);
   vm.runInContext(code.slice(code.indexOf('async function command('), code.indexOf('function renderModeShell()')), context);
   return { context, requests, run: (js) => vm.runInContext(js, context), reply(index, state) { requests[index].resolve({ ok: true, json: async () => ({ command: state }) }); } };
@@ -502,12 +527,14 @@ test('queued seeks/volume updates coalesce without dropping the latest value on 
   const updates = [20, 30, 40].map((position) => c.run(`command({type:'seek',position:${position}})`));
   updates.push(c.run("command({type:'screen-audio',screen:2,volume:.2})"), c.run("command({type:'screen-audio',screen:3,volume:.7})"));
   assert.equal(c.run('status.state.position'), 40);
+  await turn();
+  assert.equal(c.requests.length, 3, 'independent speaker commands do not wait for the seek response');
+  assert.equal(c.requests[1].payload.screen, 2);
+  assert.equal(c.requests[2].payload.screen, 3);
   c.reply(0, { ...actual, position: 10, commandId: 2 }); await first; await turn();
-  assert.equal(c.requests[1].payload.position, 40); assert.equal(c.run('status.state.position'), 40);
-  c.reply(1, { ...actual, position: 40, commandId: 3 }); await turn();
-  assert.equal(c.requests[2].payload.screen, 2);
-  c.reply(2, { ...actual, position: 40, commandId: 4, audioSettings: { 2: { volume: .2, muted: false } } }); await turn();
-  assert.equal(c.requests[3].payload.screen, 3);
+  assert.equal(c.requests[3].payload.position, 40); assert.equal(c.run('status.state.position'), 40);
+  c.reply(1, { ...actual, position: 10, commandId: 3, audioSettings: { 2: { volume: .2, muted: false } } });
+  c.reply(2, { ...actual, position: 10, commandId: 4, audioSettings: { 2: { volume: .2, muted: false }, 3: { volume: .7, muted: false } } });
   c.reply(3, { ...actual, position: 40, commandId: 5, audioSettings: { 2: { volume: .2, muted: false }, 3: { volume: .7, muted: false } } });
   await Promise.all(updates); assert.equal(c.requests.length, 4); assert.equal(c.run('status.state.audioSettings[3].volume'), .7);
 });

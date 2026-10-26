@@ -81,12 +81,13 @@
   <script src="icons.js?v=20261002-icons-18"></script>
   <script src="theme.js"></script>
   <script src="device-support.js?v=20261025-mobile-42"></script>
-  <script src="session.js?v=20261025-storage-41"></script>
+  <script src="session.js?v=20261026-rooms-1"></script>
   <link rel="preload" href="/fonts/Anta-Regular.ttf" as="font" type="font/ttf" crossorigin>
   <link rel="preload" as="image" href="/assets/robots-laptops-poster.jpg" fetchpriority="high">
   <link rel="stylesheet" href="styles.css?v=20261008-sharing-card-3">
   <link rel="stylesheet" href="home.css?v=20261025-mobile-42">
   <link rel="stylesheet" href="device-support.css?v=20261025-mobile-42">
+  <link rel="stylesheet" href="/rooms.css?v=20261026-rooms-1">
 </head>
 <body class="mode-body">
   <main class="mode-shell">
@@ -153,7 +154,7 @@
 
     <section id="how-it-works" class="home-section" aria-labelledby="howHeading">
       <div class="home-section-heading"><span class="section-kicker">A SIMPLE SETUP</span><h2 id="howHeading">One source. Everyone connected.</h2><p>Choose a video, a playlist, a live screen or your phone microphone.</p></div>
-      <ol class="home-steps"><li><span>01</span><h3>Get together</h3><p>Connect your devices to the same Wi-Fi or hotspot. Place laptops side by side for a video wall.</p></li><li><span>02</span><h3>Choose and connect</h3><p>Choose a mode and open its numbered links on the other devices. For Mic and Speaker, use one phone link and a different speaker link on each laptop.</p></li><li><span>03</span><h3>Play or present</h3><p>For videos and music, wait until every screen is ready, then press Play. For screen sharing, choose a tab, window or screen. Join the call if you want to talk.</p></li></ol>
+      <ol class="home-steps"><li><span>01</span><h3>Get together</h3><p>Connect your devices to the same Wi-Fi or hotspot. Place laptops side by side for a video wall.</p></li><li><span>02</span><h3>Choose and connect</h3><p>Choose a mode and Create room. Share the short Room ID. On your other devices, choose the same mode, select Join room and enter the ID.</p></li><li><span>03</span><h3>Play or present</h3><p>For videos and music, wait until every screen is ready, then press Play. For screen sharing, choose a tab, window or screen. Join the call if you want to talk.</p></li></ol>
     </section>
 
     <section id="demo" class="home-section home-demo" aria-labelledby="demoHeading">
@@ -185,7 +186,7 @@
           <details><summary>Which video and music files work?</summary><p>MP4 with H.264 video and AAC sound is the safest video choice. Some WebM and H.264/AAC MKV files also work. For music, try MP3, WAV or AAC. Each laptop must support the file's codecs. CineWall checks your selection and does not convert it.</p></details>
         </section>
         <section id="faq-room" class="home-faq-group" aria-labelledby="faqRoomHeading"><h3 id="faqRoomHeading">Hosting &amp; joining</h3>
-          <details><summary>How do I invite friends to my room?</summary><p>Choose a mode on the source laptop and copy its numbered screen or speaker links to the other laptops. Each link includes the room ID. Opening the homepage separately can create a different room, even on the same Wi-Fi. Keep the source dashboard open while you play.</p></details>
+          <details><summary>How do I invite friends to my room?</summary><p>Choose a mode and Create room. Copy the short Room ID from the dashboard. Your friends open the same website or local server, choose the same mode, click Join room and enter the ID. Their screen or speaker number is assigned automatically. Keep the source dashboard open for Instant sharing.</p></details>
           <details><summary>Does everyone need their own copy of the file?</summary><p>No. Choose your movie or songs on the source laptop only. It shares the selected file with the devices that join its room.</p></details>
           <details><summary>How many screens or speakers can join?</summary><p>Video walls support 1–3 laptops, with 2–3 recommended for a wider picture. Audio rooms support up to 5 speakers and 10 songs. Screen sharing supports up to 10 numbered screens, plus the presenter. An optional room call supports up to 4 devices. Mic and Speaker supports one phone and up to three speaker slots.</p></details>
           <details><summary>Can we talk while sharing a screen?</summary><p>Yes. Join the room call from the Screen sharing page, then enable your microphone or camera if you want. Up to four devices can join the call. Use headphones to reduce echo. Camera and microphone access need a secure connection and browser permission.</p></details>
@@ -199,7 +200,7 @@
         </section>
         <section id="faq-privacy" class="home-faq-group" aria-labelledby="faqPrivacyHeading"><h3 id="faqPrivacyHeading">Privacy &amp; troubleshooting</h3>
           <details><summary>What is the difference between Instant and Upload?</summary><p>Instant shares a file from the source laptop; keep its dashboard open. On the online website, use the same Wi-Fi or hotspot. Upload first saves a temporary copy on the server for the other screens to play. Neither option converts the file.</p></details>
-          <details><summary>Who can join my session?</summary><p>Share your room and numbered device links only with people you want to join. Those links identify your room, so treat them as private. Your browser asks for permission before using your microphone, camera or screen.</p></details>
+          <details><summary>Who can join my session?</summary><p>Share the room ID or numbered device links only with people you want to join. Guests receive their own screen or speaker; only the creator controls the room. Keep the separate admin recovery key private. Your browser asks for permission before using your microphone, camera or screen.</p></details>
           <details><summary>Can CineWall work without internet?</summary><p>The online website needs internet to load and connect your room. For local use without internet, run the CineWall server on one laptop and connect the others to the same Wi-Fi or hotspot. Phone microphone access still needs trusted HTTPS; see <a href="/mic-setup.html">Mic and Speaker setup help</a>.</p></details>
           <details><summary>What should I check if a screen will not play?</summary><p>Open the correct numbered link, check that every laptop is on the same Wi-Fi, and keep the source dashboard awake. Enable sound when asked and wait for each screen to report ready. If Instant cannot connect, allow local network access if prompted or try Upload. Refresh pages after a website update so every device uses the same version.</p></details>
         </section>
@@ -236,5 +237,6 @@
   <div id="launcherBusy" class="launcher-busy" hidden><span class="spinner"></span><strong>Preparing your studio…</strong></div>
   <script src="home-footer.js?v=20261025-copy-41"></script>
   <script src="launcher.js?v=20261025-mobile-42"></script>
+  <script src="/rooms-ui.js?v=20261026-rooms-1"></script>
 </body>
 </html>

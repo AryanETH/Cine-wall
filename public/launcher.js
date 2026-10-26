@@ -70,42 +70,8 @@ document.querySelector('#changeSupportAmount').addEventListener('click', () => {
   supportAmount.focus();
 });
 
-document.querySelector('.mode-grid').addEventListener('click', async (event) => {
-  const card = event.target.closest('[data-session-mode]');
-  if (!card) return;
-  
-  // Prevent clicking on coming-soon cards
-  if (event.target.closest('.coming-soon')) return;
-  
-  const sessionMode = card.dataset.sessionMode;
-  busy.hidden = false;
-  try {
-    const current = await (await fetch('/api/status', { cache: 'no-store' })).json();
-    if (current.state.ownerId && current.state.ownerId !== window.CineWallSession?.deviceId) {
-      location.href = window.CineWallSession.link(`/admin.html?mode=${current.state.sessionMode}`);
-      return;
-    }
-    const response = await fetch('/api/command', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ type: 'session-mode', sessionMode }),
-    });
-    if (!response.ok) { const result = await response.json(); throw new Error(result.error || 'Mode could not start'); }
-    const dashboard = `/admin.html?mode=${encodeURIComponent(sessionMode)}`;
-    location.href = window.CineWallSession?.link(dashboard) || dashboard;
-  } catch (error) {
-    busy.hidden = true;
-    document.querySelector('#launcherConnection').classList.remove('online');
-    document.querySelector('#launcherConnection span:last-child').textContent = error.message || 'Server unavailable';
-  }
-});
-
-fetch('/api/status', { cache: 'no-store' })
-  .then((response) => {
-    if (!response.ok) throw new Error();
-    document.querySelector('#launcherConnection').classList.add('online');
-    document.querySelector('#launcherConnection span:last-child').textContent = 'Ready to connect';
-  })
-  .catch(() => {
-    document.querySelector('#launcherConnection span:last-child').textContent = 'Server unavailable';
-  });
+fetch('/api/health', { cache: 'no-store' }).then(response => {
+  if (!response.ok) throw new Error();
+  document.querySelector('#launcherConnection').classList.add('online');
+  document.querySelector('#launcherConnection span:last-child').textContent = 'Ready to connect';
+}).catch(() => { document.querySelector('#launcherConnection span:last-child').textContent = 'Server unavailable'; });

@@ -46,7 +46,7 @@ function upload(data, name, partial = false) {
   const clip = path.join(temporary, 'test-source.mp4');
   execFileSync(converter, ['-nostdin', '-y', '-v', 'error', '-f', 'lavfi', '-i', 'testsrc2=size=640x360:rate=30', '-f', 'lavfi', '-i', 'sine=frequency=440', '-t', '1', '-c:v', 'libx264', '-c:a', 'aac', clip], { windowsHide: true });
   const data = fs.readFileSync(clip);
-  server = spawn(process.execPath, ['server.js'], { cwd: root, windowsHide: true, env: { ...process.env, PORT: '4199', CINEWALL_CACHE_DIR: path.join(temporary, 'cache') }, stdio: ['ignore', 'pipe', 'pipe'] });
+  server = spawn(process.execPath, ['server.js'], { cwd: root, windowsHide: true, env: { ...process.env, PORT: '4199', CINEWALL_LEGACY_LOCAL: '1', CINEWALL_CACHE_DIR: path.join(temporary, 'cache') }, stdio: ['ignore', 'pipe', 'pipe'] });
   let output = '';
   server.stdout.on('data', (chunk) => { output += chunk; });
   server.stderr.on('data', (chunk) => { output += chunk; });

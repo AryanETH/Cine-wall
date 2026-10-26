@@ -10,7 +10,7 @@ Redeploy the changed files, then reload the dashboard. This source change does n
 
 `https://watch.aitoyz.in/screen.html?screen=2&room=<private-room-id>`
 
-All numbered links use the page's public origin, never the server's private IP or internal port. Different rooms have separate playback, files, speakers, presentation pages and peer signaling. Share the admin's numbered display links for devices joining online; the landing page has no manual room controls. On LAN, the same server address has a common room. A public website cannot reliably identify a private hotspot, so online devices must share a room link. The first source laptop claims the admin role using a per-browser device ID and secret; other laptops see **Open screen** instead of source controls and cannot replace or remove its file until the owner removes it. Room links are not a full login system. Share them only with intended participants. This is not a full public-service security audit or an authenticated multi-tenant service.
+On the public website, numbered links use the page's public origin. Choose a mode and Create room, then share the short room ID. Other laptops choose the same mode and Join room; their screen/speaker slot is assigned automatically. Local installations also use explicit rooms: all devices must open the same server's LAN address. The creator owns the room before selecting a file. Guests can control their own sound but cannot replace sources or manage other devices. Keep the admin recovery key private. Room records persist inside the configured cache; see ROOMS.md for authentication, expiry, quotas and recovery.
 
 ## Local video/audio sharing
 

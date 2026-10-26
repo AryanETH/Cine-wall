@@ -22,10 +22,18 @@ The Docker image includes Node.js 24, FFmpeg, FFprobe and yt-dlp. It sets CINEWA
 | CINEWALL_TLS_CERT / CINEWALL_TLS_KEY | Both trusted certificate and key paths, for local HTTPS |
 | CINEWALL_ICE_SERVERS | Optional ICE configuration for legacy peer transport; hosted Instant remains local-only |
 
-The server binds to all interfaces. It does not read a HOST variable. A conventional serverless function is not a drop-in deployment target for this architecture: room state and long-lived signaling would need a different design.
+The server binds to all interfaces. It does not read a HOST variable. A conventional serverless function is not a drop-in deployment target for this architecture: room state and long-lived signaling would need a different design. The former Vercel configuration is retained as `vercel.legacy.json` for reference and is no longer an active deployment configuration.
 
 ## Local use and verification
 
 Run START CINEMA.cmd or node server.js. Devices join the printed address and numbered room links. Plain HTTP/LAN supports local file-range forwarding; phone microphone access requires trusted HTTPS. On the public website, Instant transfers stay between browsers on the same local network. Upload mode and YouTube downloads use the hosting server's storage and bandwidth.
 
 Before deployment, run npm run check and npm test. Browser testing should include song changes, final-song replay, sound permissions and WebRTC connectivity on the devices and network you intend to use. Passing local tests does not deploy the website.
+
+## Room IDs, storage and rate limits
+
+All four homepage modes now open Create room / Join room. Room records and recovery credentials are stored inside `CINEWALL_CACHE_DIR/room-records`; retain that cache on persistent storage if rooms must survive redeployment. Unknown UUIDs no longer allocate rooms. See [ROOMS.md](ROOMS.md) for the protocol, recovery behavior and verification.
+
+`CINEWALL_CACHE_LIMIT_GB` sets the aggregate storage budget in GiB (default 100). Inactive rooms and ready downloads expire after 24 hours; failed/cancelled download files expire after five minutes. Active transfers are protected. Server-side presentation/Office preparation is disabled; use Screen sharing.
+
+If your trusted reverse proxy appends a verified client address to `X-Forwarded-For`, set `CINEWALL_TRUST_PROXY=1` so rate limits distinguish clients. For a verified ingress that overwrites `X-Real-IP`, the explicit `CINEWALL_TRUST_PROXY=real-ip` mode is available; see the trust conditions and Railway notes in [ROOMS.md](ROOMS.md). Leave proxy trust unset on directly exposed servers. The unscoped legacy LAN API is disabled by default; `CINEWALL_LEGACY_LOCAL=1` is only an explicit compatibility option and never bypasses hosted room checks.

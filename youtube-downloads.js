@@ -4,6 +4,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { execFile, spawn } = require('node:child_process');
 const { randomUUID } = require('node:crypto');
+const cacheBudget = require('./cache-budget');
 
 const CACHE_ROOT = path.resolve(process.env.CINEWALL_CACHE_DIR || path.join(__dirname, '.cinema-cache'));
 const ROOT = path.join(CACHE_ROOT, 'downloads');
@@ -84,9 +85,13 @@ function downloadError(stderr) {
   return 'YouTube could not provide this download. Try another link or quality.';
 }
 
+let toolCheck = null, toolCheckedAt = 0;
 async function capabilities() {
-  const checks = await Promise.allSettled([run(executable('yt-dlp'), ['--version'], 10000), run(executable('ffmpeg'), ['-version'], 10000)]);
-  return { downloader: checks[0].status === 'fulfilled', converter: checks[1].status === 'fulfilled', ready: checks.every((check) => check.status === 'fulfilled') };
+  if (!toolCheck || Date.now() - toolCheckedAt > 30000) {
+    toolCheckedAt = Date.now();
+    toolCheck = Promise.allSettled([run(executable('yt-dlp'), ['--version'], 10000), run(executable('ffmpeg'), ['-version'], 10000)]).then(checks => ({ downloader: checks[0].status === 'fulfilled', converter: checks[1].status === 'fulfilled', ready: checks.every(check => check.status === 'fulfilled') }));
+  }
+  return toolCheck;
 }
 
 function audioFormat(formats, extension) {
@@ -165,9 +170,15 @@ function start(inspectionId, optionId, room = '') {
   if ([...jobs.values()].some((job) => ['downloading', 'converting'].includes(job.state))) throw new Error('Another download is still preparing. Wait for it to finish or cancel it.');
   const id = randomUUID();
   const directory = path.join(ROOT, id);
+  const copies = option.kind === 'video' ? 3 : 2;
+  const budgetBytes = Math.min(MAX_FILE, Math.max(64 * 1024 ** 2, Math.ceil((option.size || 64 * 1024 ** 2) * 1.25))) * copies;
+  const releaseBudget = cacheBudget.reserve(id, budgetBytes);
   fs.mkdirSync(directory);
   const cleanTitle = info.title.replace(/[<>:"/\\|?*\x00-\x1f]/g, '').slice(0, 150).replace(/[. ]+$/, '') || 'YouTube video';
   const job = { id, room, videoId: info.videoId, title: info.title, fileName: `${cleanTitle}.${option.container}`, option, directory, state: 'downloading', progress: 0, error: '', path: null, created: Date.now(), attempt: 0, route: info.route || 0 };
+  job.releaseBudget = releaseBudget;
+  job.budgetBytes = budgetBytes;
+  job.maximumBudget = MAX_FILE * copies;
   jobs.set(id, job);
   launch(job);
   return publicJob(job);
@@ -201,7 +212,7 @@ function launch(job) {
   if (option.kind === 'audio') args.push('-x', '--audio-format', option.container, '--audio-quality', option.bitrate ? `${option.bitrate}K` : '0');
   else args.push('--merge-output-format', option.container, '--remux-video', option.container);
   args.push('--', `https://www.youtube.com/watch?v=${job.videoId}`);
-  const child = spawn(executable('yt-dlp'), args, { windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] });
+  const child = spawn(executable('yt-dlp'), args, { windowsHide: true, detached: process.platform !== 'win32', stdio: ['ignore', 'pipe', 'pipe'] });
   job.child = child;
   let stderr = '';
   let output = '';
@@ -214,8 +225,21 @@ function launch(job) {
   child.stdout.on('data', readProgress);
   child.stderr.on('data', (chunk) => { stderr = (stderr + chunk.toString()).slice(-3000); readProgress(chunk); });
   const timer = setTimeout(() => { job.error = 'Download exceeded the time limit. Try a shorter video or lower quality.'; cancel(id); }, 60 * 60 * 1000);
+  job.limitTimer = setInterval(() => {
+    try {
+      const sizes = fs.readdirSync(directory).map(name => fs.statSync(path.join(directory, name)).size);
+      const total = sizes.reduce((a, b) => a + b, 0);
+      if (total > job.budgetBytes * .8 && job.budgetBytes < job.maximumBudget) {
+        const next = Math.min(job.maximumBudget, Math.max(job.budgetBytes * 2, total + 64 * 1024 ** 2));
+        try { cacheBudget.reserve(id, next); job.budgetBytes = next; }
+        catch (error) { cancel(id); job.state = 'error'; job.error = error.message; return; }
+      }
+      if (sizes.some(size => size > MAX_FILE) || total > job.budgetBytes) { cancel(id); job.state = 'error'; job.error = 'This download exceeds the server file limit. Choose a shorter file or another format.'; }
+    } catch { /* A converter may rename an intermediate file while it is checked. */ }
+  }, 1000);
   child.on('error', (error) => { job.state = 'error'; job.error = error.code === 'ENOENT' ? 'Download tools are missing. Run setup-download-tools.ps1.' : error.message; clearTimeout(timer); });
   child.on('close', (code) => {
+    clearInterval(job.limitTimer);
     clearTimeout(timer);
     job.child = null;
     if (job.state === 'cancelled' || job.state === 'error') return;
@@ -247,11 +271,16 @@ function launch(job) {
     job.progress = 100;
     persistReadyJob(job);
   });
+  child.on('close', () => queueMicrotask(() => { if (['ready', 'error', 'cancelled'].includes(job.state)) { job.releaseBudget?.(); job.releaseBudget = null; } }));
+  child.on('error', () => { job.releaseBudget?.(); job.releaseBudget = null; });
+  child.on('error', () => clearInterval(job.limitTimer));
 }
 
 function get(id) {
   const job = jobs.get(String(id));
   if (!job) throw new Error('Download not found. Check the link and prepare it again.');
+  job.lastUsed = Date.now();
+  if (typeof fs.utimesSync === 'function' && job.lastUsed - (job.touchedAt || 0) > 60000) { try { fs.utimesSync(job.directory, new Date(job.lastUsed), new Date(job.lastUsed)); job.touchedAt = job.lastUsed; } catch {} }
   return job;
 }
 
@@ -259,9 +288,11 @@ function cancel(id) {
   const job = get(id);
   if (!['downloading', 'converting'].includes(job.state)) return publicJob(job);
   job.state = 'cancelled';
+  clearInterval(job.limitTimer);
   job.refreshAbort?.abort();
   if (job.child) {
     if (process.platform === 'win32') execFile('taskkill', ['/PID', String(job.child.pid), '/T', '/F'], { windowsHide: true }, () => {});
+    else if (Number.isInteger(job.child.pid) && typeof process.kill === 'function') { try { process.kill(-job.child.pid, 'SIGTERM'); } catch { job.child.kill('SIGTERM'); } }
     else job.child.kill('SIGTERM');
   }
   return publicJob(job);
@@ -282,7 +313,7 @@ function restoreReadyJobs() {
       if (metadata.id !== entry.name || !['mp4', 'webm', 'mp3', 'm4a', 'aac', 'wav'].includes(metadata.option?.container)) continue;
       const filePath = path.join(directory, `media.${metadata.option.container}`);
       if (!fs.existsSync(filePath)) continue;
-      jobs.set(entry.name, { ...metadata, directory, path: filePath, state: 'ready', progress: 100, error: '', created: fs.statSync(filePath).mtimeMs, child: null });
+      jobs.set(entry.name, { ...metadata, directory, path: filePath, state: 'ready', progress: 100, error: '', created: fs.statSync(directory).mtimeMs, child: null });
     } catch {}
   }
 }
@@ -321,4 +352,17 @@ async function inspectBrowserVideo(input, extension, options = {}) {
 }
 
 restoreReadyJobs();
-module.exports = { capabilities, inspect, start, get, publicJob, cancel, copyForWall, copyForSpeakers, inspectBrowserVideo, downloadChoices, downloadError, common, refreshableDownloadError, equivalentChoice };
+function cleanup() {
+  const now = Date.now(), protectedPaths = new Set();
+  for (const [id, job] of jobs) {
+    if (job.child || job.refreshAbort || job.activeReads || ['downloading', 'converting'].includes(job.state)) { protectedPaths.add(job.directory); continue; }
+    job.releaseBudget?.(); job.releaseBudget = null;
+    const expired = now - (job.lastUsed || job.created) > (job.state === 'ready' ? 24 * 60 * 60 * 1000 : 5 * 60 * 1000);
+    if (expired) { fs.rmSync(job.directory, { recursive: true, force: true }); jobs.delete(id); }
+    else protectedPaths.add(job.directory);
+  }
+  cacheBudget.removeExpired(ROOT, 24 * 60 * 60 * 1000, protectedPaths);
+  for (const [id, info] of inspections) if (info.expires < now) inspections.delete(id);
+}
+function shutdown() { for (const job of jobs.values()) if (['downloading', 'converting'].includes(job.state)) cancel(job.id); }
+module.exports = { capabilities, inspect, start, get, publicJob, cancel, copyForWall, copyForSpeakers, inspectBrowserVideo, downloadChoices, downloadError, common, refreshableDownloadError, equivalentChoice, cleanup, shutdown };
