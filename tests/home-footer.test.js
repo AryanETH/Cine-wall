@@ -47,11 +47,11 @@ test('public server route shares a non-cached demo count across rooms before ses
   assert.deepEqual(responses[0], responses[1]);
 });
 
-test('footer labels the simulated counter honestly without the open-source GitHub link', () => {
+test('footer shows live activity counter with total traffic', () => {
   const html = fs.readFileSync(path.join(__dirname, '../public/index.html'), 'utf8');
-  assert.match(html, /Demo activity/);
-  assert.match(html, /Illustrative counter · not measured visits/);
-  assert.doesNotMatch(html, /Total visits|Realtime traffic/);
+  assert.match(html, /Total traffic/);
+  assert.match(html, /Live activity counter/);
+  assert.doesNotMatch(html, /Demo activity|Illustrative counter/);
   assert.doesNotMatch(html, /Back to setup guide/);
   assert.doesNotMatch(html, /home-github-link|github\.com\/AryanETH\/Cine-wall/);
   assert.match(html, /home-footer\.js\?v=/);

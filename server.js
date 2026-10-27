@@ -1122,6 +1122,7 @@ return {
     if (record?.mode === 'share' && member.screen) screenSharing.ensureCount(member.screen);
   },
   recover(device) {
+    preparationController?.abort();
     const position = currentPosition();
     sourceOwner = { ...device, claimedAt: Date.now() };
     if (state.asset?.source === 'peer') { removeCurrentAsset(); state.asset = null; }
