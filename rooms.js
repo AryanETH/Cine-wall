@@ -51,11 +51,12 @@ module.exports = function createRooms(root, { now = Date.now, limit = 64 } = {})
   function member(record, device) { return record.members.find(item => same(item.device, device)); }
   function isAdmin(record, device) { return same(record.admin, device); }
   function route(record, item) {
+    if (item.waiting) return '/room.html';
     if (isAdmin(record, item.device)) return record.mode === 'share' ? '/share.html' : record.mode === 'mic' ? '/mic.html' : `/admin.html?mode=${record.mode}`;
     return record.mode === 'share' ? `/share.html?screen=${item.screen}` : record.mode === 'mic' ? item.role === 'phone' ? '/mic.html?role=phone' : `/mic.html?speaker=${item.screen}` : `/screen.html?screen=${item.screen}`;
   }
   function result(record, item) {
-    return { room: record.id, code: format(record.code), mode: record.mode, deviceId: item.device.id, admin: isAdmin(record, item.device), screen: item.screen, role: item.role, ticket: item.ticket, path: route(record, item) };
+    return { room: record.id, code: format(record.code), mode: record.mode, revision: record.revision || 0, waiting: Boolean(item.waiting), deviceId: item.device.id, admin: isAdmin(record, item.device), screen: item.screen, role: item.role, ticket: item.ticket, path: route(record, item) };
   }
   function create(req, mode) {
     throttle(req, 'create');
@@ -73,7 +74,6 @@ module.exports = function createRooms(root, { now = Date.now, limit = 64 } = {})
   function join(req, body) {
     throttle(req, 'join');
     const record = lookup(body.code || body.room), device = identity(req);
-    if (body.mode && body.mode !== record.mode) fail(`This is a ${record.mode === 'share' ? 'screen sharing' : record.mode === 'mic' ? 'Mic and Speaker' : record.mode} room. Choose that mode to join.`, 409);
     let item = member(record, device);
     if (!item) {
       if (record.members.length >= 16) fail('This room is full.', 409);
@@ -86,7 +86,7 @@ module.exports = function createRooms(root, { now = Date.now, limit = 64 } = {})
         if (!screen) screen = Array.from({ length: maximum }, (_, i) => i + 1).find(n => !used(n));
         if (!Number.isInteger(screen) || screen < 1 || screen > maximum || used(screen)) fail('That screen is already assigned or the room is full.', 409);
       }
-      item = { device, ticket: randomBytes(24).toString('hex'), screen, role }; record.members.push(item);
+      item = { device, ticket: randomBytes(24).toString('hex'), screen, role, phone: role === 'phone' || body.deviceKind === 'phone' }; record.members.push(item);
     }
     record.lastUsed = now(); save(record); return result(record, item);
   }
@@ -108,6 +108,29 @@ module.exports = function createRooms(root, { now = Date.now, limit = 64 } = {})
     return item;
   }
   function requireAdmin(record, req) { const device = identity(req); if (!isAdmin(record, device)) fail('Only the room admin can do this.', 403); return device; }
+  function switchMode(record, req, mode) {
+    requireAdmin(record, req);
+    if (!['video', 'audio', 'share', 'mic'].includes(mode)) fail('Choose Video, Audio, Screen sharing or Mic and Speaker.');
+    if (record.mode === mode) return;
+    record.mode = mode; record.revision = (record.revision || 0) + 1;
+    const media = mode === 'video' || mode === 'audio';
+    const maximum = mode === 'audio' ? 5 : mode === 'share' ? 10 : 3;
+    let slot = media ? 2 : 1, phoneAssigned = false;
+    for (const item of record.members) {
+      item.phone = Boolean(item.phone || item.role === 'phone');
+      item.waiting = false;
+      if (isAdmin(record, item.device)) { item.screen = media ? 1 : 0; item.role = 'admin'; continue; }
+      if (item.phone) {
+        item.screen = 0; item.role = 'phone';
+        item.waiting = mode !== 'mic' || phoneAssigned;
+        if (!item.waiting) phoneAssigned = true;
+      } else {
+        item.role = 'screen'; item.waiting = slot > maximum;
+        item.screen = item.waiting ? 0 : slot++;
+      }
+    }
+    record.lastUsed = now(); save(record);
+  }
   function removeMembers(record, predicate) { const removed = record.members.filter(m => !isAdmin(record, m.device) && predicate(m)); record.members = record.members.filter(m => !removed.includes(m)); save(record); return removed; }
   function resume(req, body) {
     throttle(req, 'resume'); const record = lookup(body.room), item = record.members.find(m => m.ticket === body.ticket);
@@ -130,6 +153,6 @@ module.exports = function createRooms(root, { now = Date.now, limit = 64 } = {})
     for (const [key, entry] of rates) if (entry.until < now()) rates.delete(key);
     return expired;
   }
-  return { create, join, resume, recover, lookup, authorize, requireAdmin, isAdmin, member, removeMembers, result, prune, identity, records };
+  return { create, join, resume, recover, lookup, authorize, requireAdmin, switchMode, isAdmin, member, removeMembers, result, prune, identity, records };
 };
 module.exports.identity = identity;

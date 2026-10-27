@@ -34,6 +34,16 @@ test('issued room lifecycle rejects the audit attacks and coordinates joined dev
   const ownSound = await api('/api/command',{type:'screen-audio',screen:2,muted:true,volume:.4},guest,room);
   assert.equal(ownSound.status,200); assert.equal(ownSound.data.command.audioSettings['2'].muted,true); assert.equal(ownSound.data.command.executeAt-ownSound.data.command.serverTime,0);
   assert.equal((await api('/api/command',{type:'session-mode',sessionMode:'presentation'},admin,room)).status,400);
+  assert.equal((await api('/api/rooms/mode', {mode:'audio'}, guest, room)).status, 403);
+  for (const mode of ['audio', 'share', 'mic', 'video']) {
+    const switched = await api('/api/rooms/mode', {mode}, admin, room);
+    assert.equal(switched.status, 200); assert.equal(switched.data.code, created.code);
+    const current = await api('/api/rooms/current', undefined, guest, room);
+    assert.equal(current.data.mode, mode); assert.equal(current.data.ticket, joined.ticket); assert.equal(current.data.waiting, false);
+    if (mode === 'audio' || mode === 'video') assert.equal((await api('/api/status', undefined, admin, room)).data.state.sessionMode, mode);
+    if (mode === 'share') { assert.match(current.data.path, /share.html\?screen=1/); assert.equal((await api('/api/command', {type:'play'}, guest, room)).status, 409); }
+    if (mode === 'mic') { assert.match(current.data.path, /mic.html\?speaker=1/); assert.equal((await api('/api/share/state', undefined, admin, room)).status, 409); }
+  }
   const from=randomUUID(), to=randomUUID();
   function events(peer,device) { return new Promise((resolve,reject)=>{const req=http.get(`${base}/events?room=${room}&peer=${peer}`,{headers:device},res=>{let text='';res.on('data',data=>{text+=data;resolve({res,get text(){return text;}});});res.on('error',()=>{});});req.on('error',reject);streams.push(req);}); }
   const sender = await events(from,admin), receiver = await events(to,guest);

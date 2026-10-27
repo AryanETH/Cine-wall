@@ -21,9 +21,30 @@ test('short IDs are unique, persistent and case insensitive; screens are assigne
   assert.equal(rooms.join(guest, { code: first.code }).screen, 2, 'joining again keeps the same slot');
   assert.throws(() => rooms.requireAdmin(rooms.lookup(first.room), guest), { status: 403 });
   assert.equal(createRooms(root).lookup(first.code).id, first.room);
-  assert.throws(() => rooms.join(request(), { code: first.code, mode: 'audio' }), { status: 409 });
-  assert.equal(rooms.join(request(), { code: first.code }).screen, 3);
+  assert.equal(rooms.join(request(), { code: first.code, mode: 'audio' }).screen, 3, 'a room code joins the active mode from any option');
   assert.throws(() => rooms.join(request(), { code: first.code }), { status: 409 });
+});
+test('one room keeps its ID, tickets and admin across every mode, including overflow and phones', t => {
+  const { rooms, root } = fixture(t), admin = request(), created = rooms.create(admin, 'audio'), guests = [];
+  for (let n = 0; n < 4; n++) { const req = request(); guests.push({ req, joined: rooms.join(req, { code: created.code }) }); }
+  const record = rooms.lookup(created.room);
+  assert.throws(() => rooms.switchMode(record, guests[0].req, 'video'), { status: 403 });
+  for (const mode of ['video', 'share', 'mic', 'audio']) {
+    rooms.switchMode(record, admin, mode);
+    assert.equal(rooms.result(record, record.members[0]).code, created.code);
+    for (const { req, joined } of guests) {
+      const resumed = rooms.resume(req, { room: created.room, ticket: joined.ticket });
+      assert.equal(resumed.mode, mode); assert.equal(resumed.ticket, joined.ticket); assert.equal(resumed.admin, false);
+      if (mode === 'video' && joined.screen > 3 || mode === 'mic' && joined.screen > 4) { assert.equal(resumed.waiting, true); assert.equal(resumed.path, '/room.html'); }
+    }
+  }
+  assert.equal(rooms.resume(guests[3].req, { room: created.room, ticket: guests[3].joined.ticket }).waiting, false);
+  rooms.switchMode(record, admin, 'mic');
+  const phone = request(), joinedPhone = rooms.join(phone, { code: created.code, role: 'phone', deviceKind: 'phone' });
+  rooms.switchMode(record, admin, 'video'); assert.equal(rooms.resume(phone, { room: created.room, ticket: joinedPhone.ticket }).waiting, true);
+  rooms.switchMode(record, admin, 'mic'); assert.match(rooms.resume(phone, { room: created.room, ticket: joinedPhone.ticket }).path, /role=phone/);
+  const persisted = createRooms(root), restored = persisted.resume(phone, { room: created.room, ticket: joinedPhone.ticket });
+  assert.equal(restored.code, created.code); assert.equal(restored.mode, 'mic'); assert.equal(restored.waiting, false);
 });
 test('room recovery requires the separate key, revokes the previous admin and preserves the ID', t => {
   const { rooms } = fixture(t), original = request(), created = rooms.create(original, 'audio'), replacement = request();

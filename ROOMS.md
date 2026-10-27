@@ -1,6 +1,10 @@
 # Rooms and responsive controls
 
-Choose a mode on the homepage, then choose **Create room** or **Join room**. The creator sees a copyable eight-character ID such as `ABCD-EFGH`. Guests choose the same mode, enter the ID, and receive their own numbered display or speaker. Mic and Speaker additionally lets a joining device choose Phone microphone or Laptop speaker. A room ID is private invitation information, so share it with intended participants.
+Choose a mode on the homepage, then choose **Create room** or **Join room**. The creator sees a copyable eight-character ID such as `ABCD-EFGH`. This ID works from all four options. Guests join once and receive their own numbered display or speaker. The admin's **Mode** selector changes the room for everyone: connected browsers follow automatically, without another code entry. Mic and Speaker additionally lets a joining device choose Phone microphone or Laptop speaker. A room ID is private invitation information, so share it with intended participants.
+
+Returning to the homepage on the same browser resumes the active room. **Start another room** deliberately creates a separate room. Mode changes retain membership tickets, admin ownership and recovery credentials; they stop the previous media/capture session and require selecting the new mode's source. Only the admin can change modes. Guests poll authenticated room state every 1.5 seconds and retain access across navigation or temporary network failures.
+
+Mode limits still apply. When moving from five audio laptops or ten sharing screens to a three-screen video wall, extra devices stay connected on a waiting page. They automatically rejoin a suitable mode later. A phone microphone waits while a laptop-only mode is active. These devices keep the same code and membership; a mode switch does not grant guests admin access or start microphones/cameras automatically.
 
 Video and Audio reserve Display/Speaker 1 for the creator. Joining receivers expand the active layout up to the mode's limit. Screen sharing supports ten assigned receivers and Mic and Speaker supports one phone plus three speakers. Admins manage layout and sources; guests can change their own sound. Removing a receiver revokes its membership. A deliberate new join can obtain a new available slot.
 

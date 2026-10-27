@@ -8,7 +8,7 @@
 
 <p align="center">
   <a href="https://watch.aitoyz.in/">Website</a> ·
-  <a href="#video-tutorial">Demo</a> ·
+  <a href="#video-tutorial">Tutorial</a> ·
   <a href="#quick-start">Quick start</a> ·
   <a href="https://github.com/AryanETH/Cine-wall/issues">Report an issue</a> ·
   <a href="#contribute">Contribute</a>
@@ -119,7 +119,7 @@ The Windows launchers and Office conversion tools are designed for Windows. The 
 1. Open [watch.aitoyz.in](https://watch.aitoyz.in/) on the source laptop.
 2. Connect your other laptops to the same Wi-Fi or hotspot for Instant sharing.
 3. Choose Video, Audio, Mic and Speaker, or Screen sharing, then click **Create room**.
-4. Copy the short **Room ID** from the dashboard. On the other laptops, open the same website/server, choose the same mode, click **Join room**, and enter that ID. Screens and speakers are assigned automatically.
+4. Copy the short **Room ID** from the dashboard. On the other laptops, open the same website/server, click **Join room** from any option, and enter that ID once. Screens and speakers are assigned automatically. Use the dashboard Mode selector to switch all connected devices together.
 5. Wait for them to be ready, then press Play. Tap to enable sound on a laptop if asked.
 
 The laptop that creates the room is admin. In Video and Audio, Display/Speaker 1 belongs to that laptop and opens in a separate player tab. Choose your file on the admin laptop and keep its dashboard open for Instant mode. Save the separate **Admin recovery key** privately; it restores admin access after browser data is lost. Room IDs and numbered invitation links let guests join, but do not grant admin controls.
@@ -249,7 +249,7 @@ No. Select it on the source laptop only. The other laptops receive it through th
 
 ### Why are rooms different on the same hotspot?
 
-Wi-Fi connects devices, but it does not identify a room. Choose the same mode, click **Join room**, and enter the admin's short Room ID. Numbered invitation links also work. For a local installation, every laptop must open the same server's LAN address; a code created on one server cannot be looked up on another server or on the public website.
+Wi-Fi connects devices, but it does not identify a room. Click **Join room** from any option and enter the admin's short Room ID. Connected guests follow subsequent mode switches automatically. Numbered invitation links also work. For a local installation, every laptop must open the same server's LAN address; a code created on one server cannot be looked up on another server or on the public website.
 
 ### Why does Play wait for other screens?
 

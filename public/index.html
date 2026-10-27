@@ -81,13 +81,13 @@
   <script src="icons.js?v=20261002-icons-18"></script>
   <script src="theme.js"></script>
   <script src="device-support.js?v=20261025-mobile-42"></script>
-  <script src="session.js?v=20261026-rooms-1"></script>
+  <script src="session.js?v=20261027-unified-1"></script>
   <link rel="preload" href="/fonts/Anta-Regular.ttf" as="font" type="font/ttf" crossorigin>
   <link rel="preload" as="image" href="/assets/robots-laptops-poster.jpg" fetchpriority="high">
   <link rel="stylesheet" href="styles.css?v=20261008-sharing-card-3">
-  <link rel="stylesheet" href="home.css?v=20261025-mobile-42">
+  <link rel="stylesheet" href="home.css?v=20261027-community-1">
   <link rel="stylesheet" href="device-support.css?v=20261025-mobile-42">
-  <link rel="stylesheet" href="/rooms.css?v=20261026-rooms-1">
+  <link rel="stylesheet" href="/rooms.css?v=20261027-unified-1">
 </head>
 <body class="mode-body">
   <main class="mode-shell">
@@ -96,7 +96,7 @@
         <span class="brand-icon" aria-hidden="true"><img src="/assets/removed_background (24).png" alt="CineWall Logo"></span>
         <span><strong>CINEWALL</strong></span>
       </div>
-      <nav class="home-nav" aria-label="Explore CineWall"><a href="#how-it-works">How it works</a><a href="#demo">Demo</a><a href="#use-cases">Use cases</a><a href="#about">About</a><a href="#faq">FAQs</a></nav>
+      <nav class="home-nav" aria-label="Explore CineWall"><a href="#how-it-works">How it works</a><a href="#demo">Tutorial</a><a href="#use-cases">Use cases</a><a href="#about">About</a><a href="#faq">FAQs</a></nav>
       <div class="nav-actions">
         <button id="openSupport" class="button support-button" type="button"><span class="fi">&#xE006;</span><span>Support this project</span></button>
         <button class="theme-toggle" data-theme-toggle type="button"><span class="fi" data-theme-icon>&#xE706;</span><span data-theme-label>Light</span></button>
@@ -152,9 +152,18 @@
       </a>
     </section>
 
+    <section class="community-section" aria-labelledby="communityHeading">
+      <div class="community-heading"><div><span class="section-kicker">REAL REACTIONS</span><h2 id="communityHeading">From the community.</h2><p>Early reactions on X and LinkedIn.</p></div><button id="pauseCommunity" class="button subtle" type="button" aria-pressed="false">Pause motion</button></div>
+      <div class="community-window"><div class="community-track"><div class="community-group">
+        <figure class="community-card"><blockquote>“i've never seen anything like it before! cool! 😎”</blockquote><figcaption><img src="/assets/community/kornel.jpg" width="44" height="44" loading="lazy" alt="Kornel’s profile picture"><div><strong>Kornel</strong><span>@indiekornel · X</span></div><a href="https://x.com/indiekornel/status/2114983978306318790" target="_blank" rel="noopener noreferrer" aria-label="Read Kornel’s original comment on X">↗</a></figcaption></figure>
+        <figure class="community-card"><blockquote>“Cool concept”</blockquote><figcaption><img src="/assets/community/giorgio-villani.jpg" width="44" height="44" loading="lazy" alt="Giorgio Villani’s profile picture"><div><strong>Giorgio Villani</strong><span>LinkedIn</span></div><a href="https://lnkd.in/p/d_ZVcMqm" target="_blank" rel="noopener noreferrer" aria-label="Read Giorgio Villani’s original comment on LinkedIn">↗</a></figcaption></figure>
+        <figure class="community-card"><blockquote>“Wait watching one movie across multiple laptops like a mini cinema wall? That's actually such a fun idea”</blockquote><figcaption><img src="/assets/community/emaan.jpg" width="44" height="44" loading="lazy" alt="Emaan’s profile picture"><div><strong>Emaan</strong><span>@emaann28 · X</span></div><a href="https://x.com/emaann28/status/2114978594141434026" target="_blank" rel="noopener noreferrer" aria-label="Read Emaan’s original comment on X">↗</a></figcaption></figure>
+      </div></div></div>
+    </section>
+
     <section id="how-it-works" class="home-section" aria-labelledby="howHeading">
       <div class="home-section-heading"><span class="section-kicker">A SIMPLE SETUP</span><h2 id="howHeading">One source. Everyone connected.</h2><p>Choose a video, a playlist, a live screen or your phone microphone.</p></div>
-      <ol class="home-steps"><li><span>01</span><h3>Get together</h3><p>Connect your devices to the same Wi-Fi or hotspot. Place laptops side by side for a video wall.</p></li><li><span>02</span><h3>Choose and connect</h3><p>Choose a mode and Create room. Share the short Room ID. On your other devices, choose the same mode, select Join room and enter the ID.</p></li><li><span>03</span><h3>Play or present</h3><p>For videos and music, wait until every screen is ready, then press Play. For screen sharing, choose a tab, window or screen. Join the call if you want to talk.</p></li></ol>
+      <ol class="home-steps"><li><span>01</span><h3>Get together</h3><p>Connect your devices to the same Wi-Fi or hotspot. Place laptops side by side for a video wall.</p></li><li><span>02</span><h3>One room, one code</h3><p>Create a room and share its ID. Guests join once from any option, then follow the admin between video, audio, screen sharing and mic.</p></li><li><span>03</span><h3>Play or present</h3><p>For videos and music, wait until every screen is ready, then press Play. For screen sharing, choose a tab, window or screen. Join the call if you want to talk.</p></li></ol>
     </section>
 
     <section id="demo" class="home-section home-demo" aria-labelledby="demoHeading">
@@ -186,7 +195,7 @@
           <details><summary>Which video and music files work?</summary><p>MP4 with H.264 video and AAC sound is the safest video choice. Some WebM and H.264/AAC MKV files also work. For music, try MP3, WAV or AAC. Each laptop must support the file's codecs. CineWall checks your selection and does not convert it.</p></details>
         </section>
         <section id="faq-room" class="home-faq-group" aria-labelledby="faqRoomHeading"><h3 id="faqRoomHeading">Hosting &amp; joining</h3>
-          <details><summary>How do I invite friends to my room?</summary><p>Choose a mode and Create room. Copy the short Room ID from the dashboard. Your friends open the same website or local server, choose the same mode, click Join room and enter the ID. Their screen or speaker number is assigned automatically. Keep the source dashboard open for Instant sharing.</p></details>
+          <details><summary>How do I invite friends to my room?</summary><p>Choose a mode and Create room. Copy the short Room ID from the dashboard. Your friends open the same website or local server, click Join room from any option and enter the ID once. Their screen or speaker number is assigned automatically. When you switch modes, they follow without re-entering the code. Keep the source dashboard open for Instant sharing.</p></details>
           <details><summary>Does everyone need their own copy of the file?</summary><p>No. Choose your movie or songs on the source laptop only. It shares the selected file with the devices that join its room.</p></details>
           <details><summary>How many screens or speakers can join?</summary><p>Video walls support 1–3 laptops, with 2–3 recommended for a wider picture. Audio rooms support up to 5 speakers and 10 songs. Screen sharing supports up to 10 numbered screens, plus the presenter. An optional room call supports up to 4 devices. Mic and Speaker supports one phone and up to three speaker slots.</p></details>
           <details><summary>Can we talk while sharing a screen?</summary><p>Yes. Join the room call from the Screen sharing page, then enable your microphone or camera if you want. Up to four devices can join the call. Use headphones to reduce echo. Camera and microphone access need a secure connection and browser permission.</p></details>
@@ -237,6 +246,7 @@
   <div id="launcherBusy" class="launcher-busy" hidden><span class="spinner"></span><strong>Preparing your studio…</strong></div>
   <script src="home-footer.js?v=20261025-copy-41"></script>
   <script src="launcher.js?v=20261025-mobile-42"></script>
-  <script src="/rooms-ui.js?v=20261026-rooms-1"></script>
+  <script src="/community.js?v=20261027-community"></script>
+  <script src="/rooms-ui.js?v=20261027-unified-1"></script>
 </body>
 </html>

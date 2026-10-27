@@ -837,22 +837,54 @@ function serveAsset(req, res) {
   stream.pipe(res);
 }
 
+function switchRoomMode(req, mode) {
+  roomRegistry.requireAdmin(record, req);
+  if (!['video', 'audio', 'share', 'mic'].includes(mode)) throw new Error('Unknown room mode.');
+  if (mode === record.mode) return;
+  if (uploadInProgress) throw Object.assign(new Error('Wait for the current file to finish preparing, or cancel it first.'), { status: 409 });
+  roomRegistry.switchMode(record, req, mode);
+  preparationController?.abort(); preparation = null;
+  removeCurrentAsset(); sourceOwner = null; screens.clear();
+  screenSharing.close(); micRoom.close();
+  const mediaMode = mode === 'audio' ? 'audio' : 'video';
+  state = { ...state, sessionMode: mediaMode, playing: false, asset: null, position: 0, anchorTime: Date.now(), notBefore: 0,
+    screenCount: Math.max(1, ...record.members.filter(member => !member.waiting).map(member => member.screen || 0)),
+    audioMode: 'personal', audioSettings: audioSettingsForMode(mediaMode), mode: mediaMode === 'video' ? 'stretch' : state.mode,
+    page: 1, commandId: ++commandSequence };
+  saveSession();
+  for (const member of record.members) if (!member.waiting) {
+    if (mode === 'mic' && member.screen) micRoom.ensureSlot(member.screen);
+    if (mode === 'share' && member.screen) screenSharing.ensureCount(member.screen);
+  }
+  broadcast('state', snapshot());
+}
+
 async function handle(req, res, url) {
   try {
+    if (req.method === 'POST' && url.pathname === '/api/rooms/mode') {
+      const body = await readJson(req); switchRoomMode(req, body.mode);
+      json(res, 200, roomRegistry.result(record, req.cinewallMember)); return;
+    }
+    if (req.method === 'GET' && url.pathname === '/api/rooms/current') {
+      if (!record) throw new Error('Create a room first.');
+      json(res, 200, roomRegistry.result(record, req.cinewallMember)); return;
+    }
     if (req.method === 'POST' && url.pathname === '/api/rooms/leave') {
       const device = identity(req);
       if (!record || roomRegistry.isAdmin(record, device)) throw new Error('Only guest devices can leave using this control.');
       revokeMembers(member => member.device.id === device.id); json(res, 200, { ok: true }); return;
+    }
+    if (record && (req.cinewallMember.waiting && !['/api/info', '/api/time'].includes(url.pathname)
+      || record.mode !== 'mic' && (url.pathname.startsWith('/api/mic/') || url.pathname === '/mic-events')
+      || record.mode !== 'share' && (url.pathname.startsWith('/api/share/') || url.pathname.startsWith('/api/call/') || url.pathname === '/share-events')
+      || ['share', 'mic'].includes(record.mode) && ['/api/command', '/api/status', '/events'].includes(url.pathname))) {
+      json(res, 409, { error: 'The room changed mode. Following the admin…' }); return;
     }
     if (await screenSharing.handle(req, res, url)) return;
     if (await micRoom.handle(req, res, url)) return;
     if (req.method === 'GET' && url.pathname === '/api/time') {
       json(res, 200, { serverTime: Date.now() });
       return;
-    }
-    if (req.method === 'GET' && url.pathname === '/api/rooms/current') {
-      if (!record) throw new Error('Create a room first.');
-      json(res, 200, roomRegistry.result(record, req.cinewallMember)); return;
     }
     if (req.method === 'GET' && url.pathname === '/api/info') {
       const hosted = process.env.CINEWALL_HOSTED === '1' || Boolean(process.env.RAILWAY_ENVIRONMENT) || !isLocalHost(String(req.headers['x-forwarded-host'] || req.headers.host || 'localhost').split(',')[0].trim());
@@ -1065,6 +1097,7 @@ async function handle(req, res, url) {
       if (record && input.type === 'screen-audio' && !roomRegistry.isAdmin(record, identity(req)) && Number(input.screen) !== req.cinewallMember.screen) { json(res, 403, { error: 'You can change only your own speaker.' }); return; }
       if (sourceOwner && !['identify', 'screen-audio'].includes(input.type)) checkOwner(req);
       if (input.type === 'load-youtube') { extractYouTubeId(input.url); checkOwner(req, true); }
+      if (record && input.type === 'session-mode' && ['video', 'audio'].includes(input.sessionMode)) switchRoomMode(req, input.sessionMode);
       const command = applyCommand(input);
       if (record && input.type === 'layout') revokeMembers(member => member.screen > state.screenCount);
       json(res, 200, { ok: true, command });
