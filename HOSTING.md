@@ -10,7 +10,7 @@ Redeploy the changed files, then reload the dashboard. This source change does n
 
 `https://watch.aitoyz.in/screen.html?screen=2&room=<private-room-id>`
 
-On the public website, numbered links use the page's public origin. Choose a mode and Create room, then share the short room ID. Other laptops choose the same mode and Join room; their screen/speaker slot is assigned automatically. Local installations also use explicit rooms: all devices must open the same server's LAN address. The creator owns the room before selecting a file. Guests can control their own sound but cannot replace sources or manage other devices. Keep the admin recovery key private. Room records persist inside the configured cache; see ROOMS.md for authentication, expiry, quotas and recovery.
+On the public website, numbered links use the page's public origin. Choosing a mode opens its workspace automatically. Copy its device links and open a different numbered link on each laptop. Local installations use the server's LAN address for remote links. The source laptop owns the session before selecting a file. Guests can control their own sound but cannot replace sources or manage other devices. Reopen the dashboard URL in the same browser to resume saved access. Room records persist inside the configured cache; see ROOMS.md for authentication, expiry and quotas.
 
 ## Local video/audio sharing
 

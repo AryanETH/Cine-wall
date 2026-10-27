@@ -47,15 +47,19 @@ test('joined guests follow a mode change with the same ticket and no second join
   assert.equal(client.storage.get('cinewall-active-room'), room);
 });
 
-test('landing and entry pages never resume a saved room or bypass Create/Join', async () => {
+test('landing pages stay idle and legacy entry links automatically open a new workspace', async () => {
   const saved = new Map([['cinewall-active-room', room], [`cinewall-room-${room}`, JSON.stringify({room, ticket:'ticket', recoveryKey:'private-key'})]]);
   const client = sessionPage('https://watch.aitoyz.in/', saved);
   await client.window.CineWallSession.ready;
   assert.equal(client.window.CineWallSession.room, ''); assert.equal(client.window.CineWallSession.membership, null); assert.equal(client.calls.length, 0);
   for (const mode of ['video','audio','share','mic']) {
     const entry = sessionPage(`https://watch.aitoyz.in/connect.html?mode=${mode}&room=${room}`, saved);
-    await entry.window.CineWallSession.ready;
-    assert.equal(entry.window.CineWallSession.room, ''); assert.equal(entry.calls.length, 0);
+    await turn();
+    assert.equal(entry.window.CineWallSession.room, '');
+    const request = entry.calls.find(call => call[0] === 'fetch');
+    assert.equal(request[1], '/api/rooms/create');
+    assert.equal(JSON.parse(request[2].body).mode, mode);
+    assert.equal(entry.calls.filter(call => call[0] === 'navigate').length, 1);
   }
   const app = sessionPage(`https://watch.aitoyz.in/admin.html?mode=video&room=${room}`, saved);
   await app.window.CineWallSession.ready;
@@ -85,9 +89,10 @@ test('creating another room keeps its own recovery key instead of the previous r
   assert.equal(JSON.parse(client.storage.get(`cinewall-room-${nextRoom}`)).recoveryKey,'new-private-key');
 });
 
-test('joining the saved admin room from its entry screen retains the private recovery key', async () => {
+test('saved admin membership retains recovery metadata for compatible API clients', async () => {
   const saved = new Map([[`cinewall-room-${room}`, JSON.stringify({room,ticket:'ticket',admin:true,recoveryKey:'saved-private-key'})]]);
-  const client = sessionPage('https://watch.aitoyz.in/connect.html?mode=audio', saved);
+  const client = sessionPage(`https://watch.aitoyz.in/admin.html?mode=audio&room=${room}`, saved);
+  await client.window.CineWallSession.ready;
   Object.assign(client.info,{room,admin:true,path:'/admin.html?mode=audio'});
   const joined = await client.window.CineWallSession.roomRequest('join',{code:'ABCD-EFGH'});
   assert.equal(joined.recoveryKey,'saved-private-key');

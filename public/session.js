@@ -19,6 +19,8 @@
   const enrollmentPage = page.pathname === '/' || page.pathname === '/connect.html';
   const explicitRoom = enrollmentPage ? '' : page.searchParams.get('room') || '';
   const room = explicitRoom;
+  const workspacePage = /\/(admin|screen|share|mic|room)\.html$/.test(page.pathname);
+  const requiresRoom = workspacePage || page.pathname === '/connect.html';
   const nativeFetch = window.fetch.bind(window);
   const identityHeaders = { 'X-CineWall-Device': deviceId, 'X-CineWall-Key': deviceKey };
   let membership = null;
@@ -69,6 +71,16 @@
     if (saved?.recoveryKey) { data.recoveryKey = saved.recoveryKey; storage.set(`cinewall-room-${room}`, JSON.stringify(data)); }
     if (!followsPath(data)) { navigate(data, true); return new Promise(() => {}); }
     return data;
+  })() : requiresRoom ? (async () => {
+    if (window.CineWallDeviceSupport?.restricted) return new Promise(() => {});
+    const receiver = page.pathname === '/screen.html' || page.pathname === '/room.html'
+      || page.searchParams.has('screen') || page.searchParams.has('speaker') || page.searchParams.has('role');
+    if (receiver) throw new Error('Open the full device link shared by the host.');
+    const selected = page.pathname === '/mic.html' ? 'mic' : page.pathname === '/share.html' ? 'share' : page.searchParams.get('mode');
+    const mode = ['video', 'audio', 'share', 'mic'].includes(selected) ? selected : 'video';
+    navigate(await roomRequest('create', { mode }), true);
+    // Wait for the room URL before any workspace API or event stream starts.
+    return new Promise(() => {});
   })() : Promise.resolve(null);
   ready.catch(error => { const show = () => window.dispatchEvent(new CustomEvent('cinewall-room-error', { detail: error.message })); if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', show, { once: true }); else show(); });
   function link(value, origin = location.origin) {
@@ -91,7 +103,7 @@
       const destination = new URL(target).pathname.startsWith('/api/rooms/') ? new URL(input instanceof Request ? input.url : input, location.origin).href : scoped(target, true);
       return nativeFetch(input instanceof Request ? new Request(destination, input) : destination, { ...init, headers });
     };
-    return !room || new URL(target).pathname.startsWith('/api/rooms/') ? send() : ready.then(send);
+    return ((!room && !requiresRoom) || new URL(target).pathname.startsWith('/api/rooms/')) ? send() : ready.then(send);
   };
   const open = XMLHttpRequest.prototype.open;
   XMLHttpRequest.prototype.open = function(method, url, ...rest) {
@@ -103,7 +115,7 @@
     return result;
   };
   const send = XMLHttpRequest.prototype.send;
-  XMLHttpRequest.prototype.send = function(body) { if (room && this.cinewallApi) ready.then(() => { if (membership?.ticket) this.setRequestHeader('X-CineWall-Ticket', membership.ticket); send.call(this, body); }).catch(() => this.dispatchEvent(new Event('error'))); else send.call(this, body); };
+  XMLHttpRequest.prototype.send = function(body) { if ((room || requiresRoom) && this.cinewallApi) ready.then(() => { if (membership?.ticket) this.setRequestHeader('X-CineWall-Ticket', membership.ticket); send.call(this, body); }).catch(() => this.dispatchEvent(new Event('error'))); else send.call(this, body); };
   const NativeEvents = window.EventSource;
   const connections = new Map();
   window.EventSource = class RoomEvents extends EventTarget {
@@ -117,11 +129,11 @@
         if (!shared) { shared = { source: new NativeEvents(url, options), users: new Set() }; connections.set(url, shared); }
         this.shared = shared; this.url = url; shared.users.add(this);
         for (const type of ['open','error','message','state','command','screens','pulse','peer-signal','source-range','share-state','share-signal','call-signal','mic-state','mic-signal','mic-removed']) {
-          const listener = event => { if (this.closed) return; this.readyState = shared.source.readyState; const next = typeof MessageEvent === 'function' && 'data' in event ? new MessageEvent(type, { data: event.data }) : new Event(type); this.dispatchEvent(next); this[`on${type}`]?.(next); if (type === 'error' && this.readyState === 2 && room && !shared.reported) { shared.reported = true; window.dispatchEvent(new CustomEvent('cinewall-room-error', { detail: 'This room connection ended. Join again with the room ID.' })); } };
+          const listener = event => { if (this.closed) return; this.readyState = shared.source.readyState; const next = typeof MessageEvent === 'function' && 'data' in event ? new MessageEvent(type, { data: event.data }) : new Event(type); this.dispatchEvent(next); this[`on${type}`]?.(next); if (type === 'error' && this.readyState === 2 && room && !shared.reported) { shared.reported = true; window.dispatchEvent(new CustomEvent('cinewall-room-error', { detail: 'This connection ended. Reopen the shared device link.' })); } };
           shared.source.addEventListener(type, listener); this.bindings.push([type, listener]);
         }
       };
-      (room ? ready : Promise.resolve()).then(attach).catch(() => { if (!this.closed) { const event = new Event('error'); this.dispatchEvent(event); this.onerror?.(event); } });
+      (room || requiresRoom ? ready : Promise.resolve()).then(attach).catch(() => { if (!this.closed) { const event = new Event('error'); this.dispatchEvent(event); this.onerror?.(event); } });
     }
     close() { this.closed = true; this.readyState = 2; if (!this.shared) return; for (const [type, listener] of this.bindings) this.shared.source.removeEventListener(type, listener); this.shared.users.delete(this); if (!this.shared.users.size) { this.shared.source.close(); connections.delete(this.url); } }
   };
@@ -145,7 +157,7 @@
       const previous = membership; remember(data);
       if (!followsPath(data)) { ended = true; for (const media of document.querySelectorAll('video,audio')) media.pause(); navigate(data, true); return; }
       if (previous.mode !== data.mode || previous.revision !== data.revision) window.dispatchEvent(new CustomEvent('cinewall-room-updated', { detail: membership }));
-    } catch { /* Retry a dropped connection without asking for the room ID again. */ }
+    } catch { /* Retry a dropped connection with the saved membership. */ }
     finally { refreshPending = false; if (!ended) refreshTimer = setTimeout(refreshRoom, 1500); }
   }
   async function switchMode(mode) {

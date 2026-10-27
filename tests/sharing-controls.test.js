@@ -96,11 +96,14 @@ test('another laptop sees only its screen opener; the whole source editor stays 
   vm.runInContext('renderViewerSource()', context); assert.equal(node('#openViewerScreen').disabled, true);
 });
 
-test('landing mode choices use the create/join flow and the health check does not allocate a room', () => {
+test('landing mode choices open workspaces with link sharing and health checks do not allocate a room', () => {
   assert.doesNotMatch(read('index.html'), /copyRoomLink|joinRoomForm/);
-  assert.match(read('index.html'), /Join room/);
+  assert.match(read('index.html'), /href="\/admin.html\?mode=video"/);
+  assert.match(read('index.html'), /href="\/admin.html\?mode=audio"/);
+  assert.doesNotMatch(read('index.html'), /Join room|Room ID|recovery key/);
   assert.doesNotMatch(read('launcher.js'), /copyRoomLink|joinRoomForm|roomMessage/);
   assert.match(read('index.html'), /rooms-ui\.js/);
-  assert.match(read('rooms-ui.js'), /session\.roomRequest\(action, body\)/);
+  assert.doesNotMatch(read('rooms-ui.js'), /roomCodeInput|room-identity|roomJoinForm|room-mode-field|Admin recovery key|Guests follow/);
+  assert.match(read('admin.html'), /href="\/share.html\?new=1" target="_blank"/);
   assert.match(read('launcher.js'), /fetch\('\/api\/health'/);
 });

@@ -118,11 +118,11 @@ The Windows launchers and Office conversion tools are designed for Windows. The 
 
 1. Open [watch.aitoyz.in](https://watch.aitoyz.in/) on the source laptop.
 2. Connect your other laptops to the same Wi-Fi or hotspot for Instant sharing.
-3. Choose Video, Audio, Mic and Speaker, or Screen sharing, then click **Create room**.
-4. Copy the short **Room ID** from the dashboard. On the other laptops, open the same website/server, click **Join room** from any option, and enter that ID once. Screens and speakers are assigned automatically. Use the dashboard Mode selector to switch all connected devices together.
+3. Choose Video, Audio, Mic and Speaker, or Screen sharing to open its workspace.
+4. Copy the numbered screen or speaker links from the dashboard and open a different link on each laptop. For Mic and Speaker, open the phone link on your phone.
 5. Wait for them to be ready, then press Play. Tap to enable sound on a laptop if asked.
 
-The laptop that creates the room is admin. In Video and Audio, Display/Speaker 1 belongs to that laptop and opens in a separate player tab. Choose your file on the admin laptop and keep its dashboard open for Instant mode. Save the separate **Admin recovery key** privately; it restores admin access after browser data is lost. Room IDs and numbered invitation links let guests join, but do not grant admin controls.
+The source laptop owns the session. In Video and Audio, Display/Speaker 1 belongs to that laptop and opens in a separate player tab. Choose your file on the source laptop and keep its dashboard open for Instant mode. Device links connect guests without granting admin controls. Reopening the dashboard URL in the same browser restores its saved access.
 
 ### Run locally on Windows
 
@@ -130,7 +130,7 @@ The laptop that creates the room is admin. In Video and Audio, Display/Speaker 1
 2. Double-click **START CINEMA.cmd** and keep the server window open.
 3. Allow Node.js on **Private networks** if Windows Firewall asks.
 4. Open the printed Start address, normally `http://localhost:4173/`.
-5. Choose a mode and **Create room**. Other devices open the same server's LAN address and use **Join room** with the shared Room ID.
+5. Choose a mode and copy its device links. Open those links on the other devices; the dashboard uses the server's LAN address for remote links.
 
 The local setup works without internet for local movie/audio files. If port 4173 is busy, CineWall tries the next free port. Use the links from the current dashboard rather than an old saved address. Stop the server with `Ctrl+C`.
 
@@ -249,7 +249,7 @@ No. Select it on the source laptop only. The other laptops receive it through th
 
 ### Why are rooms different on the same hotspot?
 
-Wi-Fi connects devices, but it does not identify a room. Click **Join room** from any option and enter the admin's short Room ID. Connected guests follow subsequent mode switches automatically. Numbered invitation links also work. For a local installation, every laptop must open the same server's LAN address; a code created on one server cannot be looked up on another server or on the public website.
+Wi-Fi connects devices, but each workspace has its own session. Open the device links copied from the source dashboard so everyone joins that session. Opening a mode from the homepage starts a separate workspace. For a local installation, use the dashboard's LAN links; localhost refers to each device itself.
 
 ### Why does Play wait for other screens?
 

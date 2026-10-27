@@ -32,7 +32,7 @@ Before deployment, run npm run check and npm test. Browser testing should includ
 
 ## Room IDs, storage and rate limits
 
-All four homepage modes now open Create room / Join room. Room records and recovery credentials are stored inside `CINEWALL_CACHE_DIR/room-records`; retain that cache on persistent storage if rooms must survive redeployment. Unknown UUIDs no longer allocate rooms. See [ROOMS.md](ROOMS.md) for the protocol, recovery behavior and verification.
+All four homepage modes open their workspace directly and create a private session automatically. Participants join through the dashboard's device links. The code-entry screen and room toolbar are removed. Room records are stored inside `CINEWALL_CACHE_DIR/room-records`; retain that cache on persistent storage if sessions must survive redeployment. Unknown UUIDs do not allocate rooms. See [ROOMS.md](ROOMS.md) for the protocol and verification.
 
 `CINEWALL_CACHE_LIMIT_GB` sets the aggregate storage budget in GiB (default 100). Inactive rooms and ready downloads expire after 24 hours; failed/cancelled download files expire after five minutes. Active transfers are protected. Server-side presentation/Office preparation is disabled; use Screen sharing.
 

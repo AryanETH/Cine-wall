@@ -31,7 +31,7 @@ test('mic pages, scoped APIs, live event signaling and room isolation work throu
     return { status: response.status, data: await response.json() };
   }
   for (const route of ['/mic.html', '/mic.js', '/mic.css', '/mic-setup.html', '/assets/mic-speakers.svg']) assert.equal((await fetch(base + route)).status, 200);
-  const home = await (await fetch(base)).text(); assert.match(home, /href="\/connect.html\?mode=mic"/); assert.doesNotMatch(home, /Stream YouTube/);
+  const home = await (await fetch(base)).text(); assert.match(home, /href="\/mic.html"/); assert.doesNotMatch(home, /Stream YouTube/);
   assert.equal((await fetch(base + '/mic-events')).status, 400, 'hosted event streams require a room');
   assert.equal((await api('/api/mic/join', phone, { role: 'phone' })).status, 200);
   const joined = await api('/api/mic/join', speaker, { role: 'speaker', slot: 1 }); assert.equal(joined.status, 200);
