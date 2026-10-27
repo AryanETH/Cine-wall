@@ -37,6 +37,11 @@
   }
   function followsPath(data) {
     if (!/\/(admin|screen|share|mic|room)\.html$/.test(page.pathname)) return true;
+    // The creator's numbered player shares its device identity with the
+    // dashboard. Keep that player open instead of turning it into a dashboard.
+    const playerNumber = Number(new URL(location.href).searchParams.get('screen'));
+    if (data.admin && !data.waiting && location.pathname === '/screen.html' && ['video', 'audio'].includes(data.mode)
+      && Number.isInteger(playerNumber) && playerNumber >= 1 && playerNumber <= (data.mode === 'audio' ? 5 : 3)) return true;
     const target = new URL(data.path, location.origin);
     if (target.pathname !== location.pathname) return false;
     if (target.pathname === '/admin.html') return new URL(location.href).searchParams.get('mode') === data.mode;

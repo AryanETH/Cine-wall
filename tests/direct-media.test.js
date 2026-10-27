@@ -61,6 +61,17 @@ test('returning home resumes the active room; starting another room remains deli
   assert.equal(fresh.window.CineWallSession.room, ''); assert.equal(fresh.calls.length, 0);
 });
 
+test('the admin numbered player stays a player through video and audio switches', async () => {
+  const client = sessionPage(`https://watch.aitoyz.in/screen.html?screen=1&room=${room}`);
+  Object.assign(client.info, { admin: true, role: 'admin', mode: 'video', path: '/admin.html?mode=video' });
+  await client.window.CineWallSession.ready; await turn();
+  assert.equal(client.calls.filter(call => call[0] === 'navigate').length, 0);
+  Object.assign(client.info, { mode: 'audio', revision: 1, path: '/admin.html?mode=audio' });
+  await client.timers.shift()();
+  assert.equal(client.calls.filter(call => call[0] === 'navigate').length, 0);
+  assert.equal(client.window.CineWallSession.membership.mode, 'audio');
+});
+
 test('hosted page creates private domain links, never localhost or internal Railway IP/port', async () => {
   const client = sessionPage(`https://watch.aitoyz.in/admin.html?mode=video&room=${room}`, room);
   assert.equal(client.window.CineWallSession.hosted, true);
