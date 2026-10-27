@@ -42,14 +42,14 @@ test('homepage enables Screen sharing and replaces the YouTube placeholder with 
   const home = fs.readFileSync(path.join(__dirname, '../public/index.html'), 'utf8');
   const card = home.match(/<a class="mode-card" data-bg="screen-sharing"[\s\S]*?<\/a>/)?.[0];
   assert.ok(card);
-  assert.match(card, /href="\/share.html"/);
+  assert.match(card, /href="\/connect.html\?mode=share"/);
   assert.match(card, /Up to 10 screens/);
   assert.doesNotMatch(card, /coming-soon|data-session-mode/);
   assert.doesNotMatch(home, /data-bg="presentation"/);
   assert.doesNotMatch(home, /class="home-share-banner"/);
   const micCard = home.match(/<a class="mode-card mic-mode-card"[\s\S]*?<\/a>/)?.[0];
   assert.ok(micCard);
-  assert.match(micCard, /href="\/mic.html"/);
+  assert.match(micCard, /href="\/connect.html\?mode=mic"/);
   assert.match(micCard, /Mic and Speaker/);
   assert.match(micCard, /1 phone · up to 3 laptops/);
   assert.doesNotMatch(micCard, /coming-soon/);

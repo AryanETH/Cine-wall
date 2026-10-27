@@ -47,18 +47,21 @@ test('joined guests follow a mode change with the same ticket and no second join
   assert.equal(client.storage.get('cinewall-active-room'), room);
 });
 
-test('returning home resumes the active room; starting another room remains deliberate', async () => {
+test('landing and entry pages never resume a saved room or bypass Create/Join', async () => {
   const saved = new Map([['cinewall-active-room', room], [`cinewall-room-${room}`, JSON.stringify({room, ticket:'ticket', recoveryKey:'private-key'})]]);
   const client = sessionPage('https://watch.aitoyz.in/', saved);
   await client.window.CineWallSession.ready;
-  assert.equal(client.window.CineWallSession.room, room);
-  assert.equal(client.window.CineWallSession.membership.recoveryKey, 'private-key');
-  assert(client.calls.some(call => call[0] === 'fetch' && call[1] === '/api/rooms/resume'));
-  const anchor = { href: 'https://watch.aitoyz.in/?new=1' };
-  client.clicks[0]({ target: { closest: () => anchor } });
-  assert.equal(anchor.href, 'https://watch.aitoyz.in/?new=1');
-  const fresh = sessionPage('https://watch.aitoyz.in/?new=1', saved);
-  assert.equal(fresh.window.CineWallSession.room, ''); assert.equal(fresh.calls.length, 0);
+  assert.equal(client.window.CineWallSession.room, ''); assert.equal(client.window.CineWallSession.membership, null); assert.equal(client.calls.length, 0);
+  for (const mode of ['video','audio','share','mic']) {
+    const entry = sessionPage(`https://watch.aitoyz.in/connect.html?mode=${mode}&room=${room}`, saved);
+    await entry.window.CineWallSession.ready;
+    assert.equal(entry.window.CineWallSession.room, ''); assert.equal(entry.calls.length, 0);
+  }
+  const app = sessionPage(`https://watch.aitoyz.in/admin.html?mode=video&room=${room}`, saved);
+  await app.window.CineWallSession.ready;
+  for (const href of ['https://watch.aitoyz.in/','https://watch.aitoyz.in/connect.html?mode=audio&join=1']) {
+    const anchor = {href}; app.clicks[0]({target:{closest:()=>anchor}}); assert.equal(anchor.href, href, 'landing and entry links do not inherit a room');
+  }
 });
 
 test('the admin numbered player stays a player through video and audio switches', async () => {
@@ -70,6 +73,27 @@ test('the admin numbered player stays a player through video and audio switches'
   await client.timers.shift()();
   assert.equal(client.calls.filter(call => call[0] === 'navigate').length, 0);
   assert.equal(client.window.CineWallSession.membership.mode, 'audio');
+});
+
+test('creating another room keeps its own recovery key instead of the previous room key', async () => {
+  const saved = new Map([[`cinewall-room-${room}`, JSON.stringify({room,ticket:'ticket',recoveryKey:'old-private-key'})]]);
+  const client = sessionPage(`https://watch.aitoyz.in/admin.html?mode=video&room=${room}`, saved);
+  await client.window.CineWallSession.ready;
+  const nextRoom = crypto.randomUUID(); Object.assign(client.info,{room:nextRoom,recoveryKey:'new-private-key'});
+  const created = await client.window.CineWallSession.roomRequest('create',{mode:'audio'});
+  assert.equal(created.recoveryKey,'new-private-key');
+  assert.equal(JSON.parse(client.storage.get(`cinewall-room-${nextRoom}`)).recoveryKey,'new-private-key');
+});
+
+test('joining the saved admin room from its entry screen retains the private recovery key', async () => {
+  const saved = new Map([[`cinewall-room-${room}`, JSON.stringify({room,ticket:'ticket',admin:true,recoveryKey:'saved-private-key'})]]);
+  const client = sessionPage('https://watch.aitoyz.in/connect.html?mode=audio', saved);
+  Object.assign(client.info,{room,admin:true,path:'/admin.html?mode=audio'});
+  const joined = await client.window.CineWallSession.roomRequest('join',{code:'ABCD-EFGH'});
+  assert.equal(joined.recoveryKey,'saved-private-key');
+  Object.assign(client.info,{admin:false,ticket:'guest-ticket'});
+  const guest = await client.window.CineWallSession.roomRequest('join',{code:'ABCD-EFGH'});
+  assert.equal(guest.recoveryKey,undefined,'a new guest membership never inherits a previous admin recovery key');
 });
 
 test('hosted page creates private domain links, never localhost or internal Railway IP/port', async () => {

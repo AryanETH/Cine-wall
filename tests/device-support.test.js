@@ -9,7 +9,7 @@ function device({ agent = '', width = 390, height = 844, touch = 5, coarse = tru
   const classes = [], listeners = {};
   const context = vm.createContext({
     navigator: { userAgent: agent, userAgentData: { mobile }, maxTouchPoints: touch },
-    screen: { width, height }, matchMedia: () => ({ matches: coarse }), location: { pathname }, window: {},
+    screen: { width, height }, matchMedia: () => ({ matches: coarse }), location: new URL('https://watch.aitoyz.in' + pathname), URL, window: {},
     document: { documentElement: { classList: { add: name => classes.push(name) } }, addEventListener: (name, fn) => { listeners[name] = fn; } },
   });
   vm.runInContext(source('device-support.js'), context);
@@ -28,12 +28,15 @@ test('phones cannot start restricted modes in portrait or landscape, including d
   }
 });
 test('portrait phone microphone and speaker pages remain available', () => {
-  for (const pathname of ['/mic.html', '/mic-setup.html', '/']) {
+  for (const pathname of ['/mic.html', '/mic-setup.html', '/', '/connect.html?mode=mic']) {
     const client = device({ mobile: true, pathname });
     assert.equal(client.policy.isPhone, true);
     assert.equal(client.policy.restricted, false);
     assert.deepEqual(client.classes, []);
   }
+});
+test('phone entry screens cannot create or join laptop-only modes', () => {
+  for (const mode of ['video','audio','share']) assert.equal(device({ mobile:true, pathname:'/connect.html?mode='+mode }).policy.restricted,true);
 });
 test('narrow desktop windows, touch laptops and tablets are not mistaken for smartphones', () => {
   for (const options of [

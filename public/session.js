@@ -16,13 +16,16 @@
   const page = new URL(location.href);
   const peerId = uuid();
   const local = /^(localhost|127\.0\.0\.1|\[::1\])$/.test(page.hostname) || /^(10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.)/.test(page.hostname);
-  const explicitRoom = page.searchParams.get('room') || '';
-  let room = explicitRoom || (page.pathname === '/' && !page.searchParams.has('new') ? storage.get('cinewall-active-room') || '' : '');
+  const enrollmentPage = page.pathname === '/' || page.pathname === '/connect.html';
+  const explicitRoom = enrollmentPage ? '' : page.searchParams.get('room') || '';
+  const room = explicitRoom;
   const nativeFetch = window.fetch.bind(window);
   const identityHeaders = { 'X-CineWall-Device': deviceId, 'X-CineWall-Key': deviceKey };
   let membership = null;
   function remember(data) {
-    const recoveryKey = membership?.recoveryKey;
+    let previous = membership?.room === data.room ? membership : null;
+    if (!previous) { try { previous = JSON.parse(storage.get(`cinewall-room-${data.room}`) || 'null'); } catch {} }
+    const recoveryKey = data.admin ? data.recoveryKey || (previous?.ticket === data.ticket ? previous?.recoveryKey : null) : null;
     membership = { ...data, ...(recoveryKey ? { recoveryKey } : {}) };
     if (data.deviceId) { deviceId = data.deviceId; identityHeaders['X-CineWall-Device'] = deviceId; }
     storage.set(`cinewall-room-${data.room}`, JSON.stringify(membership));
@@ -66,10 +69,7 @@
     if (saved?.recoveryKey) { data.recoveryKey = saved.recoveryKey; storage.set(`cinewall-room-${room}`, JSON.stringify(data)); }
     if (!followsPath(data)) { navigate(data, true); return new Promise(() => {}); }
     return data;
-  })().catch(error => {
-    if (!explicitRoom && page.pathname === '/') { storage.remove('cinewall-active-room'); room = ''; membership = null; return null; }
-    throw error;
-  }) : Promise.resolve(null);
+  })() : Promise.resolve(null);
   ready.catch(error => { const show = () => window.dispatchEvent(new CustomEvent('cinewall-room-error', { detail: error.message })); if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', show, { once: true }); else show(); });
   function link(value, origin = location.origin) {
     const url = new URL(value, origin);
@@ -129,7 +129,7 @@
     const anchor = event.target.closest('a[href]');
     if (!anchor || !room) return;
     const target = new URL(anchor.href, location.href);
-    if (!target.searchParams.has('new') && target.origin === location.origin && (target.pathname === '/' || target.pathname.startsWith('/api/') || target.pathname.endsWith('.html'))) anchor.href = scoped(target, target.pathname.startsWith('/api/'));
+    if (!target.searchParams.has('new') && target.pathname !== '/connect.html' && target.origin === location.origin && (target.pathname.startsWith('/api/') || target.pathname.endsWith('.html'))) anchor.href = scoped(target, target.pathname.startsWith('/api/'));
   }, true);
   let refreshPending = false, refreshTimer, ended = false;
   async function refreshRoom() {

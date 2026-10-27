@@ -7,7 +7,8 @@
   // Screen size is orientation-independent; a narrow desktop window is still supported.
   const isPhone = !tablet && (navigator.userAgentData?.mobile === true
     || /iPhone|iPod|Android.*Mobile|Windows Phone/i.test(agent) || smallTouchScreen);
-  const restricted = isPhone && /\/(admin|screen|share)\.html$/.test(location.pathname);
+  const entryMode = new URL(location.href).searchParams.get('mode') || 'video';
+  const restricted = isPhone && (/\/(admin|screen|share)\.html$/.test(location.pathname) || location.pathname === '/connect.html' && entryMode !== 'mic');
   window.CineWallDeviceSupport = { isPhone, restricted };
   if (!isPhone) return;
   if (restricted) document.documentElement.classList.add('device-restricted');
@@ -43,7 +44,7 @@
       const target = event.target.closest('a[href], [data-session-mode]');
       if (!target) return;
       const url = target.href ? new URL(target.href, location.href) : null;
-      if (target.dataset.sessionMode || (url?.origin === location.origin && /\/(admin|screen|share)\.html$/.test(url.pathname))) {
+      if (target.dataset.sessionMode && target.dataset.sessionMode !== 'mic' || (url?.origin === location.origin && (/\/(admin|screen|share)\.html$/.test(url.pathname) || url.pathname === '/connect.html' && url.searchParams.get('mode') !== 'mic'))) {
         event.preventDefault();
         event.stopImmediatePropagation();
         dialog.showModal();
