@@ -114,7 +114,7 @@
 .studio-body .preview-empty strong { font-size: 18px; font-weight: 550; }
 .studio-body .preview-empty .fi { border: 0; background: transparent; color: var(--muted); font-size: 36px; }
 .studio-body .preview-badge { inset: auto auto 14px 14px; border-radius: 8px; font-size: 12px; letter-spacing: 0; padding: 10px 12px; background: rgba(8,11,18,.8); color: #fff; border: 0; }
-.studio-body #replayPreview { inset: 14px 14px auto auto; z-index: 10; border-radius: 8px; font-size: 12px; }
+.studio-body #replayPreview { inset: auto 14px 14px auto; z-index: 8; border-radius: 8px; font-size: 12px; }
 .studio-body .player-deck { display: block; padding: 0; }
 .studio-body .state-pill { display: block; margin: 12px 0 0; padding: 8px 10px; border: 0; border-radius: 6px; font-size: 13px; }
 .studio-body .timeline-row { grid-template-columns: 48px minmax(0, 1fr) 70px; gap: 14px; margin-top: 25px; color: var(--muted); font-size: 13px; }

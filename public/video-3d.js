@@ -20,7 +20,9 @@
     function normal() { canvas.hidden = true; video.style.visibility = ''; }
     function failure() { failed = true; stop(); normal(); onError('3D view is unavailable on this device. Showing Normal.'); }
     function init() {
-      gl = canvas.getContext('webgl', { alpha: false, antialias: false, depth: false, stencil: false, preserveDrawingBuffer: false });
+      // Retain the final composited frame when paused/ended, including when
+      // another tab is active. No animation loop runs just to preserve it.
+      gl = canvas.getContext('webgl', { alpha: false, antialias: false, depth: false, stencil: false, preserveDrawingBuffer: true });
       if (!gl) throw new Error('WebGL unavailable');
       function shader(type, source) {
         const item = gl.createShader(type); gl.shaderSource(item, source); gl.compileShader(item);
