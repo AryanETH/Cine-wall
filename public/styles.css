@@ -761,3 +761,15 @@ body[data-session-mode="audio"] .top-settings { grid-template-columns: 1fr; }
 .video-view-panel select { width: 100%; padding: 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); color: var(--ink); font: inherit; font-size: 13px; }
 .video-view-panel p { color: var(--muted); font-size: 12px; line-height: 1.5; }
 .video-3d-status { position: fixed; top: 60px; left: 20px; z-index: 15; max-width: calc(100vw - 40px); padding: 10px; border-radius: 8px; background: #111e; color: white; font-size: 12px; }
+.glasses-icon { width: 42px; height: 24px; flex: 0 0 42px; vertical-align: middle; pointer-events: none; }
+.preview-3d-toggle, #videoViewControls button[data-video-view="anaglyph"], .buy-3d-glasses { display: inline-flex; align-items: center; justify-content: center; gap: 7px; }
+.preview-3d-toggle[hidden], [hidden].glasses-icon { display: none; }
+.video-view-panel .depth-label { display: flex; align-items: center; justify-content: space-between; margin-top: 18px; font-weight: 600; font-size: 13px; }
+.depth-label output { color: var(--accent); font-variant-numeric: tabular-nums; }
+#videoDepth { width: 100%; min-height: 32px; margin: 4px 0 0; accent-color: var(--accent); cursor: pointer; }
+#videoDepthNote { margin: 4px 0 14px; }
+.buy-3d-glasses { width: 100%; box-sizing: border-box; font-size: 13px; }
+.buy-3d-glasses span:last-child { margin-left: auto; }
+.glasses-flight { position: fixed; transform: translate(-50%,-50%); pointer-events: none; z-index: 10000; filter: drop-shadow(0 18px 22px #18285455); }
+.glasses-vignette { position: fixed; inset: 0; pointer-events: none; z-index: 9999; opacity: 0; background: radial-gradient(ellipse at center, rgb(9 14 30 / 28%) 0%, rgb(6 10 24 / 65%) 60%, rgb(3 6 16 / 86%) 100%); }
+@media (prefers-reduced-motion: reduce) { .glasses-flight, .glasses-vignette { display: none; } }

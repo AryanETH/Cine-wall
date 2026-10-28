@@ -74,7 +74,7 @@ function sourceLocked() {
 }
 
 function playbackReady() {
-  return status.state.allReady === true && !sourceLocked() && !uploadBusy && !isPreparing();
+  return status.state.allReady === true && !status.state.seekPending && !sourceLocked() && !uploadBusy && !isPreparing();
 }
 
 function renderSharing() {
@@ -246,6 +246,7 @@ async function command(payload) {
   if (payload.type === 'play' && !playbackReady()) return null;
   const sequence = ++controlSequence;
   const state = status.state;
+  if (['play', 'pause', 'seek', 'restart'].includes(payload.type)) payload = { ...payload, assetVersion: state.asset?.version };
   const now = Date.now() + serverOffset;
   const key = ['play', 'pause', 'seek', 'restart'].includes(payload.type) ? 'playback' : payload.type === 'screen-audio' ? `audio-${payload.screen}` : '';
   const coalesce = payload.type === 'seek' ? 'seek' : payload.type === 'screen-audio' && 'volume' in payload && !('muted' in payload) ? `volume-${payload.screen}` : '';
@@ -327,14 +328,19 @@ function renderModeShell() {
     const active = button.dataset.videoView === (state.videoView || 'normal');
     button.classList.toggle('active', active); button.setAttribute('aria-pressed', String(active));
   });
-  if (document.activeElement !== $('#stereoSource')) $('#stereoSource').value = state.stereoSource || '2d';
-  $('#stereoSource').disabled = sourceLocked();
+  const depth = state.videoDepth ?? 50;
+  if (document.activeElement !== $('#videoDepth')) $('#videoDepth').value = depth;
+  $('#videoDepth').disabled = sourceLocked();
+  $('#videoDepthValue').textContent = `${depth}%`;
+  $('#videoDepthPanel').hidden = !videoView;
+  $('#videoViewHint').hidden = video3d?.available !== false;
+  if (!videoView || state.sessionMode !== 'video') window.CineWallGlasses?.cancel();
   $('#videoViewHint').textContent = video3d?.available === false ? '3D view is unavailable on this device. Showing Normal.' : (state.stereoSource || '2d') === '2d'
     ? 'Red lens left, cyan right. 2D uses a simulated filter; true depth needs a side-by-side 3D file.'
     : 'Red lens left, cyan right. Left-eye image first in the side-by-side file.';
   const viewToggle = $('#video3dToggle');
   viewToggle.hidden = state.sessionMode !== 'video'; viewToggle.disabled = sourceLocked() || uploadBusy || isPreparing();
-  viewToggle.textContent = videoView ? '3D view on' : '3D view';
+  $('#video3dLabel').textContent = videoView ? '3D view on' : '3D view';
   viewToggle.setAttribute('aria-pressed', String(videoView)); viewToggle.classList.toggle('active', videoView);
   $('#audioModeControls').querySelectorAll('[data-audio-mode]').forEach((button) => {
     const active = button.dataset.audioMode === (state.audioMode || 'personal');
@@ -409,7 +415,7 @@ function renderModeShell() {
   } else if (state.sessionMode === 'audio') {
     $('#shortcutHint').innerHTML = '<span><kbd>Space</kbd> Play / pause</span><span><kbd>←</kbd><kbd>→</kbd> Skip 10s</span>';
   } else {
-    $('#shortcutHint').innerHTML = '<span><kbd>Space</kbd> Play / pause</span><span><kbd>←</kbd><kbd>→</kbd> Seek 10s</span><span>Double-click left/right to seek</span>';
+    $('#shortcutHint').innerHTML = '<span><kbd>Space</kbd> Play / pause</span><span><kbd>←</kbd><kbd>→</kbd> Seek 10s</span>';
   }
 }
 
@@ -640,7 +646,7 @@ function renderPlayer() {
     if (hasAsset && titledScreen?.fileName) state.asset.name = titledScreen.fileName;
   }
   setPreviewKind();
-  video3d?.set({ active: state.sessionMode === 'video' && state.videoView === 'anaglyph' && Boolean(hasAsset || localPreview), source: state.stereoSource || '2d', fit: 'fit', screens: 1, index: 0 });
+  video3d?.set({ active: state.sessionMode === 'video' && state.videoView === 'anaglyph' && Boolean(hasAsset || localPreview), source: state.stereoSource || '2d', depth: state.videoDepth ?? 50, fit: 'fit', screens: 1, index: 0 });
   if (hasAsset && ['video', 'audio'].includes(state.sessionMode) && !Number.isFinite(media.duration)) {
     duration = Math.max(duration || 0, ...status.screens.filter((screen) => screen.mediaReady && screen.screen <= state.screenCount).map((screen) => Number(screen.duration) || 0));
   }
@@ -663,8 +669,8 @@ function renderPlayer() {
   } else {
     const replay = videoFinished();
     $('#playerState').textContent = state.playing ? 'PLAYING' : replay ? 'ENDED' : hasAsset ? 'PAUSED' : 'IDLE';
-    $('#play').hidden = Boolean(state.playing);
-    $('#pause').hidden = !state.playing;
+    $('#play').hidden = Boolean(state.playing || state.seekResume);
+    $('#pause').hidden = !state.playing && !state.seekResume;
     $('#play').innerHTML = `<span class="fi">${replay ? '&#xE72C;' : '&#xE768;'}</span>`;
     $('#play').setAttribute('aria-label', replay ? 'Replay video' : 'Play');
     ['#restart', '#back', '#play', '#pause', '#forward', '#loopButton'].forEach((selector) => { $(selector).disabled = !hasAsset || uploadBusy || isPreparing(); });
@@ -673,6 +679,7 @@ function renderPlayer() {
     if (hasAsset && !state.playing && !playbackReady()) $('#playerState').textContent = sourceLocked() ? 'VIEWER' : 'WAITING FOR DISPLAYS';
     $('#playerState').hidden = !replay && (!hasAsset || state.playing || playbackReady());
     if (!$('#playerState').hidden) $('#playerState').textContent = replay ? 'ENDED' : sourceLocked() ? 'Controlled by another laptop' : 'Waiting for screens';
+    if (state.seekPending) { $('#playerState').hidden = false; $('#playerState').textContent = 'Syncing screens…'; $('#play').disabled = true; }
     loopEnabled = Boolean(state.loop);
     $('#loopButton').classList.toggle('active', loopEnabled);
     timeline.disabled = !hasAsset || uploadBusy || isPreparing();
@@ -844,12 +851,30 @@ $('#audioModeControls').addEventListener('click', (event) => {
 $('#try3d').addEventListener('click', () => {
   if (status.state.sessionMode === 'audio') command({ type: 'audio-mode', audioMode: status.state.audioMode === '3d' ? 'personal' : '3d' });
 });
+let viewRequest = 0;
+async function selectVideoView(mode, origin) {
+  const wasActive = status.state.videoView === 'anaglyph', request = ++viewRequest;
+  await command({ type: 'video-view', videoView: mode, stereoSource: '2d' });
+  if (request === viewRequest && !wasActive && status.state.videoView === 'anaglyph' && status.state.sessionMode === 'video') window.CineWallGlasses?.activate(origin);
+}
 $('#videoViewControls').addEventListener('click', event => {
   const button = event.target.closest('[data-video-view]');
-  if (button) command({ type: 'video-view', videoView: button.dataset.videoView });
+  if (button) selectVideoView(button.dataset.videoView, button);
 });
-$('#video3dToggle').addEventListener('click', () => command({ type: 'video-view', videoView: status.state.videoView === 'anaglyph' ? 'normal' : 'anaglyph' }));
-$('#stereoSource').addEventListener('change', event => command({ type: 'video-view', videoView: status.state.videoView || 'normal', stereoSource: event.target.value }));
+$('#video3dToggle').addEventListener('click', event => selectVideoView(status.state.videoView === 'anaglyph' ? 'normal' : 'anaglyph', event.currentTarget));
+let depthTimer, depthSending = false, pendingDepth;
+async function sendDepth() {
+  clearTimeout(depthTimer);
+  if (depthSending || pendingDepth === undefined) return;
+  const depth = pendingDepth; pendingDepth = undefined; depthSending = true;
+  try { await command({ type: 'video-view', videoView: status.state.videoView || 'normal', videoDepth: depth }); }
+  finally { depthSending = false; if (pendingDepth !== undefined) sendDepth(); }
+}
+$('#videoDepth').addEventListener('input', event => {
+  pendingDepth = Number(event.target.value); $('#videoDepthValue').textContent = pendingDepth + '%';
+  clearTimeout(depthTimer); depthTimer = setTimeout(sendDepth, 90);
+});
+$('#videoDepth').addEventListener('change', sendDepth);
 
 timeline.addEventListener('pointerdown', () => { scrubbing = true; });
 timeline.addEventListener('input', () => { scrubbing = true; $('#currentTime').textContent = formatTime(Number(timeline.value)); });
@@ -1313,7 +1338,7 @@ document.addEventListener('keydown', (event) => {
     if (event.code === 'Space' && status.state.asset) {
       event.preventDefault();
       if (event.repeat) return;
-      if (status.state.playing) command({ type: 'pause' });
+    if (status.state.playing || status.state.seekResume) command({ type: 'pause' });
       else playOnAdminDisplay();
     } else if (event.code === 'ArrowLeft') {
       event.preventDefault(); seekRelative(-10);

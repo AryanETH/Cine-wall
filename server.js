@@ -11,6 +11,8 @@ const cacheBudget = require('./cache-budget');
 const createRooms = require('./rooms');
 const createScreenSharing = require('./screen-sharing');
 const createMicRoom = require('./mic-room');
+const fileResponse = require('./file-response');
+const atomicJson = require('./atomic-json');
 const { getDemoVisitSnapshot } = require('./public/home-footer');
 const SERVER_ID = require('node:crypto').randomUUID();
 
@@ -59,6 +61,7 @@ const imageExtensions = new Set(['.png', '.jpg', '.jpeg', '.webp', '.gif']);
 const viewers = new Set();
 const screens = new Map();
 let commandSequence = 0;
+let pendingSeek = null;
 let assetFile = null;
 let uploadInProgress = false;
 let preparation = null;
@@ -80,6 +83,7 @@ let state = {
   screenCount: record ? 1 : 2,
   audioMode: 'personal',
   videoView: 'normal',
+  videoDepth: 50,
   stereoSource: '2d',
   audioSettings: defaultAudioSettings(true),
   youtubeAudioMode: 'admin',
@@ -99,6 +103,7 @@ try {
       && (!savedPath || savedPath.startsWith(`${CACHE_DIR}${path.sep}`) && fs.existsSync(savedPath))) {
     state = { ...state, ...saved.state, playing: false, notBefore: 0, anchorTime: Date.now() };
     if (!['personal', '3d'].includes(state.audioMode)) state.audioMode = 'personal';
+    if (!Number.isFinite(state.videoDepth) || state.videoDepth < 0 || state.videoDepth > 100) state.videoDepth = 50;
     if (!['normal', 'anaglyph'].includes(state.videoView)) state.videoView = 'normal';
     if (!['2d', 'sbs', 'sbs-full'].includes(state.stereoSource)) state.stereoSource = '2d';
     assetFile = saved.assetFile;
@@ -110,7 +115,8 @@ try {
 } catch {}
 
 function saveSession() {
-  try { fs.writeFileSync(SESSION_FILE, JSON.stringify({ state: snapshot(), assetFile, sourceOwner }), 'utf8'); } catch {}
+  try { atomicJson(SESSION_FILE, { state: snapshot(), assetFile, sourceOwner }); }
+  catch(error){console.warn(`[CineWall] Session save failed (${error.code||'WRITE_ERROR'}); previous saved state retained.`);}
 }
 
 function json(res, status, value) {
@@ -153,7 +159,7 @@ function currentPosition(at = Date.now()) {
 }
 
 function snapshot() {
-  return { ...state, ownerId: record?.admin.id || sourceOwner?.id || '', roomId: room || 'hotspot', allReady: allDisplaysReady(), preparation, serverId: SERVER_ID, serverTime: Date.now() };
+  return { ...state, seekPending: Boolean(pendingSeek), seekResume: Boolean(pendingSeek?.resume), ownerId: record?.admin.id || sourceOwner?.id || '', roomId: room || 'hotspot', allReady: allDisplaysReady(), preparation, serverId: SERVER_ID, serverTime: Date.now() };
 }
 
 function identity(req) {
@@ -211,6 +217,30 @@ function allDisplaysReady() {
   return true;
 }
 
+// Freeze the room clock during a jump. A slow range read must not leave guests
+// chasing a target that keeps moving while their decoder is still seeking.
+function finishSeekIfReady() {
+  if (!pendingSeek) return;
+  if (pendingSeek.version !== state.asset?.version || !['video', 'audio'].includes(state.sessionMode)) { pendingSeek = null; return; }
+  const joined = activeScreens();
+  for (let number = 1; number <= state.screenCount; number++) {
+    const latest = joined.filter(screen => screen.screen === number).sort((a, b) => b.lastSeen - a.lastSeen)[0];
+    if (!latest?.ready || !latest.mediaReady || latest.assetVersion !== pendingSeek.version || latest.error || latest.buffering || latest.seeking || !latest.paused || latest.lastSeen < pendingSeek.startedAt) return;
+    // Older open guests can acknowledge by their settled position. Updated
+    // guests also identify the exact seek so delayed reports cannot resume it.
+    if (latest.seekId !== null && latest.seekId !== pendingSeek.id) return;
+    const end = latest.duration > 0 ? Math.max(0, latest.duration - .04) : Infinity;
+    if (Math.abs(latest.playbackTime - Math.min(end, pendingSeek.position)) > .3) return;
+  }
+  const resume = pendingSeek.resume;
+  pendingSeek = null;
+  const executeAt = Date.now() + (resume ? 250 : 0);
+  state = { ...state, playing: resume, anchorTime: executeAt, notBefore: executeAt, commandId: ++commandSequence };
+  broadcast('command', { type: resume ? 'play' : 'pause', executeAt, ...snapshot() });
+  broadcast('state', snapshot());
+  saveSession();
+}
+
 function sendEvent(res, event, payload) {
   res.write(`event: ${event}\ndata: ${JSON.stringify(payload)}\n\n`);
 }
@@ -261,6 +291,7 @@ function audioSettingsForMode(sessionMode) {
 }
 
 function removeCurrentAsset() {
+  pendingSeek = null;
   for (const request of relayRequests.values()) request.reject(new Error('The selected file changed.'));
   const oldPath = assetFile?.path;
   assetFile = null;
@@ -336,20 +367,24 @@ function applyCommand(input) {
       screen.error = '';
     }
   } else if (type === 'play') {
+    if (pendingSeek) { const error = new Error('Wait until the screens finish seeking.'); error.status = 409; throw error; }
     if (!state.asset || !['video', 'audio', 'youtube'].includes(state.sessionMode)) throw new Error('Choose a video, audio file, or YouTube link first');
     if (!allDisplaysReady()) { const error = new Error('Wait until every display is ready.'); error.status = 409; throw error; }
     if (input.position !== undefined && !Number.isFinite(input.position)) throw new Error('Invalid playback position');
     if (Number.isFinite(input.position)) position = Math.max(0, Number(input.position));
     state = { ...state, playing: true, position, anchorTime: executeAt };
   } else if (type === 'pause') {
+    pendingSeek = null;
     state = { ...state, playing: false, position, anchorTime: executeAt };
-  } else if (type === 'seek') {
+  } else if (type === 'seek' || type === 'restart') {
     if (!['video', 'audio', 'youtube'].includes(state.sessionMode)) throw new Error('Seeking is only available for video, audio, and YouTube');
-    if (!Number.isFinite(Number(input.position))) throw new Error('Invalid playback position');
-    position = Math.max(0, Number(input.position) || 0);
-    state = { ...state, position, anchorTime: executeAt };
-  } else if (type === 'restart') {
-    state = { ...state, position: 0, anchorTime: executeAt };
+    if (type === 'seek' && !Number.isFinite(Number(input.position))) throw new Error('Invalid playback position');
+    position = type === 'restart' ? 0 : Math.max(0, Number(input.position) || 0);
+    const duration = activeScreens().find(screen => screen.assetVersion === state.asset?.version && screen.duration > 0)?.duration;
+    if (duration) position = Math.min(position, Math.max(0, duration - .04));
+    const coordinated = Boolean(state.asset) && ['video', 'audio'].includes(state.sessionMode);
+    if (coordinated) pendingSeek = { id: commandSequence + 1, version: state.asset.version, position, resume: pendingSeek?.resume ?? state.playing, startedAt: now };
+    state = { ...state, position, anchorTime: executeAt, ...(coordinated ? { playing: false, seekId: pendingSeek.id } : {}) };
   } else if (type === 'loop') {
     if (!['video', 'audio', 'youtube'].includes(state.sessionMode)) throw new Error('Loop is only available for media');
     state = { ...state, loop: Boolean(input.loop) };
@@ -361,7 +396,8 @@ function applyCommand(input) {
     if (state.sessionMode !== 'video') throw new Error('3D view is only available for video files.');
     if (!['normal', 'anaglyph'].includes(input.videoView)) throw new Error('Unknown video view.');
     if (input.stereoSource !== undefined && !['2d', 'sbs', 'sbs-full'].includes(input.stereoSource)) throw new Error('Unknown stereo source.');
-    state = { ...state, videoView: input.videoView, stereoSource: input.stereoSource || state.stereoSource };
+    if (input.videoDepth !== undefined && (typeof input.videoDepth !== 'number' || !Number.isFinite(input.videoDepth) || input.videoDepth < 0 || input.videoDepth > 100)) throw new Error('Filter strength must be between 0 and 100.');
+    state = { ...state, videoView: input.videoView, videoDepth: input.videoDepth ?? state.videoDepth, stereoSource: input.stereoSource || state.stereoSource };
   } else if (type === 'audio-mode') {
     if (!['video', 'audio'].includes(state.sessionMode)) throw new Error('3D mode is only available for video and audio');
     if (!['personal', '3d'].includes(input.audioMode)) throw new Error('Unknown sound mode');
@@ -754,42 +790,45 @@ async function serveInstantAsset(req, res, url) {
   if (range || req.method === 'HEAD') headers['Content-Length'] = end - start + 1;
   if (status === 206) headers['Content-Range'] = `bytes ${start}-${end}/${asset.size}`;
   if (req.method === 'HEAD') { res.writeHead(status, headers); res.end(); return; }
-  let pendingId = '', closed = false;
-  const closedHandler = () => { closed = true; if (pendingId) relayRequests.get(pendingId)?.reject(new Error('Display stopped reading.')); };
+  const pendingIds = new Set(); let closed = false;
+  const rejectPending = () => { for (const id of pendingIds) relayRequests.get(id)?.reject(new Error('Display stopped reading.')); };
+  const closedHandler = () => { closed = true; rejectPending(); };
   res.once('close', closedHandler);
+  function readChunk(offset, chunkEnd) {
+    if (closed || state.asset?.version !== asset.version) return Promise.reject(new Error('The selected file changed.'));
+    if (relayRequests.size >= 32) return Promise.reject(new Error('Too many file requests. Try again.'));
+    const id = require('node:crypto').randomUUID(); pendingIds.add(id);
+    return new Promise((resolve, reject) => {
+      const finish = (error, bytes) => { const pending = relayRequests.get(id); if (!pending) return; clearTimeout(pending.timer); clearInterval(pending.retryTimer); relayRequests.delete(id); pendingIds.delete(id); error ? reject(error) : resolve(bytes); };
+      const send = () => {
+        if (state.asset?.version !== asset.version) { finish(new Error('The selected file changed.')); return; }
+        const source = [...viewers].find(viewer => viewer.peerId === asset.peerId && !viewer.destroyed);
+        if (source) try { sendEvent(source, 'source-range', { id, version: asset.version, start: offset, end: chunkEnd }); } catch {}
+      };
+      relayRequests.set(id, { version: asset.version, length: chunkEnd-offset+1, timer:setTimeout(()=>finish(new Error('Connection interrupted. Keep the admin source tab open and awake.')),30000),retryTimer:setInterval(send,2000),resolve:bytes=>finish(null,bytes),reject:error=>finish(error) });
+      send();
+    });
+  }
   try {
     const buffers = [];
-    // Relay only a bounded byte range at a time; never store or buffer a movie.
-    for (let offset = start; offset <= end && !closed; offset += 512 * 1024) {
-      if (state.asset?.version !== asset.version) throw new Error('The selected file changed.');
-      if (relayRequests.size >= 32) throw new Error('Too many file requests. Try again.');
-      const chunkEnd = Math.min(end, offset + 512 * 1024 - 1);
-      pendingId = require('node:crypto').randomUUID();
-      const buffer = await new Promise((resolve, reject) => {
-        const id = pendingId;
-        const finish = (error, bytes) => { const pending = relayRequests.get(id); if (!pending) return; clearTimeout(pending.timer); clearInterval(pending.retryTimer); relayRequests.delete(id); error ? reject(error) : resolve(bytes); };
-        const send = () => {
-          if (state.asset?.version !== asset.version) { finish(new Error('The selected file changed.')); return; }
-          const source = [...viewers].find((viewer) => viewer.peerId === asset.peerId && !viewer.destroyed);
-          if (source) try { sendEvent(source, 'source-range', { id, version: asset.version, start: offset, end: chunkEnd }); } catch { /* EventSource reconnects; resend the same request. */ }
-        };
-        relayRequests.set(id, { version: asset.version, length: chunkEnd - offset + 1, timer: setTimeout(() => finish(new Error('Connection interrupted. Keep the admin source tab open and awake.')), 30000), retryTimer: setInterval(send, 2000), resolve: (bytes) => finish(null, bytes), reject: (error) => finish(error) });
-        send();
-      });
-      pendingId = '';
-      if (closed) break;
-      if (range) { buffers.push(buffer); continue; }
-      // A non-range GET uses chunked transfer, not a movie-sized Content-Length.
-      if (!res.headersSent) res.writeHead(status, headers);
-      if (!res.write(buffer)) await new Promise((resolve) => {
-        const done = () => { res.removeListener('drain', done); res.removeListener('close', done); resolve(); };
-        res.once('drain', done); res.once('close', done);
-      });
+    // Two bounded reads overlap network latency without buffering a whole movie.
+    // Promise.all preserves byte order even when the second source read wins.
+    for(let offset=start;offset<=end&&!closed;offset+=1024*1024){
+      const firstEnd=Math.min(end,offset+512*1024-1);
+      const pending=[readChunk(offset,firstEnd)];
+      if(firstEnd<end)pending.push(readChunk(firstEnd+1,Math.min(end,offset+1024*1024-1)));
+      const batch=await Promise.all(pending);
+      for(const buffer of batch){
+        if(closed)break;
+        if(range){buffers.push(buffer);continue;}
+        if(!res.headersSent)res.writeHead(status,headers);
+        if(!res.write(buffer))await new Promise(resolve=>{const done=()=>{res.removeListener('drain',done);res.removeListener('close',done);resolve();};res.once('drain',done);res.once('close',done);});
+      }
     }
-    if (!closed) { if (range) { res.writeHead(status, headers); res.end(Buffer.concat(buffers)); } else res.end(); }
-  } catch (error) {
-    if (!closed) { if (res.headersSent) res.destroy(); else { res.setHeader('Retry-After', '2'); json(res, 503, { error: error.message }); } }
-  } finally { res.removeListener('close', closedHandler); }
+    if(!closed){if(range){res.writeHead(status,headers);res.end(Buffer.concat(buffers));}else res.end();}
+  }catch(error){
+    if(!closed){if(res.headersSent)res.destroy();else{res.setHeader('Retry-After','2');json(res,503,{error:error.message});}}
+  }finally{rejectPending();res.removeListener('close',closedHandler);}
 }
 
 function serveAsset(req, res) {
@@ -836,14 +875,12 @@ function serveAsset(req, res) {
     headers['Content-Range'] = `bytes ${start}-${end}/${total}`;
   }
   headers['Content-Length'] = end - start + 1;
-  res.writeHead(status, headers);
   if (req.method === 'HEAD') {
+    res.writeHead(status, headers);
     res.end();
     return;
   }
-  const stream = fs.createReadStream(assetFile.path, { start, end });
-  stream.on('error', () => res.destroy());
-  stream.pipe(res);
+  fileResponse(req,res,assetFile.path,{start,end,status,headers,onError:error=>console.warn(`[CineWall] Media read failed (${error.code||'READ_ERROR'}).`)});
 }
 
 function switchRoomMode(req, mode) {
@@ -1092,10 +1129,13 @@ async function handle(req, res, url) {
         endId: Boolean(body.ended) && body.assetVersion === state.asset?.version ? String(body.endId || '').slice(0, 120) : '',
         playerState: Number(body.playerState),
         buffering: Boolean(body.buffering),
+        seeking: Boolean(body.seeking),
+        seekId: Number.isSafeInteger(body.seekId) && body.seekId >= 0 ? body.seekId : null,
         autoplayMuted: Boolean(body.autoplayMuted),
         error: String(body.error || '').slice(0, 300),
         lastSeen: Date.now(),
       });
+      finishSeekIfReady();
       json(res, 200, { ok: true, state: snapshot() });
       broadcast('screens', { screens: activeScreens(), serverTime: Date.now() });
       return;
@@ -1131,6 +1171,7 @@ return {
     if (record?.mode === 'share' && member.screen) screenSharing.ensureCount(member.screen);
   },
   recover(device) {
+    pendingSeek = null;
     preparationController?.abort();
     const position = currentPosition();
     sourceOwner = { ...device, claimedAt: Date.now() };
@@ -1140,7 +1181,7 @@ return {
     for (const viewer of viewers) viewer.end(); viewers.clear();
     screenSharing.close(); micRoom.close();
   },
-  pulse() { broadcast('pulse', snapshot()); activeScreens(); screenSharing.pulse(); micRoom.pulse(); },
+  pulse() { finishSeekIfReady(); broadcast('pulse', snapshot()); activeScreens(); screenSharing.pulse(); micRoom.pulse(); },
   lastUsed: Date.now(),
   idle() { return !viewers.size && !uploadInProgress && screenSharing.idle() && micRoom.idle(); },
   close() { preparationController?.abort(); for (const viewer of viewers) viewer.end(); viewers.clear(); screenSharing.close(); micRoom.close(); },

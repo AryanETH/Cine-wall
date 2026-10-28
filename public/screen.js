@@ -68,6 +68,9 @@ let youtubeLastSeek = 0;
 let localAutoplayMuted = false;
 let playbackAttempt = null;
 let audioWaiting = false;
+let lastDriftSeek = -Infinity;
+let appliedSeek = null;
+let timelineCheckpointInFlight = false;
 let wallMode = 'crop';
 let disconnectTimer = null;
 let lastServerContact = Date.now();
@@ -614,7 +617,7 @@ function applyStateAppearance(nextState) {
   const isYouTube = sessionMode === 'youtube';
   stage.hidden = sessionMode !== 'video';
   const show3d = !removedScreenNumber && sessionMode === 'video' && nextState.videoView === 'anaglyph' && Boolean(nextState.asset);
-  video3d?.set({ active: show3d, source: nextState.stereoSource || '2d', fit: nextState.mode || 'crop', screens: wallScreens, index: Math.max(0, screenNumber - 1) });
+  video3d?.set({ active: show3d, source: nextState.stereoSource || '2d', depth: nextState.videoDepth ?? 50, fit: nextState.mode || 'crop', screens: wallScreens, index: Math.max(0, screenNumber - 1) });
   if (!show3d) $('#video3dStatus').hidden = true;
   youtubeViewport.hidden = !isYouTube;
   speakerStage.hidden = sessionMode !== 'audio';
@@ -833,6 +836,7 @@ async function execute(commandState) {
   }
 
   if (!Number.isFinite(video.duration)) return;
+  applyAuthoritativeSeek(commandState);
   seekTo(targetPosition(commandState));
   if (commandState.playing) {
     await playLocalMedia();
@@ -850,6 +854,18 @@ function applyWhenReady(nextState) {
   const delay = Math.max(0, Number(nextState?.notBefore || 0) - serverNow());
   if (delay > 10) setTimeout(() => applyStateAppearance(nextState), delay);
   else applyStateAppearance(nextState);
+}
+
+function applyAuthoritativeSeek(playbackState) {
+  if (!Number.isSafeInteger(playbackState.seekId) || playbackState.seekId <= 0 || !ready || !Number.isFinite(video.duration) || mediaElementVersion !== playbackState.asset?.version) return;
+  const key = `${playbackState.serverId}/${playbackState.asset.version}/${playbackState.seekId}`;
+  if (appliedSeek?.key === key) return;
+  appliedSeek = { key, id: playbackState.seekId };
+  endedAssetVersion = ''; endedEventId = '';
+  video.pause();
+  video.playbackRate = 1;
+  seekTo(targetPosition(playbackState));
+  lastDriftSeek = performance.now();
 }
 
 function correctDrift(playbackState, updateAppearance = true) {
@@ -887,16 +903,21 @@ function correctDrift(playbackState, updateAppearance = true) {
   }
 
   if (!Number.isFinite(video.duration)) return;
+  applyAuthoritativeSeek(playbackState);
   const target = targetPosition(playbackState);
   const drift = target - video.currentTime;
   if (!playbackState.playing) {
     video.pause();
     video.playbackRate = 1;
-    if (Math.abs(drift) > 0.08) seekTo(target);
+    if (!video.seeking && Math.abs(drift) > 0.08) seekTo(target);
     return;
   }
   if (video.paused && !video.ended) playLocalMedia();
-  if (Math.abs(drift) > 0.22) {
+  // Never chase the clock through a seek/buffer recovery. Repeated seeks here
+  // discard useful decoder progress and range reads on slower guest laptops.
+  if (video.seeking || video.readyState < 3 || audioWaiting || video.ended) { video.playbackRate = 1; return; }
+  if (Math.abs(drift) > 0.22 && performance.now() - lastDriftSeek > 2500) {
+    lastDriftSeek = performance.now();
     seekTo(target);
     video.playbackRate = 1;
   } else if (Math.abs(drift) > 0.015) {
@@ -937,9 +958,10 @@ function updateController() {
   if (!scrubbing) $('#screenCurrentTime').textContent = formatTime(position);
   $('#screenDuration').textContent = duration ? formatTime(duration) : '--:--';
   const replay = videoFinished();
-  $('#screenPlay').innerHTML = `<span class="fi">${currentState?.playing ? '&#xE769;' : replay ? '&#xE72C;' : '&#xE768;'}</span>`;
-  $('#screenPlay').disabled = !currentState?.asset || (!currentState.playing && currentState.allReady !== true);
-  $('#screenPlay').title = currentState?.playing ? 'Pause' : currentState?.allReady ? replay ? 'Replay video' : 'Play' : 'Waiting for every display';
+  const canPause = currentState?.playing || currentState?.seekResume;
+  $('#screenPlay').innerHTML = `<span class="fi">${canPause ? '&#xE769;' : replay ? '&#xE72C;' : '&#xE768;'}</span>`;
+  $('#screenPlay').disabled = !currentState?.asset || (!canPause && (currentState.allReady !== true || currentState.seekPending));
+  $('#screenPlay').title = canPause ? 'Pause' : currentState?.seekPending ? 'Syncing screens' : currentState?.allReady ? replay ? 'Replay video' : 'Play' : 'Waiting for every display';
   $('#screenPlay').setAttribute('aria-label', $('#screenPlay').title);
   $('#screenPage').textContent = currentState?.page || 1;
   $('#screenPageTotal').textContent = `/ ${currentState?.asset?.pageCount || '--'}`;
@@ -955,7 +977,7 @@ function videoFinished() {
 function togglePlayback() {
   if (!currentState?.asset || sessionMode === 'presentation') return;
   const currentPosition = sessionMode === 'youtube' && youtubeReady ? youtubePlayer.getCurrentTime() : video.currentTime;
-  command(currentState.playing ? { type: 'pause' } : { type: 'play', position: videoFinished() ? 0 : currentPosition || targetPosition(currentState) });
+  command(currentState.playing || currentState.seekResume ? { type: 'pause' } : { type: 'play', position: videoFinished() ? 0 : currentPosition || targetPosition(currentState) });
 }
 
 function scheduleTransferRecovery(asset) {
@@ -1103,11 +1125,13 @@ async function postStatus() {
         fileName: isYouTube ? (youtubePlayer?.getVideoData()?.title || currentState?.asset?.name || '') : (currentState?.asset?.name || ''), fileSize: currentState?.asset?.size || 0,
         duration: videoDuration,
         playbackTime: playbackTime, page: currentState?.page || 0,
+        seekId: appliedSeek?.key === `${currentState?.serverId}/${currentAssetVersion}/${currentState?.seekId}` ? appliedSeek.id : 0,
+        seeking: !isYouTube && Boolean(video.seeking),
         paused: isYouTube ? youtubePlayer?.getState() !== 1 : video.paused,
         ended: ['audio', 'video'].includes(sessionMode) && mediaElementVersion === currentAssetVersion && endedAssetVersion === currentAssetVersion,
         endId: endedAssetVersion === currentAssetVersion ? endedEventId : '',
         playerState: isYouTube ? youtubePlayer?.getState() : null,
-        buffering: sessionMode === 'presentation' ? !documentReady : isYouTube ? youtubePlayer?.getState() === 3 : !video.ended && endedAssetVersion !== currentAssetVersion && (video.readyState < 3 || sessionMode === 'audio' && audioWaiting),
+        buffering: sessionMode === 'presentation' ? !documentReady : isYouTube ? youtubePlayer?.getState() === 3 : !video.ended && endedAssetVersion !== currentAssetVersion && (video.seeking || video.readyState < 3 || audioWaiting),
         autoplayMuted: localAutoplayMuted || audioRouter?.state() === 'suspended',
         error: lastError,
       }),
@@ -1126,6 +1150,27 @@ async function postStatus() {
   } catch {
     markConnectionReconnecting();
   }
+}
+
+// An independent five-second checkpoint also repairs a missed event stream.
+// Refresh timing only: never reload the movie or seek an already aligned player.
+async function refreshTimeline() {
+  if (timelineCheckpointInFlight || !ready || !currentState?.asset || !['video', 'audio'].includes(sessionMode)) return;
+  timelineCheckpointInFlight = true;
+  const serverId = currentState.serverId;
+  const started = Date.now();
+  try {
+    const response = await fetch('/api/status', { cache: 'no-store', ...(typeof AbortSignal !== 'undefined' && AbortSignal.timeout ? { signal: AbortSignal.timeout(4000) } : {}) });
+    if (!response.ok) throw new Error('Timeline unavailable');
+    const data = await response.json();
+    if (currentState.serverId !== serverId) return;
+    const elapsed = Date.now() - started;
+    if (elapsed < 1000 && Number.isFinite(data.state?.serverTime)) serverOffset = data.state.serverTime - (started + elapsed / 2);
+    applyWhenReady(data.state);
+    correctDrift(data.state);
+    markConnectionLive();
+  } catch { markConnectionReconnecting(); }
+  finally { timelineCheckpointInFlight = false; }
 }
 
 // State is also fetched without SSE: some hotspots/proxies buffer event streams.
@@ -1399,6 +1444,7 @@ events.addEventListener('command', (event) => schedule(JSON.parse(event.data)));
 events.addEventListener('pulse', (event) => correctDrift(JSON.parse(event.data)));
 
 setInterval(postStatus, 2000);
+setInterval(refreshTimeline, 5000);
 setInterval(() => { if (!screenNumber || !currentState) fetchInitialState(); }, 3000);
 setInterval(syncClock, 30000);
 setInterval(() => {

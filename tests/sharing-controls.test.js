@@ -104,6 +104,6 @@ test('landing mode choices open workspaces with link sharing and health checks d
   assert.doesNotMatch(read('launcher.js'), /copyRoomLink|joinRoomForm|roomMessage/);
   assert.match(read('index.html'), /rooms-ui\.js/);
   assert.doesNotMatch(read('rooms-ui.js'), /roomCodeInput|room-identity|roomJoinForm|room-mode-field|Admin recovery key|Guests follow/);
-  assert.match(read('admin.html'), /href="\/share.html\?new=1" target="_blank"/);
+  assert.doesNotMatch(read('admin.html'), /href="\/share.html\?new=1" target="_blank"/);
   assert.match(read('launcher.js'), /fetch\('\/api\/health'/);
 });

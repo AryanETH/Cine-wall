@@ -70,7 +70,7 @@ function player(screen, mode = 'video', peer = null, fullscreen = async () => {}
   const state = { serverId: 'server-1', sessionMode: mode, allReady: true, screenCount: 3, playing: true, position: 12, anchorTime: Date.now(), serverTime: Date.now(), notBefore: 0, commandId: 7, mode: 'stretch',
     audioSettings: { 1: { volume: 1, muted: false }, 2: { volume: 1, muted: false }, 3: { volume: 1, muted: false } },
     asset: mode === 'youtube' ? { videoId: 'YE7VzlLtp-4', version: 'yt-test' } : { name: peer ? 'test.mkv' : 'test.mp4', version: 'movie-test', source: peer ? 'peer' : undefined } };
-  const statuses = [], documentHandlers = {}, timers = [];
+  const statuses = [], documentHandlers = {}, timers = [], intervals = [];
   const storage = () => ({ getItem: () => null, setItem() {}, removeItem() {} });
   const context = vm.createContext({ console, URLSearchParams, Math, Number, String, Boolean, Date, JSON, Promise, performance,
     location: { search: `?screen=${screen}`, origin: 'http://192.168.137.1:4173', href: `http://192.168.137.1:4173/screen.html?screen=${screen}` },
@@ -78,7 +78,7 @@ function player(screen, mode = 'video', peer = null, fullscreen = async () => {}
     document: { querySelector: node, addEventListener(name, handler) { documentHandlers[name] = handler; }, body: { dataset: {} }, documentElement: { requestFullscreen: fullscreen } },
     window: { addEventListener() {}, CineWallFilePeer: peer ? { FilePeer: class { constructor() { return peer; } } } : undefined },
     EventSource: class { addEventListener() {} },
-    setTimeout: (handler, delay) => { timers.push({ handler, delay }); return timers.length; }, clearTimeout() {}, setInterval() {},
+    setTimeout: (handler, delay) => { timers.push({ handler, delay }); return timers.length; }, clearTimeout() {}, setInterval(handler, delay) { intervals.push({ handler, delay }); },
     fetch: async (url, init) => {
       if (url.startsWith('/api/time')) return { ok: true, json: async () => ({ serverTime: Date.now() }) };
       if (init?.body) statuses.push(JSON.parse(init.body));
@@ -86,8 +86,48 @@ function player(screen, mode = 'video', peer = null, fullscreen = async () => {}
     },
   });
   vm.runInContext(fs.readFileSync(path.join(__dirname, '../public/screen.js'), 'utf8'), context);
-  return { context, state, nodes, statuses, documentHandlers, timers, evaluate: (code) => vm.runInContext(code, context) };
+  return { context, state, nodes, statuses, documentHandlers, timers, intervals, evaluate: (code) => vm.runInContext(code, context) };
 }
+
+test('five-second checkpoint recovers missed seeks once, including an ended or buffering guest', async () => {
+  const client = player(2); await nextTurn();
+  const video = client.nodes.get('#video'); video.currentTime = 299; video.ended = true; video.readyState = 2;
+  const target = { ...client.state, seekId: 8, commandId: 8, playing: false, position: 90, seekPending: true, serverTime: Date.now() };
+  let calls = 0;
+  client.context.fetch = async () => { calls++; return { ok: true, json: async () => ({ state: target }) }; };
+  const checkpoint = client.intervals.find(item => item.delay === 5000);
+  assert.ok(checkpoint, 'a dedicated five-second timeline refresh is registered');
+  await checkpoint.handler();
+  assert.equal(video.currentTime, 90); assert.equal(video.paused, true);
+  assert.equal(client.evaluate('appliedSeek.id'), 8);
+  video.currentTime = 89.9; video.seeking = true;
+  await checkpoint.handler();
+  assert.equal(video.currentTime, 89.9, 'the same checkpoint does not restart an in-progress seek');
+  video.seeking = false; video.readyState = 4; video.currentTime = 90; video.ended = false;
+  await client.evaluate('postStatus()');
+  assert.equal(calls, 3);
+  const newer = { ...target, commandId: 9, seekId: 9, position: 20 };
+  client.context.nextSeek = newer; client.evaluate('correctDrift(nextSeek)');
+  assert.equal(video.currentTime, 20);
+  await checkpoint.handler();
+  assert.equal(video.currentTime, 20, 'a delayed older response cannot rewind the newer seek');
+});
+
+test('timeline refresh does not overlap requests or reload an aligned movie', async () => {
+  const client = player(2); await nextTurn();
+  const video = client.nodes.get('#video');
+  const state = { ...client.state, playing: false, position: 12, commandId: 8 };
+  video.currentTime = 12;
+  let requests = 0, loads = 0, resolve;
+  video.load = () => { loads++; };
+  client.context.fetch = () => { requests++; return new Promise(done => { resolve = done; }); };
+  const first = client.evaluate('refreshTimeline()');
+  await client.evaluate('refreshTimeline()');
+  assert.equal(requests, 1);
+  resolve({ ok: true, json: async () => ({ state }) }); await first;
+  assert.equal(video.currentTime, 12); assert.equal(loads, 0);
+  assert.equal(client.evaluate('timelineCheckpointInFlight'), false);
+});
 
 test('every mode attempts fullscreen once on join, allows one-tap retry, and respects exiting fullscreen', async () => {
   for (const mode of ['video', 'audio', 'presentation', 'youtube']) {
@@ -140,6 +180,17 @@ test('native speaker drift uses small speed corrections without repeatedly seeki
   assert.equal(video.currentTime, 19.95); assert.ok(video.playbackRate > 1 && video.playbackRate <= 1.015);
   video.currentTime = client.evaluate('targetPosition(currentState)') + .05;
   client.evaluate('correctDrift(currentState, false)'); assert.ok(video.playbackRate < 1 && video.playbackRate >= .985);
+});
+
+test('buffering guests keep decoder progress and large drift seeks have a cooldown',async()=>{
+  const client=player(2);await nextTurn();const video=client.nodes.get('#video');
+  video.paused=false;video.currentTime=1;video.readyState=2;
+  client.evaluate('lastDriftSeek=-Infinity;currentState.playing=true;currentState.position=20;currentState.anchorTime=serverNow();correctDrift(currentState,false)');
+  assert.equal(video.currentTime,1,'buffer recovery is not interrupted by a clock seek');
+  video.readyState=4;video.seeking=true;client.evaluate('correctDrift(currentState,false)');assert.equal(video.currentTime,1);
+  video.seeking=false;client.evaluate('correctDrift(currentState,false)');assert.ok(video.currentTime>=20);
+  video.currentTime=2;client.evaluate('correctDrift(currentState,false)');assert.equal(video.currentTime,2,'no second seek while decoder recovers');
+  client.evaluate('lastDriftSeek-=3000;correctDrift(currentState,false)');assert.ok(video.currentTime>=20);
 });
 
 test('speaker waves freeze on native pause, buffering, ending and errors, and resume only with actual playback', async () => {

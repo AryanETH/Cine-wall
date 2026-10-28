@@ -31,6 +31,12 @@ test('issued room lifecycle rejects the audit attacks and coordinates joined dev
   assert.equal((await api('/api/status',undefined,admin,room)).data.state.screenCount,2);
   const stereo = await api('/api/command',{type:'video-view',videoView:'anaglyph',stereoSource:'sbs'},admin,room);
   assert.equal(stereo.status,200); assert.equal(stereo.data.command.videoView,'anaglyph');
+  assert.equal((await api('/api/command',{type:'video-view',videoView:'anaglyph',videoDepth:82},admin,room)).status,200);
+  assert.equal((await api('/api/status',undefined,guest,room)).data.state.videoDepth,82,'filter strength reaches guests');
+  for (const videoDepth of [-1,101,'60',null]) assert.equal((await api('/api/command',{type:'video-view',videoView:'anaglyph',videoDepth},admin,room)).status,400);
+  assert.equal((await api('/api/command',{type:'video-view',videoView:'anaglyph',videoDepth:0},guest,room)).status,403);
+  assert.equal((await api('/api/command',{type:'video-view',videoView:'anaglyph',videoDepth:0},admin,room)).status,200);
+  assert.equal((await api('/api/status',undefined,guest,room)).data.state.videoDepth,0,'zero strength is preserved');
   assert.equal((await api('/api/status',undefined,guest,room)).data.state.stereoSource,'sbs');
   assert.equal((await api('/api/command',{type:'video-view',videoView:'normal'},guest,room)).status,403);
   assert.equal((await api('/api/command',{type:'video-view',videoView:'wrong'},admin,room)).status,400);

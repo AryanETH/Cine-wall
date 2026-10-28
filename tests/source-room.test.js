@@ -57,7 +57,7 @@ test('hotspot room elects one source, blocks replacements, relays original range
   assert.ok(!JSON.stringify(published.data).includes(winner.key));
   assert.notEqual(saved.sourceOwner.hash, winner.key, 'admin secret is stored as a hash');
 
-  const served = [], errors = []; let skipNextReply = false;
+  const served = [], errors = [], replyOrder=[]; let skipNextReply = false, sourceDelay=0;
   const connectSource = () => new Promise((resolve, reject) => {
     stream = http.get(`${base}/events?peer=${peerId}`, { headers: headers(winner) }, (response) => {
       let buffered = ''; resolve();
@@ -70,8 +70,9 @@ test('hotspot room elects one source, blocks replacements, relays original range
           served.push(request);
           assert.ok(request.end - request.start + 1 <= 512 * 1024);
           if (skipNextReply) { skipNextReply = false; continue; }
-          fetch(`${base}/api/source/range?id=${request.id}`, { method: 'POST', headers: { ...headers(winner), 'Content-Type': 'application/octet-stream' }, body: bytes.subarray(request.start, request.end + 1) })
-            .then((reply) => { if (!reply.ok && reply.status !== 409) errors.push(new Error(`range response ${reply.status}`)); }).catch((error) => errors.push(error));
+          const send=()=>fetch(`${base}/api/source/range?id=${request.id}`, { method: 'POST', headers: { ...headers(winner), 'Content-Type': 'application/octet-stream' }, body: bytes.subarray(request.start, request.end + 1) })
+            .then((reply) => { replyOrder.push(request.start);if (!reply.ok && reply.status !== 409) errors.push(new Error(`range response ${reply.status}`)); }).catch((error) => errors.push(error));
+          if(sourceDelay&&request.start===0)setTimeout(send,sourceDelay);else send();
         }
       });
     }); stream.on('error', reject);
@@ -84,6 +85,10 @@ test('hotspot room elects one source, blocks replacements, relays original range
   }));
   assert.deepEqual(ranges[0], bytes.subarray(0, 1200000)); assert.deepEqual(ranges[1], bytes.subarray(bytes.length - 23));
   assert.ok(served.length >= 4); assert.deepEqual(errors, []);
+  replyOrder.length=0;sourceDelay=150;
+  const pipelined=await fetch(`${base}/api/media/stream?v=${assetVersion}`,{headers:{Range:'bytes=0-1048575'}});
+  assert.deepEqual(Buffer.from(await pipelined.arrayBuffer()),bytes.subarray(0,1048576));
+  assert.equal(replyOrder[0],512*1024,'second read overlaps the delayed first read; returned bytes still stay in order');sourceDelay=0;
   const head = await fetch(`${base}/api/media/stream?v=${assetVersion}`, { method: 'HEAD', headers: { Range: 'bytes=10-19' } });
   assert.equal(head.status, 206); assert.equal(head.headers.get('content-length'), '10');
   assert.equal((await fetch(`${base}/api/media/stream?v=stale`)).status, 409);
@@ -121,6 +126,37 @@ test('hotspot room elects one source, blocks replacements, relays original range
     assert.equal(stale.status,409, 'delayed controls from the previous song must be rejected');
     assert.equal((await api('/api/status')).data.state.playing,true);
   }
+  const jump = await api('/api/command', winner, { type: 'seek', position: 42, assetVersion });
+  assert.equal(jump.data.command.playing, false, 'the shared clock freezes while guests fetch the new range');
+  assert.equal(jump.data.command.seekPending, true);
+  assert.equal((await play()).status, 409, 'play cannot bypass a pending seek');
+  const firstSeek = jump.data.command.seekId;
+  await joined(1, assetVersion, { seekId: firstSeek, paused: true, playbackTime: 42, duration: 60 });
+  await joined(2, assetVersion, { seekId: firstSeek, paused: true, playbackTime: 42, buffering: true });
+  assert.equal((await api('/api/status')).data.state.playing, false, 'one buffering guest holds the room');
+  const newerJump = await api('/api/command', winner, { type: 'seek', position: 12, assetVersion });
+  const secondSeek = newerJump.data.command.seekId;
+  assert.ok(secondSeek > firstSeek);
+  await joined(1, assetVersion, { seekId: firstSeek, paused: true, playbackTime: 12 });
+  await joined(2, assetVersion, { seekId: secondSeek, paused: true, playbackTime: 12 });
+  assert.equal((await api('/api/status')).data.state.seekPending, true, 'an old acknowledgement cannot complete the latest jump');
+  await joined(1, assetVersion, { seekId: secondSeek, paused: true, playbackTime: 12, seeking: true });
+  assert.equal((await api('/api/status')).data.state.playing, false, 'native seeking must finish');
+  const resumed = await joined(1, assetVersion, { seekId: secondSeek, paused: true, playbackTime: 12 });
+  assert.equal(resumed.data.state.playing, true, 'the latest jump retains the original play intent');
+  assert.equal(resumed.data.state.seekPending, false);
+  assert.equal(resumed.data.state.position, 12);
+  assert.ok(resumed.data.state.notBefore > resumed.data.state.serverTime, 'every screen receives one future resume time');
+  const cancelled = await api('/api/command', winner, { type: 'seek', position: 30, assetVersion });
+  await api('/api/command', winner, { type: 'pause', assetVersion });
+  for (const screen of [1, 2]) await joined(screen, assetVersion, { seekId: cancelled.data.command.seekId, paused: true, playbackTime: 30 });
+  assert.equal((await api('/api/status')).data.state.playing, false, 'pause cancels automatic resume');
+  const pausedJump = await api('/api/command', winner, { type: 'seek', position: 5, assetVersion });
+  for (const screen of [1, 2]) await joined(screen, assetVersion, { paused: true, playbackTime: 5 });
+  assert.equal((await api('/api/status')).data.state.seekPending, false, 'older guests can acknowledge a settled position');
+  assert.equal((await api('/api/status')).data.state.playing, false, 'seeking while paused stays paused');
+  assert.ok(pausedJump.data.command.seekId > secondSeek);
+  await play();
   await joined(2, assetVersion, { instantConnection: 'connected' });
   assert.equal((await api('/api/status')).data.screens.find(screen => screen.screen === 2).instantConnection, 'connected');
   await joined(2, assetVersion, { instantConnection: '<script>not a valid state</script>' });
