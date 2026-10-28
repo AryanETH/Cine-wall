@@ -24,10 +24,10 @@
   <script src="icons.js?v=20261002-icons-18"></script>
   <script src="theme.js"></script>
   <script src="device-support.js?v=20261025-mobile-42"></script>
-  <script src="session.js?v=20261027-links-3"></script>
+  <script src="session.js?v=20261028-links-5"></script>
   <script src="media-peer.js?v=20261027-entry-2"></script>
   <script src="video-validation.js?v=20261002-mkv-17"></script>
-  <link rel="stylesheet" href="styles.css?v=20261024-audio-39">
+  <link rel="stylesheet" href="styles.css?v=20261028-stereo-1">
   <link rel="stylesheet" href="studio.css?v=20261005-audio-37">
   <link rel="stylesheet" href="device-support.css?v=20261025-mobile-42">
   <link rel="stylesheet" href="/rooms.css?v=20261027-links-3">
@@ -171,6 +171,16 @@
             <h3 id="framingHeading">Picture fit</h3>
             <div id="modeControls" class="segmented"><button data-mode="fit">Fit</button><button data-mode="crop">Crop</button><button data-mode="stretch">Stretch</button></div>
           </div>
+          <div id="videoViewPanel" class="video-view-panel">
+            <h3>Video view</h3>
+            <div id="videoViewControls" class="segmented" role="group" aria-label="Video view">
+              <button type="button" data-video-view="normal" aria-pressed="true">Normal</button>
+              <button type="button" data-video-view="anaglyph" aria-pressed="false">3D view</button>
+            </div>
+            <label for="stereoSource">Video type</label>
+            <select id="stereoSource"><option value="2d">2D video (simulated)</option><option value="sbs">3D side-by-side (half width)</option><option value="sbs-full">3D side-by-side (full width)</option></select>
+            <p id="videoViewHint" role="status">Red/cyan glasses: red lens left. True depth needs a side-by-side 3D file.</p>
+          </div>
           <div id="audioModePanel" class="audio-mode-panel">
             <h3>Sound mode</h3>
             <div id="audioModeControls" class="segmented" role="group" aria-label="Sound mode">
@@ -193,6 +203,7 @@
     <section id="player" class="player-console">
       <div id="previewStage" class="preview-stage">
         <video id="mediaPreview" playsinline preload="metadata"></video>
+        <canvas id="previewAnaglyph" class="video-anaglyph" aria-label="Red/cyan 3D video preview" hidden></canvas>
         <div id="audioPreview" class="audio-visual" hidden>
           <span class="audio-orbit"><i class="fi">&#xE8D6;</i></span>
           <div class="audio-bars" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
@@ -209,6 +220,7 @@
         <div id="gestureFeedback" class="gesture-feedback" aria-live="polite"></div>
         <div class="preview-badge"><span class="fi" aria-hidden="true">&#xE74F;</span><span id="previewBadgeText">10s preview</span></div>
         <button id="try3d" class="preview-3d-toggle" type="button" aria-pressed="false" hidden>Try in 3D</button>
+        <button id="video3dToggle" class="preview-3d-toggle" type="button" aria-pressed="false" hidden>3D view</button>
         <button id="replayPreview" class="trailer-replay" type="button" hidden>↻ Replay 10s preview</button>
       </div>
 
@@ -262,7 +274,8 @@
   <script src="dashboard-guide.js?v=20261005-guide-33"></script>
   <script src="audio-layout.js?v=20261024-audio-39"></script>
   <script src="playback-version.js?v=20261027-entry-2"></script>
-  <script src="desktop-entry.js?v=20261025-mobile-42" data-src="admin.js?v=20261027-entry-2"></script>
+  <script src="video-3d.js?v=20261028-stereo-1"></script>
+  <script src="desktop-entry.js?v=20261025-mobile-42" data-src="admin.js?v=20261028-stereo-1"></script>
   <script src="youtube-download.js?v=20261004-studio-25"></script>
   <script src="/rooms-ui.js?v=20261027-links-4"></script>
 </body>

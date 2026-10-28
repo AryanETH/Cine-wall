@@ -2,6 +2,7 @@
 
 const $ = (selector) => document.querySelector(selector);
 const media = $('#mediaPreview');
+const video3d = window.CineWallVideo3D?.create(media, $('#previewAnaglyph'), { onError: text => { $('#videoViewHint').textContent = text; } });
 const timeline = $('#timeline');
 const screenLinks = $('#screenLinks');
 const warning = $('#fileWarning');
@@ -320,6 +321,21 @@ function renderModeShell() {
   $('#adminFileLabel').textContent = state.sessionMode === 'audio' ? 'Add songs' : state.asset ? `Change ${config.label.toLowerCase()}` : config.button;
   $('#framingPanel').hidden = state.sessionMode === 'audio';
   $('#audioModePanel').hidden = !['video', 'audio'].includes(state.sessionMode);
+  $('#videoViewPanel').hidden = state.sessionMode !== 'video';
+  const videoView = state.videoView === 'anaglyph';
+  $('#videoViewControls').querySelectorAll('[data-video-view]').forEach(button => {
+    const active = button.dataset.videoView === (state.videoView || 'normal');
+    button.classList.toggle('active', active); button.setAttribute('aria-pressed', String(active));
+  });
+  if (document.activeElement !== $('#stereoSource')) $('#stereoSource').value = state.stereoSource || '2d';
+  $('#stereoSource').disabled = sourceLocked();
+  $('#videoViewHint').textContent = video3d?.available === false ? '3D view is unavailable on this device. Showing Normal.' : (state.stereoSource || '2d') === '2d'
+    ? 'Red lens left, cyan right. 2D uses a simulated filter; true depth needs a side-by-side 3D file.'
+    : 'Red lens left, cyan right. Left-eye image first in the side-by-side file.';
+  const viewToggle = $('#video3dToggle');
+  viewToggle.hidden = state.sessionMode !== 'video'; viewToggle.disabled = sourceLocked() || uploadBusy || isPreparing();
+  viewToggle.textContent = videoView ? '3D view on' : '3D view';
+  viewToggle.setAttribute('aria-pressed', String(videoView)); viewToggle.classList.toggle('active', videoView);
   $('#audioModeControls').querySelectorAll('[data-audio-mode]').forEach((button) => {
     const active = button.dataset.audioMode === (state.audioMode || 'personal');
     button.classList.toggle('active', active);
@@ -624,6 +640,7 @@ function renderPlayer() {
     if (hasAsset && titledScreen?.fileName) state.asset.name = titledScreen.fileName;
   }
   setPreviewKind();
+  video3d?.set({ active: state.sessionMode === 'video' && state.videoView === 'anaglyph' && Boolean(hasAsset || localPreview), source: state.stereoSource || '2d', fit: 'fit', screens: 1, index: 0 });
   if (hasAsset && ['video', 'audio'].includes(state.sessionMode) && !Number.isFinite(media.duration)) {
     duration = Math.max(duration || 0, ...status.screens.filter((screen) => screen.mediaReady && screen.screen <= state.screenCount).map((screen) => Number(screen.duration) || 0));
   }
@@ -827,6 +844,12 @@ $('#audioModeControls').addEventListener('click', (event) => {
 $('#try3d').addEventListener('click', () => {
   if (status.state.sessionMode === 'audio') command({ type: 'audio-mode', audioMode: status.state.audioMode === '3d' ? 'personal' : '3d' });
 });
+$('#videoViewControls').addEventListener('click', event => {
+  const button = event.target.closest('[data-video-view]');
+  if (button) command({ type: 'video-view', videoView: button.dataset.videoView });
+});
+$('#video3dToggle').addEventListener('click', () => command({ type: 'video-view', videoView: status.state.videoView === 'anaglyph' ? 'normal' : 'anaglyph' }));
+$('#stereoSource').addEventListener('change', event => command({ type: 'video-view', videoView: status.state.videoView || 'normal', stereoSource: event.target.value }));
 
 timeline.addEventListener('pointerdown', () => { scrubbing = true; });
 timeline.addEventListener('input', () => { scrubbing = true; $('#currentTime').textContent = formatTime(Number(timeline.value)); });
@@ -1271,7 +1294,7 @@ media.addEventListener('error', async () => {
   warning.classList.add('show');
 });
 
-window.addEventListener('pagehide', releaseLocalPreview);
+window.addEventListener('pagehide', () => { video3d?.dispose(); releaseLocalPreview(); });
 function startTrailer() { if (status.state.sessionMode !== 'video' || !media.getAttribute('src')) return; media.muted = true; media.loop = false; media.currentTime = 0; media.play().catch(() => {}); }
 media.addEventListener('loadeddata', () => { captureSourcePoster(); if (trailerKey !== loadedMediaVersion) { trailerKey = loadedMediaVersion; startTrailer(); } });
 media.addEventListener('seeked', captureSourcePoster);

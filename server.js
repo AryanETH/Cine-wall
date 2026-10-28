@@ -79,6 +79,8 @@ let state = {
   mode: 'stretch',
   screenCount: record ? 1 : 2,
   audioMode: 'personal',
+  videoView: 'normal',
+  stereoSource: '2d',
   audioSettings: defaultAudioSettings(true),
   youtubeAudioMode: 'admin',
   asset: null,
@@ -97,6 +99,8 @@ try {
       && (!savedPath || savedPath.startsWith(`${CACHE_DIR}${path.sep}`) && fs.existsSync(savedPath))) {
     state = { ...state, ...saved.state, playing: false, notBefore: 0, anchorTime: Date.now() };
     if (!['personal', '3d'].includes(state.audioMode)) state.audioMode = 'personal';
+    if (!['normal', 'anaglyph'].includes(state.videoView)) state.videoView = 'normal';
+    if (!['2d', 'sbs', 'sbs-full'].includes(state.stereoSource)) state.stereoSource = '2d';
     assetFile = saved.assetFile;
     commandSequence = Number(state.commandId) || 0;
     sourceOwner = saved.sourceOwner || null;
@@ -353,6 +357,11 @@ function applyCommand(input) {
     if (!['fit', 'crop', 'stretch'].includes(input.mode)) throw new Error('Unknown wall framing');
     if (['presentation', 'youtube'].includes(state.sessionMode) && input.mode === 'stretch') throw new Error('Stretch is not available in this mode');
     state = { ...state, mode: input.mode };
+  } else if (type === 'video-view') {
+    if (state.sessionMode !== 'video') throw new Error('3D view is only available for video files.');
+    if (!['normal', 'anaglyph'].includes(input.videoView)) throw new Error('Unknown video view.');
+    if (input.stereoSource !== undefined && !['2d', 'sbs', 'sbs-full'].includes(input.stereoSource)) throw new Error('Unknown stereo source.');
+    state = { ...state, videoView: input.videoView, stereoSource: input.stereoSource || state.stereoSource };
   } else if (type === 'audio-mode') {
     if (!['video', 'audio'].includes(state.sessionMode)) throw new Error('3D mode is only available for video and audio');
     if (!['personal', '3d'].includes(input.audioMode)) throw new Error('Unknown sound mode');
@@ -1179,7 +1188,18 @@ function serveStatic(req, res, pathname) {
 }
 
 
-const roomRegistry = createRooms(CACHE_ROOT);
+// Keep small ownership records separate from disposable movie uploads. Railway
+// exposes this path when a persistent volume is attached; no secrets in links.
+const ROOM_STORE_ROOT = path.resolve(process.env.CINEWALL_ROOM_STORE_DIR || (process.env.RAILWAY_VOLUME_MOUNT_PATH ? path.join(process.env.RAILWAY_VOLUME_MOUNT_PATH, 'cinewall') : CACHE_ROOT));
+if (ROOM_STORE_ROOT !== CACHE_ROOT) {
+  const oldRecords = path.join(CACHE_ROOT, 'room-records'), target = path.join(ROOM_STORE_ROOT, 'room-records');
+  fs.mkdirSync(target, { recursive: true });
+  if (fs.existsSync(oldRecords)) for (const file of fs.readdirSync(oldRecords)) if (/^[a-f0-9-]{36}\.json$/.test(file)) {
+    try { fs.copyFileSync(path.join(oldRecords, file), path.join(target, file), fs.constants.COPYFILE_EXCL); }
+    catch (error) { if (error.code !== 'EEXIST') throw error; }
+  }
+}
+const roomRegistry = createRooms(ROOM_STORE_ROOT);
 function getSession(record) {
   if (!sessions.has(record.id)) sessions.set(record.id, createSession(record.id, record));
   return sessions.get(record.id);
@@ -1196,7 +1216,7 @@ const requestHandler = async (req, res) => {
     return;
   }
 
-  if (req.method === 'GET' && url.pathname === '/api/health') { respondJson(res, 200, { ok: true }); return; }
+  if (req.method === 'GET' && url.pathname === '/api/health') { respondJson(res, 200, { ok: true, roomLinksExpire: false, roomStorage: process.env.RAILWAY_VOLUME_MOUNT_PATH ? 'persistent-volume' : 'filesystem' }); return; }
   const room = url.searchParams.get('room') || '';
   if (room || /^\/(?:api\/|events$|share-events$|mic-events$|__cinewall_peer__\/|(?:admin|screen|share|mic)\.html$)/.test(url.pathname)) res.setHeader('X-Robots-Tag', 'noindex, nofollow');
   if (room && !/^[a-f0-9-]{36}$/.test(room)) { respondJson(res, 400, { error: 'Invalid room link.' }); return; }
@@ -1244,7 +1264,7 @@ const cleanup = setInterval(() => {
     if (directory.startsWith(path.resolve(CACHE_ROOT, 'rooms') + path.sep)) fs.rm(directory, { recursive: true, force: true }, () => {});
   }
   downloads.cleanup?.();
-  cacheBudget.removeExpired(path.join(CACHE_ROOT, 'rooms'), 24 * 60 * 60 * 1000, new Set([...roomRegistry.records.keys()].map(id => path.join(CACHE_ROOT, 'rooms', id))));
+  cacheBudget.removeExpired(path.join(CACHE_ROOT, 'rooms'), 24 * 60 * 60 * 1000, new Set([...sessions.keys()].filter(Boolean).map(id => path.join(CACHE_ROOT, 'rooms', id))));
 }, 60000); cleanup.unref();
 function shutdown() { clearInterval(pulse); clearInterval(cleanup); for (const session of sessions.values()) session.close(); downloads.shutdown(); server.close(); server.closeIdleConnections?.(); const timer = setTimeout(() => process.exit(0), 5000); timer.unref(); }
 process.once('SIGTERM', shutdown); process.once('SIGINT', shutdown);

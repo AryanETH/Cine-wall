@@ -60,15 +60,24 @@
   async function roomRequest(action, body) {
     const response = await nativeFetch(`/api/rooms/${action}`, { method: 'POST', headers: { ...identityHeaders, 'Content-Type': 'application/json' }, body: JSON.stringify(body), ...(typeof AbortSignal !== 'undefined' && AbortSignal.timeout ? { signal: AbortSignal.timeout(10000) } : {}) });
     const data = await response.json();
-    if (!response.ok) throw new Error(data.error || 'Could not connect to this room.');
+    if (!response.ok) throw Object.assign(new Error(data.error || 'Could not connect to this room.'), { status: response.status });
     return remember(data);
   }
   const ready = room ? (async () => {
     let saved; try { saved = JSON.parse(storage.get(`cinewall-room-${room}`) || 'null'); } catch {}
     let inherited; try { if (window.opener?.location.origin === location.origin && window.opener.CineWallSession?.room === room) inherited = window.opener.CineWallSession.membership?.ticket; } catch {}
     const ticket = page.searchParams.get('access') || saved?.ticket || inherited;
-    const data = ticket ? await roomRequest('resume', { room, ticket }) : await roomRequest('join', { room, screen: Number(page.searchParams.get('screen') || page.searchParams.get('speaker')) || undefined, role: page.searchParams.get('role') });
-    if (saved?.recoveryKey) { data.recoveryKey = saved.recoveryKey; storage.set(`cinewall-room-${room}`, JSON.stringify(data)); }
+    const join = () => roomRequest('join', { room, screen: Number(page.searchParams.get('screen') || page.searchParams.get('speaker')) || undefined, role: page.searchParams.get('role') });
+    let data;
+    try { data = ticket ? await roomRequest('resume', { room, ticket }) : await join(); }
+    catch (error) {
+      const guestLink = page.pathname === '/screen.html' || page.searchParams.has('screen') || page.searchParams.has('speaker') || page.searchParams.get('role') === 'phone';
+      // A stale guest ticket must not strand an otherwise valid device link.
+      // Never silently downgrade a source browser whose admin access is lost.
+      if (error.status !== 403 || !guestLink || saved?.admin) throw error;
+      storage.remove(`cinewall-room-${room}`); data = await join();
+    }
+    if (data.admin && saved?.recoveryKey && saved.ticket === data.ticket) { data.recoveryKey = saved.recoveryKey; storage.set(`cinewall-room-${room}`, JSON.stringify(data)); }
     if (!followsPath(data)) { navigate(data, true); return new Promise(() => {}); }
     return data;
   })() : requiresRoom ? (async () => {

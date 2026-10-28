@@ -65,7 +65,7 @@ test('microphone and sharing joins allocate proper roles and bounded receiver sl
   for (let n=1;n<=10;n++) assert.equal(rooms.join(request(), { code: share.code }).screen, n);
   assert.throws(() => rooms.join(request(), { code: share.code }), { status: 409 });
 });
-test('unknown IDs never allocate rooms; creation, guessing, capacity and expiry are bounded', t => {
+test('unknown IDs never allocate rooms; creation and guessing are bounded while issued links remain durable', t => {
   let now = 1000; const { rooms } = fixture(t, { now: () => now, limit: 2 });
   for (let i=0;i<100;i++) assert.throws(() => rooms.lookup(randomUUID()), { status: 404 });
   assert.equal(rooms.records.size, 0);
@@ -73,7 +73,20 @@ test('unknown IDs never allocate rooms; creation, guessing, capacity and expiry 
   assert.throws(() => rooms.create(request(), 'video'), { status: 503 });
   const guessing = request(); for (let i=0;i<30;i++) assert.throws(() => rooms.join(guessing, { code: 'WRONG-ID' }), { status: 404 });
   assert.throws(() => rooms.join(guessing, { code: first.code }), { status: 429 });
-  now += 24*60*60*1000+1; assert.equal(rooms.prune().length, 2); assert.equal(rooms.records.size, 0);
+  now += 365*24*60*60*1000; assert.equal(rooms.prune().length, 0); assert.equal(rooms.records.size, 2);
+  assert.equal(rooms.lookup(first.room).id, first.room);
+});
+
+test('admin and guest memberships survive a year idle, pruning and a registry restart', t => {
+  let now = Date.now(); const { root, rooms } = fixture(t, { now: () => now });
+  const admin = request(), guest = request(), created = rooms.create(admin, 'video');
+  const joined = rooms.join(guest, { room: created.room, screen: 2 });
+  now += 365*24*60*60*1000; rooms.prune();
+  const restored = createRooms(root, { now: () => now });
+  assert.equal(restored.resume(admin, { room: created.room, ticket: 'stale' }).admin, true);
+  assert.equal(restored.resume(guest, { room: created.room, ticket: joined.ticket }).screen, 2);
+  assert.equal(restored.lookup(created.code).id, created.room);
+  assert.throws(() => restored.resume(request(), { room: created.room, ticket: 'stale' }), { status: 403 });
 });
 
 test('fake edge and IP headers do not bypass limits when proxy trust is disabled', t => {

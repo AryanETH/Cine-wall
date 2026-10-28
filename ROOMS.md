@@ -6,18 +6,18 @@ The source browser retains its membership locally. Reloading its dashboard URL r
 
 Video and Audio reserve Display/Speaker 1 for the creator. Screen sharing supports ten assigned receivers and Mic and Speaker supports one phone plus three speakers. Admins manage layout and sources; guests can change their own sound. Removing a receiver revokes its membership. Reopening a shared link can obtain an available slot. Shared links never contain the host's membership ticket.
 
-Sessions expire after 24 hours of inactivity. Membership and ownership persist in the configured cache directory, so preserving that directory preserves sessions across server restarts. Ephemeral hosted storage can be lost on redeployment. All participants must use links from the same server. Phone capture still requires trusted HTTPS. Losing the source browser's saved access requires starting a new workspace; recovery is no longer offered in the UI.
+Shared room links and ownership records do not expire on inactivity. Membership and ownership persist in CINEWALL_ROOM_STORE_DIR, or automatically under the Railway volume mount when one is attached. Without persistent storage, container replacement can still lose room records; never promise permanent links on ephemeral storage. The source browser resumes admin access with its private device identity. Guests with a stale ticket automatically rejoin a valid device link, subject to room capacity. All participants must use links from the same server. Phone capture still requires trusted HTTPS. Losing the source browser's saved access requires starting a new workspace; recovery is no longer offered in the UI.
 
 Player controls update their visible state immediately. Player mute/unmute also changes the local output before waiting for the server. Pending sound changes survive stale events, and separate speaker controls do not wait behind playback requests. Play uses a short common start scheduled 120 ms ahead to coordinate devices; mute, volume, pause and seek no longer receive an artificial server delay. Network latency, browser sound permissions and device output latency still apply. The dashboard keeps focus when Play is pressed.
 
 ## Server safeguards
 
 - Public pages and `/api/health` do not allocate rooms. Unknown UUIDs do not create sessions.
-- Creation is limited to 12 attempts per client address per hour; joining, resuming and recovery have separate 30-attempt-per-minute limits. The server permits 64 issued rooms.
+- Creation is limited to 12 attempts per client address per hour; joining, resuming and recovery have separate 30-attempt-per-minute limits. The server permits 4,096 issued rooms; creation and guessing remain rate limited.
 - Member identity or an issued room ticket authenticates requests. Movie/audio event peers are bound to their device; a different device cannot replace a stream or send messages as that peer. Readiness reports are restricted to the assigned numbered player.
 - One physical page shares one movie/audio EventSource connection between the player/dashboard and file transport.
 - `CINEWALL_CACHE_LIMIT_GB` sets the aggregate cache budget in GiB (default 100). Uploads and download/copy operations reserve capacity before writing. Download intermediates are included in reservations and checked periodically. Insufficient free space rejects work rather than accepting another large copy.
-- Inactive rooms and their cached copies expire after 24 hours. Ready downloads expire after 24 hours without access; error/cancelled download directories expire after five minutes. Active jobs and downloads being read are protected. Original files on the user's laptop are unaffected.
+- Room identities are retained; disposable cached media expires after 24 hours of inactivity. Ready downloads expire after 24 hours without access; error/cancelled download directories expire after five minutes. Active jobs and downloads being read are protected. Original files on the user's laptop are unaffected.
 - The unfinished server-side Office/presentation preparation route is disabled. Use Screen sharing for slides/documents. The remaining fallback parser also has input, entry and expansion limits as defense in depth.
 - Root APIs without an issued room are disabled by default. `CINEWALL_LEGACY_LOCAL=1` exists for explicit legacy LAN compatibility and transport fixtures; hosted mode never enables that bypass.
 
@@ -26,3 +26,11 @@ Proxy-header trust is disabled by default, including for caller-supplied edge ma
 ## Verification
 
 Run `npm run check`, `npm test`, and `npm run test:preparation` (the last needs FFmpeg). Syntax checks discover all first-party JavaScript entry points. New tests cover short IDs, independent slots and roles, unknown-room floods, impersonation and readiness rejection, receiver removal, persistence, expiry, recovery, quotas, immediate mute/unmute, stale events and independent control queues. Browser checks should include separate origins/devices and real media transfer, not only an admin and player sharing browser storage.
+
+## Red/cyan video view
+
+Video Settings and the preview's top-right button offer Normal and 3D view. The admin selects it once for the preview and all joined displays; it does not change the source file, playback clock or audio mode. Wear red-left/cyan-right glasses. Choose 2D (simulated filter), half-width side-by-side or full-width side-by-side footage. The 2D option is a fixed stereo shift, not scene-depth reconstruction. True stereoscopic depth requires distinct left/right images in the source. Eye order is left first. Embedded YouTube players and screen sharing are not filtered; supported files (including downloaded files) use the native video element.
+
+A local WebGL compositor combines the left image's red channel with the right image's green/blue channels. It renders each laptop's full-wall slice with common framing, using decoded video frame callbacks, and falls back to native Normal playback if WebGL or frame access fails. Normal disables the compositor. No model download, paid conversion, extra video/audio stream or third-party upload is needed. Framebuffers are capped at 1920 by 1080 per device; physical glasses/depth comfort still needs testing on real displays.
+
+Research: https://developer.mozilla.org/en-US/docs/Web/API/WebGL_API/Tutorial/Animating_textures_in_WebGL ; https://developer.mozilla.org/en-US/docs/Web/API/HTMLVideoElement/requestVideoFrameCallback ; https://threejs.org/docs/pages/AnaglyphEffect.html . Three.js's effect is for stereo rendering of 3D scenes; CineWall samples its existing video instead of adding a 3D scene library.

@@ -12,11 +12,10 @@ function identity(req) {
   return { id, hash: hash(key) };
 }
 const same = (a, b) => Boolean(a && b && a.id === b.id && a.hash === b.hash);
-module.exports = function createRooms(root, { now = Date.now, limit = 64 } = {}) {
+module.exports = function createRooms(root, { now = Date.now, limit = 4096 } = {}) {
   const directory = path.join(root, 'room-records');
   fs.mkdirSync(directory, { recursive: true });
   const records = new Map(), codes = new Map(), rates = new Map();
-  const lifetime = 24 * 60 * 60 * 1000;
   function save(record) {
     record.savedAt = now();
     const file = path.join(directory, `${record.id}.json`), temporary = `${file}.tmp`;
@@ -25,7 +24,7 @@ module.exports = function createRooms(root, { now = Date.now, limit = 64 } = {})
   for (const file of fs.readdirSync(directory)) if (/^[a-f0-9-]{36}\.json$/.test(file)) {
     try {
       const record = JSON.parse(fs.readFileSync(path.join(directory, file), 'utf8'));
-      if (record.id + '.json' !== file || !/^[A-Z2-9]{8}$/.test(record.code) || !Array.isArray(record.members) || record.members.length > 20 || !record.admin || !record.recoveryHash || record.lastUsed < now() - lifetime) continue;
+      if (record.id + '.json' !== file || !/^[A-Z2-9]{8}$/.test(record.code) || !Array.isArray(record.members) || record.members.length > 20 || !record.admin || !record.recoveryHash) continue;
       records.set(record.id, record); codes.set(record.code, record.id);
     } catch { /* Ignore incomplete records; never guess an owner. */ }
   }
@@ -45,7 +44,7 @@ module.exports = function createRooms(root, { now = Date.now, limit = 64 } = {})
   function lookup(value) {
     const input = String(value || '').trim(), clean = input.toUpperCase().replace(/[\s-]/g, '');
     const record = records.get(input) || records.get(codes.get(clean));
-    if (!record || record.lastUsed < now() - lifetime) fail('Room not found or expired. Check the room ID.', 404);
+    if (!record) fail('This shared room is unavailable on this server.', 404);
     return record;
   }
   function member(record, device) { return record.members.find(item => same(item.device, device)); }
@@ -133,9 +132,13 @@ module.exports = function createRooms(root, { now = Date.now, limit = 64 } = {})
   }
   function removeMembers(record, predicate) { const removed = record.members.filter(m => !isAdmin(record, m.device) && predicate(m)); record.members = record.members.filter(m => !removed.includes(m)); save(record); return removed; }
   function resume(req, body) {
-    throttle(req, 'resume'); const record = lookup(body.room), item = record.members.find(m => m.ticket === body.ticket);
-    if (!item) fail('This room connection expired. Join again with the room ID.', 403);
-    record.lastUsed = now(); return result(record, item);
+    throttle(req, 'resume'); const record = lookup(body.room);
+    // The source browser's private device key can restore its own membership
+    // even if a stale ticket is saved. A shared URL never grants admin access.
+    const own = req.headers['x-cinewall-device'] ? member(record, identity(req)) : null;
+    const item = own || record.members.find(m => m.ticket === body.ticket);
+    if (!item) fail('This saved connection is no longer valid. Reopen the shared device link.', 403);
+    record.lastUsed = now(); save(record); return result(record, item);
   }
   function recover(req, body) {
     throttle(req, 'recover'); const record = lookup(body.code), actual = Buffer.from(hash(body.recoveryKey || '')), expected = Buffer.from(record.recoveryHash);
@@ -148,10 +151,10 @@ module.exports = function createRooms(root, { now = Date.now, limit = 64 } = {})
     return result(record, item);
   }
   function prune() {
-    const expired = [];
-    for (const [id, record] of records) if (record.lastUsed < now() - lifetime) { records.delete(id); codes.delete(record.code); expired.push(id); fs.rmSync(path.join(directory, `${id}.json`), { force: true }); }
+    // Shared room identities are durable. Only their disposable media cache
+    // may expire; never delete ownership or invitation records on an idle timer.
     for (const [key, entry] of rates) if (entry.until < now()) rates.delete(key);
-    return expired;
+    return [];
   }
   return { create, join, resume, recover, lookup, authorize, requireAdmin, switchMode, isAdmin, member, removeMembers, result, prune, identity, records };
 };

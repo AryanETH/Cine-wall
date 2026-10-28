@@ -29,6 +29,11 @@ test('issued room lifecycle rejects the audit attacks and coordinates joined dev
   assert.equal((await api('/api/rooms/resume',{room,ticket:'wrong'},stranger)).status,403);
   assert.equal((await api('/api/status',undefined,stranger,room)).status,403);
   assert.equal((await api('/api/status',undefined,admin,room)).data.state.screenCount,2);
+  const stereo = await api('/api/command',{type:'video-view',videoView:'anaglyph',stereoSource:'sbs'},admin,room);
+  assert.equal(stereo.status,200); assert.equal(stereo.data.command.videoView,'anaglyph');
+  assert.equal((await api('/api/status',undefined,guest,room)).data.state.stereoSource,'sbs');
+  assert.equal((await api('/api/command',{type:'video-view',videoView:'normal'},guest,room)).status,403);
+  assert.equal((await api('/api/command',{type:'video-view',videoView:'wrong'},admin,room)).status,400);
   assert.equal((await api('/api/status',{clientId:'fake',screen:1,ready:true,mediaReady:true},guest,room)).status,403);
   assert.equal((await api('/api/command',{type:'screen-audio',screen:1,muted:true},guest,room)).status,403);
   const ownSound = await api('/api/command',{type:'screen-audio',screen:2,muted:true,volume:.4},guest,room);

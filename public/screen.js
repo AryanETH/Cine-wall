@@ -5,6 +5,7 @@ const CLIENT_BUILD = window.CineWallPlayback?.build || '';
 const filePeer = window.CineWallFilePeer ? new window.CineWallFilePeer.FilePeer() : null;
 const $ = (selector) => document.querySelector(selector);
 const video = $('#video');
+const video3d = window.CineWallVideo3D?.create(video, $('#wallAnaglyph'), { onError: text => { const label = $('#video3dStatus'); label.textContent = text; label.hidden = false; } });
 const audioRouter = window.CineWallAudioLayout?.createRouter(video);
 const stage = $('#wallStage');
 const youtubeViewport = $('#youtubeViewport');
@@ -590,6 +591,7 @@ function applyStateAppearance(nextState) {
   if (previousAudioMode !== nextState.audioMode && nextState.playing && ready) resumeRoutedAudio();
 
   if (removedScreenNumber) {
+    video3d?.set({ active: false });
     // Keep the original numbered link, never replace it with the admin slot.
     // Stop media reads/audio and leave only a passive removal message.
     video.pause();
@@ -611,6 +613,9 @@ function applyStateAppearance(nextState) {
   const hasAsset = Boolean(nextState.asset);
   const isYouTube = sessionMode === 'youtube';
   stage.hidden = sessionMode !== 'video';
+  const show3d = !removedScreenNumber && sessionMode === 'video' && nextState.videoView === 'anaglyph' && Boolean(nextState.asset);
+  video3d?.set({ active: show3d, source: nextState.stereoSource || '2d', fit: nextState.mode || 'crop', screens: wallScreens, index: Math.max(0, screenNumber - 1) });
+  if (!show3d) $('#video3dStatus').hidden = true;
   youtubeViewport.hidden = !isYouTube;
   speakerStage.hidden = sessionMode !== 'audio';
   documentWall.hidden = sessionMode !== 'presentation' || !hasAsset;
@@ -803,7 +808,7 @@ async function execute(commandState) {
     setTimeout(() => $('#identify').classList.remove('show'), 2400);
     return;
   }
-  if (sessionMode === 'presentation' || ['mode', 'audio-mode', 'screen-audio', 'mute-all', 'layout', 'session-mode', 'youtube-audio-mode', 'audio-output', 'loop'].includes(commandState.type)) return;
+  if (sessionMode === 'presentation' || ['mode', 'video-view', 'audio-mode', 'screen-audio', 'mute-all', 'layout', 'session-mode', 'youtube-audio-mode', 'audio-output', 'loop'].includes(commandState.type)) return;
 
   const isYouTube = sessionMode === 'youtube';
   if (isYouTube && youtubePlayer && youtubeReady) {
@@ -1402,3 +1407,4 @@ setInterval(() => {
 }, 250);
 syncClock();
 fetchInitialState();
+window.addEventListener('pagehide', () => video3d?.dispose());

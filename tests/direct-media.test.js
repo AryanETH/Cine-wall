@@ -10,7 +10,7 @@ const source = (name) => fs.readFileSync(path.join(__dirname, '../public', name)
 const room = '01234567-89ab-4cde-8fab-0123456789ab';
 const turn = () => new Promise(setImmediate);
 
-function sessionPage(href, savedRoom, storageBlocked = false) {
+function sessionPage(href, savedRoom, storageBlocked = false, respond) {
   const location = new URL(href), calls = [], clicks = [], storage = new Map(savedRoom instanceof Map ? savedRoom : savedRoom ? [['cinewall-room', savedRoom]] : []);
   if (location.pathname === '/admin.html' && !location.searchParams.has('mode')) location.searchParams.set('mode', 'video');
   if (location.pathname === '/screen.html' && !location.searchParams.has('screen')) location.searchParams.set('screen', '1');
@@ -20,7 +20,7 @@ function sessionPage(href, savedRoom, storageBlocked = false) {
     mode: location.searchParams.get('mode') || 'video', admin: location.pathname === '/admin.html', role: 'screen', path: location.pathname + (location.pathname === '/admin.html' ? '?mode=' + (location.searchParams.get('mode') || 'video') : location.pathname === '/screen.html' ? '?screen=' + (location.searchParams.get('screen') || 1) : '') };
   class XHR { open(...args) { calls.push(args); } setRequestHeader(...args) { calls.push(['header', ...args]); } send(body) { calls.push(['send', body]); } }
   class Events extends EventTarget { constructor(url) { super(); calls.push(['events', url]); } close() { calls.push(['events-close']); } }
-  const window = { addEventListener(type, handler) { listeners.set(type, handler); }, dispatchEvent(event) { calls.push(['dispatch', event.type]); }, fetch: async (...args) => { calls.push(['fetch', ...args]); return { ok: true, json: async () => ({ ...info }) }; }, EventSource: Events };
+  const window = { addEventListener(type, handler) { listeners.set(type, handler); }, dispatchEvent(event) { calls.push(['dispatch', event.type]); }, fetch: async (...args) => { calls.push(['fetch', ...args]); return respond?.(...args) || { ok: true, json: async () => ({ ...info }) }; }, EventSource: Events };
   const context = vm.createContext({ EventTarget, Event, MessageEvent, CustomEvent, Promise, URL, Request, Headers, location, window, XMLHttpRequest: XHR, crypto: crypto.webcrypto,
     setTimeout(fn) { timers.push(fn); return timers.length; }, clearTimeout() {},
     localStorage: { getItem: (key) => {if(storageBlocked)throw Error('Storage denied');return storage.get(key);}, setItem: (key, value) => {if(storageBlocked)throw Error('Storage denied');storage.set(key,value);}, removeItem: key => storage.delete(key) },
@@ -30,6 +30,25 @@ function sessionPage(href, savedRoom, storageBlocked = false) {
   vm.runInContext(source('session.js'), context);
   return { window, context, calls, clicks, XHR, timers, info, storage };
 }
+
+test('a stale saved guest ticket automatically rejoins the same shared device link once', async () => {
+  const saved = new Map([[`cinewall-room-${room}`, JSON.stringify({room, ticket:'stale', admin:false})]]);
+  const client = sessionPage(`https://watch.aitoyz.in/screen.html?screen=2&room=${room}`, saved, false, url => url.endsWith('/resume') ? {ok:false,status:403,json:async()=>({error:'Old connection'})} : null);
+  const info = await client.window.CineWallSession.ready;
+  assert.equal(info.screen, 2); assert.equal(info.admin, false);
+  const actions = client.calls.filter(x=>x[0]==='fetch').map(x=>x[1]);
+  assert.deepEqual(actions, ['/api/rooms/resume','/api/rooms/join']);
+  assert.equal(JSON.parse(client.storage.get(`cinewall-room-${room}`)).ticket,'ticket');
+});
+
+test('invalid admin access and missing rooms are never silently replaced or downgraded', async () => {
+  for (const [page, admin, status] of [['admin.html?mode=video',true,403],['screen.html?screen=2',false,404]]) {
+    const saved = new Map([[`cinewall-room-${room}`, JSON.stringify({room,ticket:'stale',admin})]]);
+    const client = sessionPage(`https://watch.aitoyz.in/${page}&room=${room}`,saved,false,()=>({ok:false,status,json:async()=>({error:'Unavailable'})}));
+    await assert.rejects(client.window.CineWallSession.ready,/Unavailable/);
+    assert.equal(client.calls.filter(x=>x[0]==='fetch').length,1);
+  }
+});
 
 test('joined guests follow a mode change with the same ticket and no second join or code entry', async () => {
   const client = sessionPage(`https://watch.aitoyz.in/screen.html?screen=2&room=${room}`);
