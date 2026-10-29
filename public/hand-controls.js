@@ -13,10 +13,22 @@
       this.stream?.getTracks().forEach(track => track.stop()); this.stream = null;
       if (this.video) { this.video.pause(); this.video.srcObject = null; }
       this.busy = false;
+      return this.starting?.catch(() => {});
     }
-    async start(deviceId, video) {
-      this.stop();
+    start(deviceId, video) {
+      const draining = this.stop();
       const generation = this.generation;
+      const starting = (async () => {
+        if (draining) await draining;
+        if (generation !== this.generation) return false;
+        return this.open(deviceId, video, generation);
+      })();
+      this.starting = starting;
+      const settled = () => { if (this.starting === starting) this.starting = null; };
+      starting.then(settled, settled);
+      return starting;
+    }
+    async open(deviceId, video, generation) {
       const stream = await this.devices.getUserMedia({ audio: false, video: {
         ...(deviceId ? { deviceId: { exact: deviceId } } : { facingMode: 'user' }),
         width: { ideal: 640 }, height: { ideal: 480 }, frameRate: { ideal: 15, max: 20 }
@@ -92,19 +104,20 @@
       $('handControlHint').hidden = text === 'Off' || text === 'Practice cancelled · camera off';
       $('handPlayerStatus').textContent = text;
     }
-    function closePractice() {
+    function closePractice(restoreFocus = true) {
       clearTimeout(nextTimer); advancing = false; practice = null; gate.reset();
       if (dialog.open) dialog.close();
       $('handCameraMount').appendChild($('handCameraFeed'));
-      if (previousFocus?.isConnected) previousFocus.focus();
+      if (restoreFocus && previousFocus?.isConnected) previousFocus.focus();
     }
     function park(text = 'Gestures on · ready in the active tab', keepEnabled = true) {
       request++; enabled = keepEnabled; trackingReady = false; toggle.checked = keepEnabled;
       clearTimeout(startDeadline);
-      closePractice(); session.stop(); gate.reset();
+      closePractice(false); const draining = session.stop(); gate.reset();
       $('handCameraOptions').hidden = true; $('handCameraFeed').hidden = true;
       $('handPlayerStatus').hidden = true;
       status(text);
+      return draining;
     }
     function stop(text = 'Off') {
       tabs?.setEnabled(false);
@@ -162,7 +175,7 @@
     }
     const session = new CameraSession({
       devices: navigator.mediaDevices,
-      makeWorker: () => new Worker('/hand-gesture-worker.js?v=20261029-1'),
+      makeWorker: () => new Worker('/hand-gesture-worker.js?v=20261029-poses-2'),
       bitmap: source => createImageBitmap(source), onResult: result,
       onError: error => stop(error.message)
     });
@@ -180,6 +193,7 @@
       }
     }
     async function start(deviceId = '') {
+      if (tabs && !tabs.active) return;
       const ticket = ++request;
       if (!available()) { stop(); return; }
       enabled = true; trackingReady = false; toggle.checked = true; gate.reset();
@@ -211,41 +225,53 @@
     if (window.CineWallHandTabs && window.CineWallSession?.room && window.CineWallSession?.deviceId) {
       tabs = window.CineWallHandTabs.create({
         room: window.CineWallSession.room, device: window.CineWallSession.deviceId,
+        id: window.CineWallSession.peerId,
         storage: localStorage, locks: navigator.locks,
         visible: () => !document.hidden, available,
         listen: callback => { window.addEventListener('storage', callback); return () => window.removeEventListener('storage', callback); },
         onChange: state => {
-          if (state.enabled && state.active) start(state.camera);
-          else park(state.enabled ? 'Gestures on · ready in the active tab' : 'Off', state.enabled);
+          if (state.enabled && state.active) return start(state.camera);
+          return park(state.enabled ? 'Gestures on · ready in the active tab' : 'Off', state.enabled);
         },
         onError: text => park(text, false)
       });
     }
     toggle.addEventListener('change', () => toggle.checked ? (tabs ? tabs.setEnabled(true) : start()) : stop());
-    $('handCameraSelect').addEventListener('change', () => { closePractice(); start($('handCameraSelect').value); });
-    $('handPracticeCameraSelect').addEventListener('change', () => { const id = $('handPracticeCameraSelect').value; closePractice(); start(id); });
+    function changeCamera(id) {
+      if (!enabled || (tabs && !tabs.setCamera(id))) return;
+      closePractice(); return start(id);
+    }
+    $('handCameraSelect').addEventListener('change', () => changeCamera($('handCameraSelect').value));
+    $('handPracticeCameraSelect').addEventListener('change', () => changeCamera($('handPracticeCameraSelect').value));
     $('handPracticeAgain').addEventListener('click', startPractice);
     $('handPracticeStop').addEventListener('click', () => stop('Practice cancelled · camera off'));
     dialog.addEventListener('cancel', event => { event.preventDefault(); stop('Practice cancelled · camera off'); });
     document.addEventListener('visibilitychange', () => {
-      if (tabs) tabs.sync();
+      if (tabs) {
+        if (!document.hidden && document.hasFocus()) tabs.claim();
+        else tabs.sync();
+      }
       else if (document.hidden && enabled) stop('Camera off · turn on to resume');
     });
+    window.addEventListener('focus', () => tabs?.claim());
     window.addEventListener('pagehide', () => {
       if (tabs) { tabs.dispose(); park('Off', false); }
       else stop();
     });
     function sync() {
       const allowed = available();
+      const becameAvailable = allowed && !knownAvailable;
       panel.hidden = !allowed;
       if (!allowed && (enabled || knownAvailable)) {
         if (tabs) park(enabled ? 'Gestures on · ready in the active tab' : 'Off', enabled);
         else stop();
       }
       knownAvailable = allowed;
-      tabs?.sync();
+      if (becameAvailable && !document.hidden && document.hasFocus()) tabs?.claim();
+      else tabs?.sync();
     }
     sync();
+    if (!document.hidden && document.hasFocus()) tabs?.claim();
     return { sync, stop, get enabled() { return enabled; }, get resultCount() { return resultCount; } };
   }
   if (typeof module !== 'undefined' && module.exports) module.exports = { CameraSession };

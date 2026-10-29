@@ -43,6 +43,23 @@ test('turning off while camera permission is pending stops the late stream', asy
   const starting = session.start('', video); session.stop(); grant(media);
   assert.equal(await starting, false); assert.equal(media.track.stopped, true); assert.equal(video.srcObject, null);
 });
+
+test('changing camera during pending permission serializes capture and cancels intermediate choices', async () => {
+  let grant; const requests = [], streams = [];
+  const session = new CameraSession({ devices: { getUserMedia(options) {
+    requests.push(options.video.deviceId.exact);
+    if (requests.length === 1) return new Promise(resolve => { grant = resolve; });
+    const media = stream(); streams.push(media); return Promise.resolve(media);
+  } }, makeWorker: () => ({ terminate() {}, postMessage() { queueMicrotask(() => this.onmessage({ data: { type: 'ready' } })); } }) });
+  const first = session.start('first', cameraVideo());
+  const middle = session.start('middle', cameraVideo());
+  const latest = session.start('latest', cameraVideo());
+  assert.deepEqual(requests, ['first']);
+  const old = stream(); grant(old);
+  assert.equal(await first, false); assert.equal(await middle, false); assert.equal(await latest, true);
+  assert.deepEqual(requests, ['first', 'latest']); assert.equal(old.track.stopped, true);
+  await session.stop(); assert.equal(streams[0].track.stopped, true);
+});
 test('model failure releases camera and worker; audio is never requested', async () => {
   const media = stream(), video = cameraVideo(); let requested;
   const worker = { terminate() { this.stopped = true; }, postMessage() { queueMicrotask(() => this.onmessage({ data: { type: 'error' } })); } };
@@ -52,7 +69,7 @@ test('model failure releases camera and worker; audio is never requested', async
   assert.equal(media.track.stopped, true); assert.equal(worker.stopped, true); assert.equal(video.srcObject, null);
 });
 
-function uiFixture({ complete = false, tab = null, initiallyAvailable = true } = {}) {
+function uiFixture({ complete = false, tab = null, initiallyAvailable = true, permission } = {}) {
   const nodes = new Map(), values = new Map(), workers = [], streams = [], timers = new Map();
   let nextTimer = 0, allowed = initiallyAvailable;
   function element(id) {
@@ -62,11 +79,12 @@ function uiFixture({ complete = false, tab = null, initiallyAvailable = true } =
     return nodes.get(id);
   }
   const document = { hidden: false, activeElement: element('toggle'), events: {},
+    hasFocus: () => false,
     getElementById: element, createElement: () => ({}), addEventListener(name, callback) { this.events[name] = callback; } };
-  const window = { CineWallHandGestures: core, isSecureContext: true, Worker: true, createImageBitmap: true,
-    addEventListener(name, callback) { if (name === 'storage') tab?.listeners.add(callback); },
+  const window = { CineWallHandGestures: core, isSecureContext: true, Worker: true, createImageBitmap: true, events: {},
+    addEventListener(name, callback) { this.events[name] = callback; if (name === 'storage') tab?.listeners.add(callback); },
     removeEventListener(name, callback) { if (name === 'storage') tab?.listeners.delete(callback); } };
-  const navigator = { mediaDevices: { async getUserMedia() { const media = stream(); streams.push(media); return media; },
+  const navigator = { mediaDevices: { async getUserMedia() { if (permission) await permission(); const media = stream(); streams.push(media); return media; },
     async enumerateDevices() { return [{ kind: 'videoinput', deviceId: 'camera1', label: 'Laptop camera' }]; } } };
   if (complete) values.set('cinewall-hand-practice-v1', 'complete');
   let storage = { getItem: key => values.get(key), setItem: (key, value) => values.set(key, value) };
@@ -95,6 +113,7 @@ function uiFixture({ complete = false, tab = null, initiallyAvailable = true } =
       result: { landmarks: label ? [[]] : [], gestures: label ? [[{ categoryName: label, score: .95 }]] : [] } } });
   }
   return { ui, element, document, values, workers, streams, actions, send,
+    focus() { document.hasFocus = () => true; window.events.focus?.(); },
     async enable() { element('handControlToggle').checked = true; await element('handControlToggle').events.change(); },
     advance() { for (const [id, timer] of timers) if (timer.delay === 900) { timers.delete(id); timer.callback(); } },
     modeOff() { allowed = false; ui.sync(); }, makeAvailable() { allowed = true; ui.sync(); } };
@@ -204,4 +223,53 @@ test('Display 1 gestures use the player transport and never enable on guest scre
   context.window.CineWallSession.membership.admin = true; context.sessionMode = 'audio'; assert.equal(config.available(), false);
   const html = fs.readFileSync(path.join(__dirname, '../public/screen.html'), 'utf8');
   assert.match(html, /hand-tabs\.js/); assert.match(html, /hand-controls\.js/); assert.match(html, /id="handPractice"/);
+});
+
+test('visible admin/player focus changes hand off one camera; stale camera changes cannot start a second', async () => {
+  const shared = require('./hand-tabs-fixture.cjs').sharedTabs();
+  const admin = uiFixture({ complete: true, tab: shared.tab('admin') });
+  const player = uiFixture({ complete: true, tab: shared.tab('player') });
+  await admin.enable(); await shared.flush();
+  assert.equal(admin.streams.length, 1); assert.equal(player.streams.length, 0);
+  player.focus(); await shared.flush();
+  assert.equal(admin.streams[0].track.stopped, true); assert.equal(player.streams.length, 1);
+  admin.element('handCameraSelect').value = 'stale-camera';
+  await admin.element('handCameraSelect').events.change(); await shared.flush();
+  assert.equal(admin.streams.length, 1, 'background camera selector cannot bypass ownership');
+  for (let i = 0; i < 8; i++) { admin.ui.sync(); player.ui.sync(); player.focus(); }
+  await shared.flush(); assert.equal(player.streams.length, 1, 'polling and repeated focus must not restart capture');
+  admin.focus(); await shared.flush();
+  assert.equal(player.streams[0].track.stopped, true); assert.equal(admin.streams.length, 2);
+  player.ui.stop(); await shared.flush(); assert.equal(admin.streams[1].track.stopped, true);
+});
+
+test('handoff waits for late camera permission to finish and stop before opening the next tab camera', async () => {
+  for (const finish of ['player', 'admin', 'off']) {
+    let grant, requests = 0;
+    const shared = require('./hand-tabs-fixture.cjs').sharedTabs();
+    const admin = uiFixture({ complete: true, tab: shared.tab('admin'), permission: () => ++requests === 1 ? new Promise(resolve => { grant = resolve; }) : Promise.resolve() });
+    const player = uiFixture({ complete: true, tab: shared.tab('player') });
+    await admin.enable(); await shared.flush(); assert.equal(requests, 1);
+    player.focus(); await shared.flush();
+    assert.equal(player.streams.length, 0, 'pending capture must retain the lock until it is stopped');
+    if (finish === 'admin') admin.focus();
+    if (finish === 'off') player.ui.stop();
+    await shared.flush(); grant(); await shared.flush();
+    assert.equal(admin.streams[0].track.stopped, true, 'the late old stream is stopped before the handoff');
+    assert.equal(player.streams.length, finish === 'player' ? 1 : 0);
+    assert.equal(admin.streams.length, finish === 'admin' ? 2 : 1);
+    admin.ui.stop(); await shared.flush();
+    assert.ok([...admin.streams, ...player.streams].every(media => media.track.stopped));
+  }
+});
+
+test('a focused player claims capture when its video becomes ready after the focus event', async () => {
+  const shared = require('./hand-tabs-fixture.cjs').sharedTabs();
+  const admin = uiFixture({ complete: true, tab: shared.tab('admin') });
+  const player = uiFixture({ complete: true, tab: shared.tab('player'), initiallyAvailable: false });
+  await admin.enable(); await shared.flush();
+  player.focus(); await shared.flush(); assert.equal(player.streams.length, 0);
+  player.makeAvailable(); await shared.flush();
+  assert.equal(player.streams.length, 1); assert.equal(admin.streams[0].track.stopped, true);
+  player.ui.stop(); await shared.flush();
 });

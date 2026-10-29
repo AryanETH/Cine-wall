@@ -47,3 +47,19 @@ test('active sessions renew intent; abandoned sessions expire and pending acquis
   shared.advance(120001); admin.tick(); assert.equal(admin.state.enabled, false);
   admin.state.visible = true; admin.controls.sync(); await shared.flush(); assert.equal(admin.state.active, false); admin.controls.dispose();
 });
+
+test('focus chooses one owner when both windows stay visible; passive updates cannot steal it back', async () => {
+  const shared = sharedTabs(), admin = cameraTab(shared, 'admin'), player = cameraTab(shared, 'player');
+  admin.controls.setEnabled(true); await shared.flush();
+  player.controls.claim(); await shared.flush();
+  assert.equal(admin.state.active, false); assert.equal(player.state.active, true);
+  const starts = player.history.filter(state => state.active).length;
+  for (let i = 0; i < 12; i++) { admin.controls.sync(); player.controls.sync(); player.controls.claim(); admin.tick(); player.tick(); }
+  await shared.flush();
+  assert.equal(admin.state.active, false); assert.equal(player.state.active, true);
+  assert.equal(player.history.filter(state => state.active).length, starts);
+  assert.equal(admin.controls.setCamera('stale-background-camera'), false);
+  admin.controls.claim(); await shared.flush();
+  assert.equal(admin.state.active, true); assert.equal(player.state.active, false);
+  admin.controls.setEnabled(false); admin.controls.dispose(); player.controls.dispose();
+});

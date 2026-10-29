@@ -22,9 +22,10 @@ function sharedTabs() {
   } };
   function tab(id) {
     const listeners = new Set(), timers = new Set();
-    const emit = key => { for (const [other, target] of tabs) if (other !== id) for (const listener of target.listeners) listener({ key }); };
+    const emit = key => { for (const [other, target] of tabs) if (other !== id) queueMicrotask(() => { for (const listener of target.listeners) listener({ key }); }); };
     const storage = { getItem: key => values.get(key) || null,
-      setItem(key, value) { values.set(key, value); emit(key); }, removeItem(key) { values.delete(key); emit(key); } };
+      setItem(key, value) { const previous = values.get(key); values.set(key, value); if (previous !== value) emit(key); },
+      removeItem(key) { if (values.delete(key)) emit(key); } };
     const target = { id, storage, locks, values, listeners, now: () => clock,
       every: fn => { timers.add(fn); return fn; }, cancelEvery: fn => timers.delete(fn),
       listen: fn => { listeners.add(fn); return () => listeners.delete(fn); },
