@@ -36,6 +36,7 @@ let defaultFullscreenAttempted = false;
 let fullscreenRequest = null;
 let serverOffset = 0;
 let currentState = null;
+let handControls = null;
 let currentAssetVersion = '';
 let endedAssetVersion = '';
 let endedEventId = '';
@@ -940,6 +941,7 @@ function showControls() {
 }
 
 function updateController() {
+  syncPlayerHandControls();
   updateAudioWaves();
   const isYouTube = sessionMode === 'youtube';
   let duration = 0;
@@ -1406,6 +1408,8 @@ $('#screenGesture').addEventListener('dblclick', (event) => {
 
 document.addEventListener('mousemove', showControls);
 document.addEventListener('click', showControls);
+$('#playerHandSettings')?.addEventListener('keydown', showControls);
+$('#playerHandSettings')?.addEventListener('focusin', showControls);
 document.addEventListener('keydown', (event) => {
   if (event.target.isContentEditable || event.target.matches('input, textarea, select, [contenteditable="true"]')) return;
   const focusedAction = event.target.closest?.('button, a');
@@ -1451,6 +1455,38 @@ setInterval(() => {
   updateController();
   if (currentState?.playing && ready && ['video', 'audio'].includes(sessionMode) && !video.seeking && !video.error) correctDrift(currentState, false);
 }, 250);
+function playerHandAvailable() {
+  return sessionMode === 'video' && screenNumber === 1 && ready && !removedScreenNumber
+    && window.CineWallSession?.membership?.admin === true
+    && (!currentState?.ownerId || currentState.ownerId === window.CineWallSession.deviceId);
+}
+function syncPlayerHandControls() {
+  const menu = $('#playerHandSettings');
+  if (menu) menu.hidden = !playerHandAvailable();
+  handControls?.sync();
+}
+handControls = window.CineWallHandControls?.create({
+  available: playerHandAvailable,
+  onAction: action => {
+    if (!playerHandAvailable()) return 'Video controls unavailable';
+    if (!currentState?.asset) return 'Load a video from the dashboard first';
+    if (currentState.seekPending || ['uploading', 'checking'].includes(currentState.preparation?.phase)) return 'Wait for the video to be ready';
+    if (action === 'play') {
+      if (currentState.allReady !== true) return 'Wait for all screens to be ready';
+      command({ type: 'play', position: videoFinished() ? 0 : video.currentTime || targetPosition(currentState) });
+    } else if (action === 'pause') command({ type: 'pause' });
+    else if (action === 'forward' || action === 'back') seekRelative(action === 'forward' ? 10 : -10);
+    else if (action === 'volume-up' || action === 'volume-down') {
+      const value = Math.max(0, Math.min(1, audioSetting().volume + (action === 'volume-up' ? .1 : -.1)));
+      video.volume = value;
+      $('#screenVolume').value = value;
+      $('#screenVolumeValue').textContent = `${Math.round(value * 100)}%`;
+      command({ type: 'screen-audio', screen: screenNumber, volume: value });
+    } else return false;
+    showControls();
+    return true;
+  }
+});
 syncClock();
 fetchInitialState();
 window.addEventListener('pagehide', () => video3d?.dispose());

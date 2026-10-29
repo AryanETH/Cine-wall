@@ -31,3 +31,16 @@
 .hand-reference li { padding: 8px; border: 1px solid var(--line); border-radius: 8px; }
 .hand-player-status { position: absolute; z-index: 9; top: 12px; left: 12px; max-width: calc(100% - 24px); padding: 6px 10px; border-radius: 8px; background: #000b; color: #fff; font-size: .8rem; pointer-events: none; }
 .hand-panel [hidden], .hand-player-status[hidden] { display: none !important; }
+.screen-hand-settings { position: fixed; z-index: 18; top: 78px; right: 18px; max-width: min(340px, calc(100vw - 36px)); color: var(--ink); }
+.screen-hand-settings[hidden] { display: none; }
+.screen-hand-settings > summary { display: flex; align-items: center; gap: 12px; width: fit-content; margin-left: auto; padding: 10px 14px; list-style: none; border: 1px solid var(--line); border-radius: 999px; background: var(--shell); cursor: pointer; font-size: 13px; font-weight: 650; }
+.screen-hand-settings > summary::-webkit-details-marker { display: none; }
+.screen-hand-settings > summary::after { content: 'OFF'; color: var(--muted); font-size: 10px; }
+.screen-hand-settings:has(#handControlToggle:checked) > summary::after { content: 'ON'; color: var(--accent); }
+.screen-hand-settings .hand-panel { width: min(340px, calc(100vw - 36px)); max-height: calc(100dvh - 140px); overflow: auto; margin-top: 8px; padding: 16px; border: 1px solid var(--line); border-radius: 14px; background: var(--shell); box-shadow: 0 8px 28px #0004; }
+.screen-body .hand-player-status { position: fixed; top: auto; bottom: 160px; left: 50%; transform: translateX(-50%); max-width: min(440px, calc(100vw - 36px)); }
+.screen-body .screen-hand-settings, .screen-body .hand-player-status { opacity: 0; visibility: hidden; pointer-events: none; transition: opacity .28s ease, visibility .28s; }
+.screen-body:has(#screenControls.available.visible) .screen-hand-settings,
+.screen-body:has(#screenControls.available.visible) .hand-player-status { opacity: 1; visibility: visible; }
+.screen-body:has(#screenControls.available.visible) .screen-hand-settings { pointer-events: auto; }
+@media(prefers-reduced-motion:reduce) { .screen-body .screen-hand-settings, .screen-body .hand-player-status { transition: none; } }

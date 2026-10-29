@@ -52,9 +52,9 @@ test('model failure releases camera and worker; audio is never requested', async
   assert.equal(media.track.stopped, true); assert.equal(worker.stopped, true); assert.equal(video.srcObject, null);
 });
 
-function uiFixture({ complete = false } = {}) {
+function uiFixture({ complete = false, tab = null, initiallyAvailable = true } = {}) {
   const nodes = new Map(), values = new Map(), workers = [], streams = [], timers = new Map();
-  let nextTimer = 0, allowed = true;
+  let nextTimer = 0, allowed = initiallyAvailable;
   function element(id) {
     if (!nodes.has(id)) nodes.set(id, { id, hidden: true, checked: false, value: '', textContent: '', open: false, isConnected: true, events: {},
       addEventListener(name, callback) { this.events[name] = callback; }, appendChild() {}, replaceChildren(...children) { this.children = children; this.value = children.find(c => c.selected)?.value || children[0]?.value || ''; },
@@ -63,10 +63,20 @@ function uiFixture({ complete = false } = {}) {
   }
   const document = { hidden: false, activeElement: element('toggle'), events: {},
     getElementById: element, createElement: () => ({}), addEventListener(name, callback) { this.events[name] = callback; } };
-  const window = { CineWallHandGestures: core, isSecureContext: true, Worker: true, createImageBitmap: true, addEventListener() {} };
+  const window = { CineWallHandGestures: core, isSecureContext: true, Worker: true, createImageBitmap: true,
+    addEventListener(name, callback) { if (name === 'storage') tab?.listeners.add(callback); },
+    removeEventListener(name, callback) { if (name === 'storage') tab?.listeners.delete(callback); } };
   const navigator = { mediaDevices: { async getUserMedia() { const media = stream(); streams.push(media); return media; },
     async enumerateDevices() { return [{ kind: 'videoinput', deviceId: 'camera1', label: 'Laptop camera' }]; } } };
   if (complete) values.set('cinewall-hand-practice-v1', 'complete');
+  let storage = { getItem: key => values.get(key), setItem: (key, value) => values.set(key, value) };
+  if (tab) {
+    storage = tab.storage;
+    if (complete) storage.setItem('cinewall-hand-practice-v1', 'complete');
+    navigator.locks = tab.locks;
+    window.CineWallSession = { room: 'room-a', deviceId: 'device-a' };
+    window.CineWallHandTabs = { create: options => require('../public/hand-tabs').create({ ...options, now: tab.now, every: tab.every, cancelEvery: tab.cancelEvery }) };
+  }
   class Worker {
     constructor() { workers.push(this); }
     postMessage(message) { if (message.type === 'init') queueMicrotask(() => this.onmessage({ data: { type: 'ready' } })); }
@@ -74,7 +84,7 @@ function uiFixture({ complete = false } = {}) {
   }
   vm.runInNewContext(fs.readFileSync(path.join(__dirname, '../public/hand-controls.js'), 'utf8'), {
     window, document, navigator, Worker, createImageBitmap() {}, performance: { now: () => 0 },
-    localStorage: { getItem: key => values.get(key), setItem: (key, value) => values.set(key, value) },
+    localStorage: storage,
     setTimeout: (callback, delay) => { timers.set(++nextTimer, { callback, delay }); return nextTimer; }, clearTimeout: id => timers.delete(id),
     setInterval: () => 0, clearInterval() {}
   });
@@ -87,7 +97,7 @@ function uiFixture({ complete = false } = {}) {
   return { ui, element, document, values, workers, streams, actions, send,
     async enable() { element('handControlToggle').checked = true; await element('handControlToggle').events.change(); },
     advance() { for (const [id, timer] of timers) if (timer.delay === 900) { timers.delete(id); timer.callback(); } },
-    modeOff() { allowed = false; ui.sync(); } };
+    modeOff() { allowed = false; ui.sync(); }, makeAvailable() { allowed = true; ui.sync(); } };
 }
 test('first-use live practice matches each pose, saves completion, and never controls playback', async () => {
   const f = uiFixture(); await f.enable(); assert.equal(f.element('handPractice').open, true);
@@ -150,4 +160,48 @@ test('video gestures reuse synchronized transport, clamp volume and reject other
   locked = false; context.status.state.sessionMode = 'audio'; assert.equal(config.available(), false); assert.notEqual(config.onAction('pause'), true);
   context.status.state.sessionMode = 'video'; context.status.state.asset = null; assert.notEqual(config.onAction('back'), true);
   assert.deepEqual(seeks, [10, -10]);
+});
+test('real UI camera sessions hand off to the player on tab switches and turn off together', async () => {
+  const shared = require('./hand-tabs-fixture.cjs').sharedTabs();
+  const admin = uiFixture({ complete: true, tab: shared.tab('admin') });
+  await admin.enable(); await shared.flush();
+  assert.equal(admin.streams.length, 1);
+  const player = uiFixture({ complete: true, tab: shared.tab('player'), initiallyAvailable: false });
+  await shared.flush(); assert.equal(player.streams.length, 0, 'player waits until admin releases camera');
+  assert.equal(admin.ui.enabled, true, 'loading a player must not clear shared ON intent');
+  player.makeAvailable();
+  admin.document.hidden = true; admin.document.events.visibilitychange(); await shared.flush();
+  assert.equal(admin.ui.enabled, true, 'tab switch preserves the ON setting');
+  assert.equal(admin.streams[0].track.stopped, true); assert.equal(admin.workers[0].stopped, true);
+  assert.equal(player.streams.length, 1); player.send('Open_Palm', 0); assert.deepEqual(player.actions, ['play']);
+  admin.send('Victory', 1000); assert.deepEqual(admin.actions, [], 'old worker cannot control playback');
+  player.document.hidden = true; player.document.events.visibilitychange();
+  admin.document.hidden = false; admin.document.events.visibilitychange(); await shared.flush();
+  assert.equal(player.streams[0].track.stopped, true); assert.equal(admin.streams.length, 2);
+  admin.send('Closed_Fist', 2000); assert.deepEqual(admin.actions, ['pause']);
+  player.ui.stop(); await shared.flush();
+  assert.equal(admin.ui.enabled, false); assert.equal(admin.streams[1].track.stopped, true); assert.equal(player.ui.enabled, false);
+  assert.equal(admin.streams.length, 2, 'OFF must not start an extra camera request');
+  assert.equal(player.streams.length, 1, 'OFF must not restart the other tab camera');
+});
+test('Display 1 gestures use the player transport and never enable on guest screens or other modes', () => {
+  let config;
+  const source = fs.readFileSync(path.join(__dirname, '../public/screen.js'), 'utf8');
+  const nodes = new Map(), commands = [], seeks = [];
+  const context = { handControls: null, sessionMode: 'video', screenNumber: 1, ready: true, removedScreenNumber: 0,
+    currentState: { asset: { version: 'v1' }, allReady: true },
+    window: { CineWallSession: { membership: { admin: true }, deviceId: 'device-a' }, CineWallHandControls: { create(options) { config = options; } } },
+    video: { currentTime: 30 }, videoFinished: () => false, targetPosition: () => 30, audioSetting: () => ({ volume: .95 }),
+    command: payload => commands.push(payload), seekRelative: value => seeks.push(value), showControls() {},
+    $: selector => { if (!nodes.has(selector)) nodes.set(selector, {}); return nodes.get(selector); }
+  };
+  const start = source.indexOf('function playerHandAvailable()'), end = source.indexOf('\nsyncClock();', start);
+  vm.runInNewContext(source.slice(start, end), context);
+  for (const action of ['play', 'pause', 'forward', 'back', 'volume-up', 'volume-down']) assert.equal(config.onAction(action), true);
+  assert.deepEqual(commands.map(item => item.type), ['play', 'pause', 'screen-audio', 'screen-audio']); assert.deepEqual(seeks, [10, -10]);
+  context.screenNumber = 2; assert.equal(config.available(), false); assert.notEqual(config.onAction('play'), true);
+  context.screenNumber = 1; context.window.CineWallSession.membership.admin = false; assert.equal(config.available(), false);
+  context.window.CineWallSession.membership.admin = true; context.sessionMode = 'audio'; assert.equal(config.available(), false);
+  const html = fs.readFileSync(path.join(__dirname, '../public/screen.html'), 'utf8');
+  assert.match(html, /hand-tabs\.js/); assert.match(html, /hand-controls\.js/); assert.match(html, /id="handPractice"/);
 });

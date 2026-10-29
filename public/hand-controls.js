@@ -84,7 +84,7 @@
     const dialog = $('handPractice'), gate = new core.HoldGate();
     const key = 'cinewall-hand-practice-v1';
     let enabled = false, trackingReady = false, request = 0, practice = null, advancing = false, nextTimer, previousFocus;
-    let knownAvailable = false, resultCount = 0, startDeadline;
+    let knownAvailable = false, resultCount = 0, startDeadline, tabs = null;
     const read = key => { try { return localStorage.getItem(key); } catch { return null; } };
     const write = (key, value) => { try { localStorage.setItem(key, value); } catch {} };
     function status(text) {
@@ -98,13 +98,17 @@
       $('handCameraMount').appendChild($('handCameraFeed'));
       if (previousFocus?.isConnected) previousFocus.focus();
     }
-    function stop(text = 'Off') {
-      request++; enabled = false; trackingReady = false; toggle.checked = false;
+    function park(text = 'Gestures on · ready in the active tab', keepEnabled = true) {
+      request++; enabled = keepEnabled; trackingReady = false; toggle.checked = keepEnabled;
       clearTimeout(startDeadline);
       closePractice(); session.stop(); gate.reset();
       $('handCameraOptions').hidden = true; $('handCameraFeed').hidden = true;
       $('handPlayerStatus').hidden = true;
       status(text);
+    }
+    function stop(text = 'Off') {
+      tabs?.setEnabled(false);
+      park(text, false);
     }
     function showStep() {
       const step = practice.step;
@@ -165,6 +169,7 @@
     async function cameras() {
       const devices = (await navigator.mediaDevices.enumerateDevices()).filter(device => device.kind === 'videoinput');
       const active = session.stream?.getVideoTracks()[0]?.getSettings().deviceId;
+      if (active) tabs?.setCamera(active);
       for (const id of ['handCameraSelect', 'handPracticeCameraSelect']) {
         $(id).replaceChildren(...devices.map((device, index) => {
           const option = document.createElement('option'); option.value = device.deviceId;
@@ -203,19 +208,42 @@
         stop(message || error.message || 'Camera could not start. Try again.');
       }
     }
-    toggle.addEventListener('change', () => toggle.checked ? start() : stop());
+    if (window.CineWallHandTabs && window.CineWallSession?.room && window.CineWallSession?.deviceId) {
+      tabs = window.CineWallHandTabs.create({
+        room: window.CineWallSession.room, device: window.CineWallSession.deviceId,
+        storage: localStorage, locks: navigator.locks,
+        visible: () => !document.hidden, available,
+        listen: callback => { window.addEventListener('storage', callback); return () => window.removeEventListener('storage', callback); },
+        onChange: state => {
+          if (state.enabled && state.active) start(state.camera);
+          else park(state.enabled ? 'Gestures on · ready in the active tab' : 'Off', state.enabled);
+        },
+        onError: text => park(text, false)
+      });
+    }
+    toggle.addEventListener('change', () => toggle.checked ? (tabs ? tabs.setEnabled(true) : start()) : stop());
     $('handCameraSelect').addEventListener('change', () => { closePractice(); start($('handCameraSelect').value); });
     $('handPracticeCameraSelect').addEventListener('change', () => { const id = $('handPracticeCameraSelect').value; closePractice(); start(id); });
     $('handPracticeAgain').addEventListener('click', startPractice);
     $('handPracticeStop').addEventListener('click', () => stop('Practice cancelled · camera off'));
     dialog.addEventListener('cancel', event => { event.preventDefault(); stop('Practice cancelled · camera off'); });
-    document.addEventListener('visibilitychange', () => { if (document.hidden && enabled) stop('Camera off · turn on to resume'); });
-    window.addEventListener('pagehide', () => stop());
+    document.addEventListener('visibilitychange', () => {
+      if (tabs) tabs.sync();
+      else if (document.hidden && enabled) stop('Camera off · turn on to resume');
+    });
+    window.addEventListener('pagehide', () => {
+      if (tabs) { tabs.dispose(); park('Off', false); }
+      else stop();
+    });
     function sync() {
       const allowed = available();
       panel.hidden = !allowed;
-      if (!allowed && (enabled || knownAvailable)) stop();
+      if (!allowed && (enabled || knownAvailable)) {
+        if (tabs) park(enabled ? 'Gestures on · ready in the active tab' : 'Off', enabled);
+        else stop();
+      }
       knownAvailable = allowed;
+      tabs?.sync();
     }
     sync();
     return { sync, stop, get enabled() { return enabled; }, get resultCount() { return resultCount; } };

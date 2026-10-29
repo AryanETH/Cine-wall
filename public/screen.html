@@ -17,6 +17,7 @@
   <script src="session.js?v=20261028-links-5"></script>
   <script src="media-peer.js?v=20261027-entry-2"></script>
   <link rel="stylesheet" href="styles.css?v=20261028-local-2">
+  <link rel="stylesheet" href="hand-controls.css?v=20261029-player-4">
   <link rel="stylesheet" href="device-support.css?v=20261025-mobile-42">
   <link rel="stylesheet" href="/rooms.css?v=20261027-links-3">
 </head>
@@ -89,6 +90,34 @@
     <span id="screenShortcuts" class="screen-shortcuts">Space · Play/Pause &nbsp; ← → · Seek &nbsp; F · Fullscreen</span>
   </section>
 
+  <details id="playerHandSettings" class="screen-hand-settings" hidden>
+    <summary>Hand gestures</summary>
+          <div id="handControlPanel" class="hand-panel" hidden>
+            <label class="hand-toggle" for="handControlToggle">Hand gestures <input id="handControlToggle" type="checkbox" role="switch"></label>
+            <p id="handControlHint" class="hand-note" role="status" hidden>Off</p>
+            <div id="handCameraOptions" hidden>
+              <div class="hand-camera-controls"><select id="handCameraSelect" aria-label="Gesture camera"></select><button id="handPracticeAgain" class="button subtle" type="button">Practice again</button></div>
+              <ul class="hand-reference" aria-label="Hand gestures">
+                <li>✋ Play</li><li>✊ Pause</li><li>👍 Volume +10%</li><li>👎 Volume −10%</li><li>✌️ Forward 10s</li><li>🤟 Back 10s</li>
+              </ul>
+            </div>
+            <div id="handCameraMount"><div id="handCameraFeed" class="hand-feed" hidden><video id="handCamera" autoplay muted playsinline aria-label="Live gesture camera"></video><span id="handDetected">Show your hand</span></div></div>
+          </div>
+  </details>
+  <div id="handPlayerStatus" class="hand-player-status" role="status" hidden></div>
+  <dialog id="handPractice" class="hand-practice" aria-labelledby="handPracticeTitle" aria-describedby="handPracticeCopy">
+    <div class="hand-practice-top"><span id="handPracticeProgress">1 / 6</span><button id="handPracticeStop" class="button subtle" type="button">Turn off</button></div>
+    <span id="handPracticeIcon" class="hand-practice-icon" aria-hidden="true"></span>
+    <h2 id="handPracticeTitle">Practice hand gestures</h2>
+    <p id="handPracticeCopy"></p>
+    <label class="hand-note" for="handPracticeCameraSelect">Camera</label>
+    <select id="handPracticeCameraSelect" aria-label="Practice camera"></select>
+    <div id="handPracticeCamera"></div>
+    <progress id="handPracticeHold" max="1" value="0" aria-label="Gesture hold progress"></progress>
+    <p id="handPracticeHint" class="hand-note" role="status"></p>
+    <p class="hand-note">Practice only. Playback stays unchanged. Lower your hand between gestures.</p>
+  </dialog>
+
   <section id="removedScreen" class="removed-screen" role="status" aria-live="polite" hidden>
     <span class="fi" aria-hidden="true">&#xE7F4;</span>
     <h1>Screen removed</h1>
@@ -123,7 +152,10 @@
   <script src="audio-gradient.js?v=20261024-audio-39"></script>
   <script src="playback-audit.js?v=20261028-local-6"></script>
   <script src="video-3d.js?v=20261028-local-6"></script>
-  <script src="desktop-entry.js?v=20261025-mobile-42" data-src="screen.js?v=20261028-seek-7"></script>
+  <script src="hand-gestures.js?v=20261029-1"></script>
+  <script src="hand-tabs.js?v=20261029-1"></script>
+  <script src="hand-controls.js?v=20261029-player-3"></script>
+  <script src="desktop-entry.js?v=20261025-mobile-42" data-src="screen.js?v=20261029-hands-4"></script>
   <script src="/rooms-ui.js?v=20261027-links-4"></script>
 </body>
 </html>
