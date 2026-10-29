@@ -89,7 +89,7 @@
     }
   }
 
-  function create({ available, onAction }) {
+  function create({ available, onAction, onPracticeStart = () => {} }) {
     const core = window.CineWallHandGestures;
     const $ = id => document.getElementById(id);
     const panel = $('handControlPanel'), toggle = $('handControlToggle'), video = $('handCamera');
@@ -116,6 +116,7 @@
       closePractice(false); const draining = session.stop(); gate.reset();
       $('handCameraOptions').hidden = true; $('handCameraFeed').hidden = true;
       $('handPlayerStatus').hidden = true;
+      if ($('handPlayerOptions')) { $('handPlayerOptions').hidden = !keepEnabled; $('handPlayerOptions').open = false; }
       status(text);
       return draining;
     }
@@ -133,11 +134,12 @@
       $('handPracticeHold').value = 0;
     }
     function startPractice() {
-      if (!enabled || !available()) return;
+      if (!enabled || !trackingReady || !available() || (tabs && !tabs.active)) return;
+      onPracticeStart();
       practice = new core.Practice(); advancing = false; clearTimeout(nextTimer); gate.reset();
       previousFocus = document.activeElement;
       $('handPracticeCamera').appendChild($('handCameraFeed'));
-      showStep(); dialog.showModal(); $('handPracticeStop').focus();
+      showStep(); dialog.showModal(); $('handPracticeClose').focus();
       status('Practice mode · playback controls paused');
     }
     function result(data, time) {
@@ -210,9 +212,10 @@
         if (ticket !== request) return;
         clearTimeout(startDeadline);
         $('handCameraOptions').hidden = false; $('handPlayerStatus').hidden = false;
+        if ($('handPlayerOptions')) $('handPlayerOptions').hidden = false;
         status('Gestures on · hold a gesture briefly');
-        if (read(key) !== 'complete') startPractice();
         trackingReady = true;
+        if (read(key) !== 'complete') startPractice();
       } catch (error) {
         if (ticket !== request) return;
         const message = { NotAllowedError: 'Camera permission denied. Allow camera access, then try again.',
@@ -245,6 +248,7 @@
     $('handPracticeCameraSelect').addEventListener('change', () => changeCamera($('handPracticeCameraSelect').value));
     $('handPracticeAgain').addEventListener('click', startPractice);
     $('handPracticeStop').addEventListener('click', () => stop('Practice cancelled · camera off'));
+    $('handPracticeClose').addEventListener('click', () => stop('Practice cancelled · camera off'));
     dialog.addEventListener('cancel', event => { event.preventDefault(); stop('Practice cancelled · camera off'); });
     document.addEventListener('visibilitychange', () => {
       if (tabs) {

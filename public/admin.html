@@ -21,7 +21,7 @@
   <meta name="twitter:title" content="CineWall | Video &amp; Audio Control Room">
   <meta name="twitter:description" content="Manage video walls, ten-song playlists, automatic song changes, 3D stereo sound, and per-speaker volume in your CineWall room.">
   
-  <script src="icons.js?v=20261002-icons-18"></script>
+  <script src="icons.js?v=20261029-settings-19"></script>
   <script src="theme.js"></script>
   <script src="device-support.js?v=20261025-mobile-42"></script>
   <script src="session.js?v=20261028-links-5"></script>
@@ -29,7 +29,7 @@
   <script src="video-validation.js?v=20261002-mkv-17"></script>
   <link rel="stylesheet" href="styles.css?v=20261028-local-2">
   <link rel="stylesheet" href="studio.css?v=20261029-settings-4">
-  <link rel="stylesheet" href="hand-controls.css?v=20261029-player-3">
+  <link rel="stylesheet" href="hand-controls.css?v=20261029-player-5">
   <link rel="stylesheet" href="device-support.css?v=20261025-mobile-42">
   <link rel="stylesheet" href="/rooms.css?v=20261027-links-3">
 </head>
@@ -105,7 +105,7 @@
           <div class="download-panel-heading"><h3>YouTube</h3><span id="downloadPanelCopy">Video &amp; audio downloads</span></div>
           <form id="youtubeDownloadForm">
             <label for="downloadYoutubeUrl">YouTube link</label>
-            <div class="download-link-row"><input id="downloadYoutubeUrl" type="url" placeholder="https://youtube.com/watch?v=…" required><button id="checkYoutubeFormats" class="button accent" type="submit">Search</button></div>
+            <div class="download-link-row"><input id="downloadYoutubeUrl" type="text" inputmode="url" maxlength="2048" placeholder="https://youtube.com/watch?v=…" required><button id="checkYoutubeFormats" class="button accent" type="submit">Search</button></div>
           </form>
           <div id="downloadSelection" hidden>
             <strong id="downloadVideoTitle" class="download-video-title"></strong>
@@ -281,7 +281,7 @@
   </main>
   <div id="guideBackdrop" class="guide-backdrop" aria-hidden="true" hidden></div>
   <dialog id="handPractice" class="hand-practice" aria-labelledby="handPracticeTitle" aria-describedby="handPracticeCopy">
-    <div class="hand-practice-top"><span id="handPracticeProgress">1 / 6</span><button id="handPracticeStop" class="button subtle" type="button">Turn off</button></div>
+    <div class="hand-practice-top"><span id="handPracticeProgress">1 / 6</span><div class="hand-practice-actions"><button id="handPracticeStop" class="button subtle" type="button">Turn off</button><button id="handPracticeClose" class="hand-practice-close" type="button" aria-label="Close practice" title="Close practice"><span class="fi" aria-hidden="true">&#xE711;</span></button></div></div>
     <span id="handPracticeIcon" class="hand-practice-icon" aria-hidden="true"></span>
     <h2 id="handPracticeTitle">Practice hand gestures</h2>
     <p id="handPracticeCopy"></p>
@@ -307,9 +307,9 @@
   <script src="video-3d.js?v=20261028-local-6"></script>
   <script src="hand-gestures.js?v=20261029-poses-2"></script>
   <script src="hand-tabs.js?v=20261029-handoff-2"></script>
-  <script src="hand-controls.js?v=20261029-handoff-5"></script>
-  <script src="desktop-entry.js?v=20261025-mobile-42" data-src="admin.js?v=20261029-hands-1"></script>
-  <script src="youtube-download.js?v=20261004-studio-25"></script>
+  <script src="hand-controls.js?v=20261029-practice-6"></script>
+  <script src="desktop-entry.js?v=20261025-mobile-42" data-src="admin.js?v=20261029-controls-2"></script>
+  <script src="youtube-download.js?v=20261029-downloads-2"></script>
   <script src="/rooms-ui.js?v=20261027-links-4"></script>
   <script src="mode-switcher-dashboard.js"></script>
 </body>

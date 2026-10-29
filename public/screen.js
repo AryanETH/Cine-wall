@@ -270,7 +270,8 @@ function audioSetting() {
 function applyAudioSettings() {
   const setting = { ...audioSetting() };
   const slider = $('#screenVolume');
-  if (document.activeElement === slider || localVolumeTimer) setting.volume = Number(slider.value);
+  const actuallyMuted = Boolean(setting.muted || localAutoplayMuted);
+  if (!actuallyMuted && slider.dataset.muted !== 'true' && (document.activeElement === slider || localVolumeTimer)) setting.volume = Number(slider.value);
   const isYouTube = sessionMode === 'youtube';
 
   if (isYouTube && youtubePlayer && youtubeReady) {
@@ -282,13 +283,13 @@ function applyAudioSettings() {
     audioRouter?.set(currentState?.asset ? currentState.audioMode : 'personal', wallScreens, screenNumber, currentState?.asset?.version);
   }
 
-  const actuallyMuted = Boolean(setting.muted || localAutoplayMuted);
   $('#screenMute').innerHTML = `<span class="fi">${actuallyMuted ? '&#xE74F;' : '&#xE767;'}</span>`;
   $('#screenMute').classList.toggle('active', actuallyMuted);
   $('#screenMute').setAttribute('aria-label', actuallyMuted ? 'Unmute this Device' : 'Mute this Device');
   $('#screenMute').setAttribute('aria-pressed', String(actuallyMuted));
-  $('#screenVolume').value = setting.volume;
-  $('#screenVolumeValue').textContent = `${Math.round(setting.volume * 100)}%`;
+  const shownVolume = actuallyMuted ? 0 : setting.volume;
+  slider.value = shownVolume; slider.dataset.muted = String(actuallyMuted);
+  $('#screenVolumeValue').textContent = `${Math.round(shownVolume * 100)}%`;
 }
 
 function presentationUrl(asset, page, mode) {
@@ -705,10 +706,15 @@ function seekTo(position) {
 async function command(payload) {
   if (removedScreenNumber || !screenNumber || !ready) return;
   if (payload.type === 'play' && currentState?.allReady !== true) return;
+  const muteToggle = payload.type === 'screen-audio' && 'muted' in payload && !('volume' in payload);
+  if (muteToggle) {
+    if (localVolumeTimer) payload = { ...payload, volume: audioSetting().volume };
+    clearTimeout(localVolumeTimer); localVolumeTimer = null; localVolumeRevision++;
+  }
   if (['play', 'pause', 'seek', 'restart'].includes(payload.type)) payload = { ...payload, assetVersion: currentState?.asset?.version };
   if (['play', 'seek', 'restart'].includes(payload.type)) endedAssetVersion = '';
   const sequence = ++localControlSequence;
-  const volumeRevision = payload.type === 'screen-audio' && 'volume' in payload ? ++localVolumeRevision : 0;
+  const volumeRevision = payload.type === 'screen-audio' && 'volume' in payload && !muteToggle ? ++localVolumeRevision : 0;
   if (currentState && ['play', 'pause', 'seek', 'restart'].includes(payload.type)) {
     const position = payload.type === 'restart' ? 0 : Number.isFinite(payload.position) ? payload.position : targetPosition(currentState);
     const patch = { position, anchorTime: serverNow(), notBefore: Infinity, playing: payload.type === 'play' ? true : ['pause', 'restart'].includes(payload.type) ? false : currentState.playing };
@@ -1387,11 +1393,13 @@ $('#screenVolume').addEventListener('input', () => {
   } else {
     video.volume = value;
   }
+  if (currentState) currentState.audioSettings = { ...currentState.audioSettings, [String(screenNumber)]: { ...audioSetting(), volume: value, muted: false } };
+  applyAudioSettings();
   $('#screenVolumeValue').textContent = `${Math.round(value * 100)}%`;
   clearTimeout(localVolumeTimer);
-  localVolumeTimer = setTimeout(() => { localVolumeTimer = null; command({ type: 'screen-audio', screen: screenNumber, volume: value }); }, 16);
+  localVolumeTimer = setTimeout(() => { localVolumeTimer = null; command({ type: 'screen-audio', screen: screenNumber, volume: value, muted: false }); }, 16);
 });
-$('#screenVolume').addEventListener('change', () => { clearTimeout(localVolumeTimer); localVolumeTimer = null; command({ type: 'screen-audio', screen: screenNumber, volume: Number($('#screenVolume').value) }); });
+$('#screenVolume').addEventListener('change', () => { clearTimeout(localVolumeTimer); localVolumeTimer = null; command({ type: 'screen-audio', screen: screenNumber, volume: Number($('#screenVolume').value), muted: false }); });
 
 screenTimeline.addEventListener('pointerdown', () => { scrubbing = true; });
 screenTimeline.addEventListener('input', () => { scrubbing = true; $('#screenCurrentTime').textContent = formatTime(Number(screenTimeline.value)); });
@@ -1467,6 +1475,11 @@ function syncPlayerHandControls() {
 }
 handControls = window.CineWallHandControls?.create({
   available: playerHandAvailable,
+  onPracticeStart: () => {
+    if (!playerHandAvailable()) return;
+    command({ type: 'pause' });
+    showControls();
+  },
   onAction: action => {
     if (!playerHandAvailable()) return 'Video controls unavailable';
     if (!currentState?.asset) return 'Load a video from the dashboard first';
@@ -1481,7 +1494,7 @@ handControls = window.CineWallHandControls?.create({
       video.volume = value;
       $('#screenVolume').value = value;
       $('#screenVolumeValue').textContent = `${Math.round(value * 100)}%`;
-      command({ type: 'screen-audio', screen: screenNumber, volume: value });
+      command({ type: 'screen-audio', screen: screenNumber, volume: value, muted: false });
     } else return false;
     showControls();
     return true;

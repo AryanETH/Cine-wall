@@ -221,7 +221,9 @@ YouTube downloads are separate from the upcoming live YouTube wall. Use the **Yo
 
 Choices can include MP4/WebM video, MP3 at 96–320 kbps, original M4A audio and WAV, depending on the video. MP3 output settings do not improve source quality. Downloads have progress and cancellation, a 10 GB limit, and one active job at a time.
 
-The downloader retries alternate streams and official API routes for certain failures. Updates to yt-dlp can help when YouTube changes. Sign-in restrictions, rate limits and blocked connections can still prevent a download. Only download content you own or have permission to save.
+The downloader uses its own yt-dlp/FFmpeg service, with a short metadata cache, shared duplicate checks and bounded connection/stream recovery. Standard, Shorts, Music, Live, embed and mobile share links are supported. Temporary gateway failures reconnect; interrupted progress checks offer **Reconnect** without starting another download. Updates to yt-dlp can help when YouTube changes. Sign-in restrictions, rate limits and blocked connections can still prevent a download. Only download content you own or have permission to save.
+
+YouTube extraction needs Node.js 22 or newer plus current yt-dlp, FFmpeg and FFprobe. The tools endpoint reports these dependencies and the installed downloader version. The Docker image uses Node 24 with the bundled EJS dependency. On Windows, **SETUP DOWNLOADS.cmd** updates verified official releases; for upstream's recommended nightly channel, run `./setup-download-tools.ps1 -Update -Channel nightly`. See [download reliability notes](docs/youtube-downloads.md) for the research and remaining limits.
 
 The tools and cache stay in `tools/` and `.cinema-cache/`, which are excluded from Git. The Docker image includes download tools for hosted use.
 

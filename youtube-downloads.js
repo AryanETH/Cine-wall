@@ -11,6 +11,8 @@ const ROOT = path.join(CACHE_ROOT, 'downloads');
 const TOOLS = path.join(__dirname, 'tools');
 const YT_CACHE = path.join(CACHE_ROOT, 'yt-dlp-cache');
 const inspections = new Map();
+const pendingInspections = new Map();
+const recentInspections = new Map();
 const jobs = new Map();
 const MAX_FILE = 10 * 1024 ** 3;
 let inspecting = 0;
@@ -28,6 +30,7 @@ function run(file, args, timeout = 120000, options = {}) {
       if (error) {
         const failure = new Error(error.code === 'ENOENT' ? 'Download tools are missing. Run setup-download-tools.ps1 on the admin Device.' : path.basename(file).startsWith('yt-dlp') ? downloadError(stderr || error.message) : String(stderr || error.message).trim().slice(-1200));
         failure.causeText = String(stderr || error.message);
+        if (error.name === 'AbortError' || options.signal?.aborted) failure.name = 'AbortError';
         reject(failure);
       }
       else resolve(stdout);
@@ -43,9 +46,22 @@ function networkError(detail) {
 }
 
 function routeArgs(route) {
-  if (route === 1) return ['--extractor-args', 'youtube:player_client=web_embedded;player_skip=webpage,configs;innertube_host=youtubei.googleapis.com'];
-  if (route === 2) return ['--force-ipv6', '--extractor-args', 'youtube:player_client=web_embedded;player_skip=webpage,configs;innertube_host=youtubei.googleapis.com'];
+  if (route === 1) return ['--extractor-args', 'youtube:innertube_host=youtubei.googleapis.com'];
+  if (route === 2) return ['--force-ipv6', '--extractor-args', 'youtube:innertube_host=youtubei.googleapis.com'];
   return [];
+}
+
+function accessError(detail) {
+  return /429|Too Many Requests|Sign in|not a bot|private video|members.only|age.restricted|DRM|PO Token|PO_TOKEN/i.test(String(detail));
+}
+
+function retryDelay(ms, signal) {
+  return new Promise((resolve, reject) => {
+    const abort = () => { clearTimeout(timer); signal?.removeEventListener('abort', abort); reject(Object.assign(Error('Check cancelled.'), { name: 'AbortError' })); };
+    const timer = setTimeout(() => { signal?.removeEventListener('abort', abort); resolve(); }, ms);
+    if (signal?.aborted) abort();
+    else signal?.addEventListener('abort', abort, { once: true });
+  });
 }
 
 async function fetchVideoInfo(videoId, options = {}) {
@@ -53,19 +69,22 @@ async function fetchVideoInfo(videoId, options = {}) {
   let blockedError;
   for (let route = 0; route < 3; route++) {
     try {
-      const output = await run(executable('yt-dlp'), [...common(), ...routeArgs(route), ...(options.fresh ? ['--no-cache-dir'] : []), '--dump-single-json', '--skip-download', '--', `https://www.youtube.com/watch?v=${videoId}`], 120000, options);
+      if (options.signal?.aborted) throw Object.assign(Error('Check cancelled.'), { name: 'AbortError' });
+      const output = await run(executable('yt-dlp'), [...common(), ...routeArgs(route), ...(options.fresh ? ['--no-cache-dir'] : []), '--dump-single-json', '--skip-download', '--', `https://www.youtube.com/watch?v=${videoId}`], 45000, options);
       return { info: JSON.parse(output), route };
     } catch (error) {
       lastError = error;
       if (/WinError 10013/i.test(error.causeText || '')) blockedError = error;
-      if (!networkError(error.causeText || error.message)) break;
+      const detail = error.causeText || error.message;
+      if (error.name === 'AbortError' || accessError(detail) || !(networkError(detail) || /HTTP (?:Error )?5\d\d/i.test(detail))) break;
+      if (route < 2) await retryDelay(250 * (route + 1), options.signal);
     }
   }
   throw blockedError || lastError;
 }
 
 function refreshableDownloadError(stderr) {
-  return !/429|Too Many Requests|Sign in|not a bot|private video|members.only|age.restricted|DRM|PO Token|PO_TOKEN/i.test(stderr)
+  return !accessError(stderr)
     && /HTTP (?:Error )?(?:403|5\d\d)|403: Forbidden|Requested format is not available|timed out|Connection (?:reset|aborted)|Temporary failure/i.test(stderr);
 }
 
@@ -78,9 +97,11 @@ function downloadError(stderr) {
   if (/WinError 10013|socket.*(?:forbidden|permission)/i.test(stderr)) return 'Windows blocked the YouTube connection. Check firewall or network access for CineWall, then try again.';
   if (/429|Too Many Requests/i.test(stderr)) return 'YouTube is temporarily limiting downloads. Try again later.';
   if (/Sign in to confirm|not a bot/i.test(stderr)) return 'YouTube requires a sign-in check for this video.';
+  if (/unsupported (?:JS|JavaScript)|No supported JavaScript runtime|challenge solving failed|JS challenge|yt.dlp.ejs|n challenge|signature (?:extraction|solving) failed/i.test(stderr)) return 'YouTube playback support needs an update. Update the CineWall download tools and try again.';
   if (/HTTP (?:Error )?403|403: Forbidden/i.test(stderr)) return 'YouTube refused this media stream (403). Check the link again to refresh its formats, or try another quality. Some videos require access that this downloader cannot provide.';
   if (/PermissionError|Access is denied|EACCES/i.test(stderr)) return 'CineWall cannot write its download cache. Make sure the CineWall folder is writable.';
   if (networkError(stderr)) return 'Could not reach YouTube. Check your internet connection and try again.';
+  if (/HTTP (?:Error )?5\d\d/i.test(stderr)) return 'YouTube is temporarily unavailable. Try again in a moment.';
   if (/private video|members.only|age.restricted|DRM|PO Token|PO_TOKEN/i.test(stderr)) return 'YouTube does not allow this video to be downloaded here. Try another video.';
   return 'YouTube could not provide this download. Try another link or quality.';
 }
@@ -89,7 +110,14 @@ let toolCheck = null, toolCheckedAt = 0;
 async function capabilities() {
   if (!toolCheck || Date.now() - toolCheckedAt > 30000) {
     toolCheckedAt = Date.now();
-    toolCheck = Promise.allSettled([run(executable('yt-dlp'), ['--version'], 10000), run(executable('ffmpeg'), ['-version'], 10000)]).then(checks => ({ downloader: checks[0].status === 'fulfilled', converter: checks[1].status === 'fulfilled', ready: checks.every(check => check.status === 'fulfilled') }));
+    toolCheck = Promise.allSettled([run(executable('yt-dlp'), ['--version'], 10000), run(executable('ffmpeg'), ['-version'], 10000), run(executable('ffprobe'), ['-version'], 10000)]).then(checks => {
+      const runtimeVersion = process.versions?.node || String(process.version || '').replace(/^v/, '');
+      const runtime = Number(runtimeVersion.split('.')[0]) >= 22;
+      const downloader = checks[0].status === 'fulfilled', converter = checks[1].status === 'fulfilled', probe = checks[2].status === 'fulfilled';
+      return { downloader, converter, probe, runtime, runtimeVersion, downloaderVersion: downloader ? checks[0].value.trim() : '',
+        ready: downloader && converter && probe && runtime,
+        message: !runtime ? 'YouTube downloads need Node.js 22 or newer on the CineWall server.' : !downloader || !converter || !probe ? 'Download tools are unavailable. Run the CineWall download setup or rebuild the server image.' : '' };
+    });
   }
   return toolCheck;
 }
@@ -140,11 +168,50 @@ function downloadChoices(info) {
   return choices;
 }
 
-async function inspect(videoId) {
+function publicInspection(entry) {
+  return { id: entry.id, videoId: entry.videoId, title: entry.title, duration: entry.duration,
+    thumbnail: `https://i.ytimg.com/vi/${entry.videoId}/hqdefault.jpg`,
+    formats: entry.options.map(({ selector, codec, fallbackSelectors: privateFallbacks, ...option }) => option) };
+}
+
+function inspect(videoId, options = {}) {
+  if (!/^[a-zA-Z0-9_-]{11}$/.test(videoId)) return Promise.reject(Error('Paste a valid YouTube video link.'));
+  if (options.signal?.aborted) return Promise.reject(Object.assign(Error('Check cancelled.'), { name: 'AbortError' }));
+  const recent = recentInspections.get(videoId);
+  if (recent?.until > Date.now() && inspections.has(recent.id)) return Promise.resolve(publicInspection(inspections.get(recent.id)));
+  let pending = pendingInspections.get(videoId);
+  if (!pending) {
+    pending = { controller: new AbortController(), users: 0 };
+    const current = pending;
+    pending.promise = inspectFresh(videoId, { signal: pending.controller.signal }).finally(() => {
+      current.settled = true;
+      if (pendingInspections.get(videoId) === current) pendingInspections.delete(videoId);
+    });
+    pendingInspections.set(videoId, pending);
+  }
+  return new Promise((resolve, reject) => {
+    pending.users++;
+    let finished = false;
+    const detach = () => { finished = true; pending.users--; options.signal?.removeEventListener('abort', abort); };
+    const abort = () => {
+      if (finished) return;
+      detach();
+      if (!pending.users && !pending.settled) {
+        pending.controller.abort();
+        if (pendingInspections.get(videoId) === pending) pendingInspections.delete(videoId);
+      }
+      reject(Object.assign(Error('Check cancelled.'), { name: 'AbortError' }));
+    };
+    options.signal?.addEventListener('abort', abort, { once: true });
+    pending.promise.then(value => { if (!finished) { detach(); resolve(value); } }, error => { if (!finished) { detach(); reject(error); } });
+  });
+}
+
+async function inspectFresh(videoId, requestOptions = {}) {
   if (inspecting >= 2) throw new Error('Another video is being checked. Try again in a moment.');
   inspecting += 1;
   try {
-    const { info, route } = await fetchVideoInfo(videoId);
+    const { info, route } = await fetchVideoInfo(videoId, requestOptions);
     if (info.is_live) throw new Error('A live stream cannot be downloaded while it is broadcasting. Choose a recorded video.');
     const options = downloadChoices(info);
     if (!options.length) throw new Error('No downloadable formats were found for this video.');
@@ -152,8 +219,8 @@ async function inspect(videoId) {
     const id = randomUUID();
     const entry = { id, videoId, title: info.title || videoId, duration: Number(info.duration) || 0, options, route, expires: Date.now() + 30 * 60 * 1000 };
     inspections.set(id, entry);
-    return { id, videoId, title: entry.title, duration: entry.duration, thumbnail: `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`,
-      formats: options.map(({ selector, codec, fallbackSelectors: privateFallbacks, ...option }) => option) };
+    recentInspections.set(videoId, { id, until: Date.now() + 120000 });
+    return publicInspection(entry);
   } finally { inspecting -= 1; }
 }
 
@@ -201,6 +268,7 @@ async function refreshJobFormats(job) {
     job.state = 'error'; job.error = error.message;
   } finally {
     job.refreshAbort = null;
+    if (['error', 'cancelled'].includes(job.state)) { job.releaseBudget?.(); job.releaseBudget = null; }
   }
 }
 
@@ -244,7 +312,7 @@ function launch(job) {
     job.child = null;
     if (job.state === 'cancelled' || job.state === 'error') return;
     if (code !== 0) {
-      if (networkError(stderr) && (job.route || 0) < 2) {
+      if (!accessError(stderr) && networkError(stderr) && (job.route || 0) < 2) {
         job.route = (job.route || 0) + 1;
         job.state = 'downloading';
         job.progress = 0;
@@ -363,6 +431,10 @@ function cleanup() {
   }
   cacheBudget.removeExpired(ROOT, 24 * 60 * 60 * 1000, protectedPaths);
   for (const [id, info] of inspections) if (info.expires < now) inspections.delete(id);
+  for (const [id, info] of recentInspections) if (info.until < now || !inspections.has(info.id)) recentInspections.delete(id);
 }
-function shutdown() { for (const job of jobs.values()) if (['downloading', 'converting'].includes(job.state)) cancel(job.id); }
+function shutdown() {
+  for (const check of pendingInspections.values()) check.controller.abort();
+  for (const job of jobs.values()) if (['downloading', 'converting'].includes(job.state)) cancel(job.id);
+}
 module.exports = { capabilities, inspect, start, get, publicJob, cancel, copyForWall, copyForSpeakers, inspectBrowserVideo, downloadChoices, downloadError, common, refreshableDownloadError, equivalentChoice, cleanup, shutdown };

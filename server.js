@@ -7,6 +7,7 @@ const os = require('node:os');
 const zlib = require('node:zlib');
 const { execFile } = require('node:child_process');
 const downloads = require('./youtube-downloads');
+const { extractYouTubeId } = require('./youtube-url');
 const cacheBudget = require('./cache-budget');
 const createRooms = require('./rooms');
 const createScreenSharing = require('./screen-sharing');
@@ -260,29 +261,6 @@ function modeLimits(sessionMode = state.sessionMode) {
   if (sessionMode === 'audio') return { min: 1, max: 5, initial: 1 };
   if (sessionMode === 'presentation') return { min: 1, max: 3, initial: 1 };
   return { min: 1, max: 3, initial: 2 };
-}
-
-function extractYouTubeId(value) {
-  const input = String(value || '').trim();
-  if (/^[a-zA-Z0-9_-]{11}$/.test(input)) return input;
-  let url;
-  try {
-    url = new URL(/^https?:\/\//i.test(input) ? input : `https://${input}`);
-  } catch {
-    throw new Error('Paste a valid YouTube link');
-  }
-  const host = url.hostname.toLowerCase().replace(/^www\./, '').replace(/^m\./, '');
-  let candidate = '';
-  if (host === 'youtu.be') candidate = url.pathname.split('/').filter(Boolean)[0] || '';
-  else if (host === 'youtube.com' || host === 'youtube-nocookie.com') {
-    if (url.pathname === '/watch') candidate = url.searchParams.get('v') || '';
-    else {
-      const parts = url.pathname.split('/').filter(Boolean);
-      if (['shorts', 'embed', 'live'].includes(parts[0])) candidate = parts[1] || '';
-    }
-  }
-  if (!/^[a-zA-Z0-9_-]{11}$/.test(candidate)) throw new Error('This YouTube link does not contain a valid video ID');
-  return candidate;
 }
 
 function audioSettingsForMode(sessionMode) {
@@ -1010,7 +988,13 @@ async function handle(req, res, url) {
     if (req.method === 'POST' && url.pathname === '/api/youtube/formats') {
       const body = await readJson(req);
       checkOwner(req, true);
-      json(res, 200, await downloads.inspect(extractYouTubeId(body.url)));
+      const controller = new AbortController();
+      const disconnected = () => { if (!res.writableEnded) controller.abort(); };
+      res.once('close', disconnected);
+      try {
+        const result = await downloads.inspect(extractYouTubeId(body.url), { signal: controller.signal });
+        if (!controller.signal.aborted) json(res, 200, result);
+      } finally { res.removeListener('close', disconnected); }
       return;
     }
     if (req.method === 'POST' && url.pathname === '/api/youtube/downloads') {

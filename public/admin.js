@@ -245,13 +245,25 @@ function updateServerTime(state) {
 async function command(payload) {
   if (sourceLocked() && !['screen-audio', 'identify'].includes(payload.type)) return null;
   if (payload.type === 'play' && !playbackReady()) return null;
+  const muteToggle = payload.type === 'screen-audio' && 'muted' in payload && !('volume' in payload);
+  if (muteToggle && volumeTimers.has(Number(payload.screen))) {
+    clearTimeout(volumeTimers.get(Number(payload.screen))); volumeTimers.delete(Number(payload.screen));
+    payload = { ...payload, volume: audioSetting(payload.screen).volume };
+  }
+  if (['mute-all', 'youtube-audio-mode', 'audio-output'].includes(payload.type)) {
+    for (const screen of [...volumeTimers.keys()]) {
+      clearTimeout(volumeTimers.get(screen)); volumeTimers.delete(screen);
+      void command({ type: 'screen-audio', screen, volume: audioSetting(screen).volume });
+    }
+  }
   const sequence = ++controlSequence;
   const state = status.state;
   if (['play', 'pause', 'seek', 'restart'].includes(payload.type)) payload = { ...payload, assetVersion: state.asset?.version };
   const now = Date.now() + serverOffset;
   const key = ['play', 'pause', 'seek', 'restart'].includes(payload.type) ? 'playback' : payload.type === 'screen-audio' ? `audio-${payload.screen}` : '';
-  const coalesce = payload.type === 'seek' ? 'seek' : payload.type === 'screen-audio' && 'volume' in payload && !('muted' in payload) ? `volume-${payload.screen}` : '';
+  const coalesce = payload.type === 'seek' ? 'seek' : payload.type === 'screen-audio' && 'volume' in payload && !muteToggle ? `volume-${payload.screen}` : '';
   if (coalesce) queuedRevisions.set(coalesce, sequence);
+  if (muteToggle) queuedRevisions.set(`volume-${payload.screen}`, sequence);
   if (['play', 'pause', 'seek', 'restart'].includes(payload.type)) {
     const position = payload.type === 'restart' ? 0 : Number.isFinite(payload.position) ? payload.position : positionNow();
     const patch = { position, anchorTime: now, notBefore: 0, playing: payload.type === 'play' ? true : payload.type === 'pause' || payload.type === 'restart' ? false : state.playing };
@@ -301,7 +313,10 @@ async function command(payload) {
   }
   };
   const queueKey = payload.type === 'screen-audio' ? `audio-${payload.screen}` : ['mute-all', 'audio-output', 'youtube-audio-mode'].includes(payload.type) ? 'mixer' : 'playback';
-  const previous = controlsQueues.get(queueKey) || Promise.resolve();
+  const audioCommand = queueKey.startsWith('audio-'), mixerCommand = queueKey === 'mixer';
+  const previous = audioCommand || mixerCommand
+    ? Promise.all([...controlsQueues].filter(([key]) => key === 'mixer' || (mixerCommand ? key.startsWith('audio-') : key === queueKey)).map(([, work]) => work))
+    : controlsQueues.get(queueKey) || Promise.resolve();
   const result = previous.then(send, send);
   controlsQueues.set(queueKey, result.catch(() => {}));
   return result;
@@ -513,11 +528,14 @@ function renderMixer() {
   if (status.state.sessionMode === 'presentation') return;
   screenLinks.querySelectorAll('[data-speaker]').forEach((card) => {
     const setting = audioSetting(Number(card.dataset.speaker)), slider = card.querySelector('input'), button = card.querySelector('[data-mute-screen]');
-    if (document.activeElement !== slider && !volumeTimers.has(Number(card.dataset.speaker))) slider.value = setting.volume;
+    const muted = Boolean(setting.muted), changedMute = slider.dataset.muted !== String(muted);
+    if (muted || changedMute || document.activeElement !== slider && !volumeTimers.has(Number(card.dataset.speaker))) slider.value = muted ? 0 : setting.volume;
+    slider.dataset.muted = String(muted);
     card.querySelector('output').textContent = `${Math.round(Number(slider.value) * 100)}%`;
     card.classList.toggle('muted', setting.muted);
     button.innerHTML = `<span class="fi">${setting.muted ? '&#xE74F;' : '&#xE767;'}</span>`;
     button.setAttribute('aria-label', `${setting.muted ? 'Unmute' : 'Mute'} ${screenRole(Number(card.dataset.speaker))}`);
+    button.setAttribute('aria-pressed', String(muted));
   });
   const activeSettings = Array.from({ length: status.state.screenCount }, (_, index) => audioSetting(index + 1));
   const allMuted = activeSettings.every((setting) => setting.muted);
@@ -527,7 +545,11 @@ function renderMixer() {
   const admin = audioSetting(1);
   $('#adminMute').innerHTML = `<span class="fi">${admin.muted ? '&#xE74F;' : '&#xE767;'}</span>`;
   $('#adminMute').classList.toggle('active', admin.muted);
-  if (document.activeElement !== $('#adminVolume') && !volumeTimers.has(1)) $('#adminVolume').value = admin.volume;
+  $('#adminMute').setAttribute('aria-label', admin.muted ? 'Unmute admin Device' : 'Mute admin Device');
+  $('#adminMute').setAttribute('aria-pressed', String(Boolean(admin.muted)));
+  const mainSlider = $('#adminVolume'), changedMute = mainSlider.dataset.muted !== String(Boolean(admin.muted));
+  if (admin.muted || changedMute || document.activeElement !== mainSlider && !volumeTimers.has(1)) mainSlider.value = admin.muted ? 0 : admin.volume;
+  mainSlider.dataset.muted = String(Boolean(admin.muted));
   $('#adminVolumeValue').textContent = `${Math.round(Number($('#adminVolume').value) * 100)}%`;
 }
 
@@ -888,8 +910,9 @@ timeline.addEventListener('pointercancel', () => { scrubbing = false; });
 
 function queueVolume(screen, volume) {
   clearTimeout(volumeTimers.get(screen));
-  status.state.audioSettings = { ...status.state.audioSettings, [screen]: { ...audioSetting(screen), volume } };
-  volumeTimers.set(screen, setTimeout(() => { volumeTimers.delete(screen); command({ type: 'screen-audio', screen, volume }); }, 35));
+  status.state.audioSettings = { ...status.state.audioSettings, [screen]: { ...audioSetting(screen), volume, muted: false } };
+  volumeTimers.set(screen, setTimeout(() => { volumeTimers.delete(screen); command({ type: 'screen-audio', screen, volume, muted: false }); }, 35));
+  renderMixer();
 }
 
 screenLinks.addEventListener('input', (event) => {

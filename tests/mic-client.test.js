@@ -188,6 +188,14 @@ test('speaker buffers ICE arriving before an offer, answers it and enables outpu
   await h.click('#enableSpeaker'); assert.equal(h.contexts.length, 1); assert.equal(h.contexts[0].state, 'running');
   await h.input('#speakerVolume', '.4'); assert.equal(h.contexts[0].nodes.find(n => n.kind === 'gain').gain.value, .4);
   await h.click('#muteSpeaker'); assert.equal(h.contexts[0].nodes.find(n => n.kind === 'gain').gain.value, 0);
+  assert.equal(Number(h.get('#speakerVolume').value), 0); assert.equal(h.get('#volumeValue').textContent, '0%');
+  await h.click('#muteSpeaker');
+  assert.equal(Number(h.get('#speakerVolume').value), .4); assert.equal(h.get('#volumeValue').textContent, '40%');
+  assert.equal(h.contexts[0].nodes.find(n => n.kind === 'gain').gain.value, .4);
+  await h.click('#muteSpeaker'); await h.input('#speakerVolume', '.25');
+  assert.equal(h.get('#muteSpeaker').textContent, 'Mute'); assert.equal(h.contexts[0].nodes.find(n => n.kind === 'gain').gain.value, .25);
+  await h.input('#speakerVolume', '0'); await h.click('#muteSpeaker'); await h.click('#muteSpeaker');
+  assert.equal(Number(h.get('#speakerVolume').value), 0, 'an explicitly selected zero level is restored as zero');
 });
 
 test('device controls start with one laptop, cap at three, remove a slot and reuse its number', async () => {

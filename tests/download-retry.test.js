@@ -17,8 +17,9 @@ function info(videoId = 'YE7VzlLtp-4', fresh = false) {
   ] };
 }
 
-function downloader({ freshInfo = info(undefined, true), holdRefresh = false, outputFile = 'media.mp4', inspectionErrors = [] } = {}) {
+function downloader({ freshInfo = info(undefined, true), holdRefresh = false, holdInitial = false, outputFile = 'media.mp4', inspectionErrors = [], nodeVersion = '24.11.1', missingProbe = false } = {}) {
   const children = [], extractions = [], writes = [], budgets = [];
+  let initial;
   const child = () => { const value = new EventEmitter(); value.stdout = new EventEmitter(); value.stderr = new EventEmitter(); value.kill = () => {}; return value; };
   const module = { exports: {} };
   const fileSystem = {
@@ -27,7 +28,17 @@ function downloader({ freshInfo = info(undefined, true), holdRefresh = false, ou
   };
   const processes = {
     execFile(file, args, options, callback) {
-      const value = child(); extractions.push(args);
+      const value = child();
+      if (['--version', '-version'].includes(args[0])) {
+        queueMicrotask(() => missingProbe && file === 'ffprobe' ? callback(Object.assign(Error('Missing ffprobe'), { code: 'ENOENT' }), '', '') : callback(null, file === 'yt-dlp' ? '2026.10.26\n' : 'tool version\n', ''));
+        return value;
+      }
+      extractions.push(args);
+      if (holdInitial && extractions.length === 1) {
+        initial = { signal: options.signal, finish: () => callback(null, JSON.stringify(info()), '') };
+        options.signal.addEventListener('abort', () => callback(Object.assign(Error('Cancelled'), { name: 'AbortError' }), '', 'Cancelled'), { once: true });
+        return value;
+      }
       const failure = inspectionErrors[extractions.length - 1];
       if (failure) {
         queueMicrotask(() => callback(new Error('Connection failed'), '', failure));
@@ -40,10 +51,10 @@ function downloader({ freshInfo = info(undefined, true), holdRefresh = false, ou
   };
   vm.runInNewContext(fs.readFileSync(path.join(__dirname, '../youtube-downloads.js'), 'utf8'), {
     require(name) { return name === './cache-budget' ? { reserve: (id, bytes) => { budgets.push(bytes); return () => {}; }, removeExpired() {} } : name === 'node:fs' ? fileSystem : name === 'node:child_process' ? processes : name === 'node:crypto' ? { randomUUID } : require(name); },
-    module, process: { platform: 'linux', execPath: process.execPath, env: { CINEWALL_CACHE_DIR: path.join(__dirname, 'virtual-cache') } }, __dirname: path.join(__dirname, '..'),
+    module, process: { platform: 'linux', execPath: process.execPath, versions: { node: nodeVersion }, env: { CINEWALL_CACHE_DIR: path.join(__dirname, 'virtual-cache') } }, __dirname: path.join(__dirname, '..'),
     setTimeout, clearTimeout, setInterval, clearInterval, AbortController, queueMicrotask,
   });
-  return { api: module.exports, children, extractions, writes, budgets, fail(index, error) { children[index].stderr.emit('data', Buffer.from(error)); children[index].emit('close', 1); } };
+  return { api: module.exports, children, extractions, writes, budgets, get initial() { return initial; }, fail(index, error) { children[index].stderr.emit('data', Buffer.from(error)); children[index].emit('close', 1); } };
 }
 
 async function startVideo(client) {
@@ -150,4 +161,43 @@ test('download socket failures use bounded connection routes without changing qu
   assert.equal(client.api.get(job.id).state, 'error');
   assert.match(client.api.get(job.id).error, /Windows blocked/);
   assert.ok(client.children.every((child) => child.args[child.args.indexOf('-f') + 1] === '137+140'));
+});
+
+test('simultaneous and recent checks of one video share extraction without using another inspection slot', async () => {
+  const client = downloader();
+  const [first, second] = await Promise.all([client.api.inspect('YE7VzlLtp-4'), client.api.inspect('YE7VzlLtp-4')]);
+  assert.equal(first.id, second.id); assert.equal(client.extractions.length, 1);
+  assert.equal((await client.api.inspect('YE7VzlLtp-4')).id, first.id);
+  assert.equal(client.extractions.length, 1);
+});
+
+test('temporary metadata server failures recover with default clients and complete metadata requests', async () => {
+  const client = downloader({ inspectionErrors: ['ERROR: HTTP Error 503: Service Unavailable'] });
+  assert.ok((await client.api.inspect('YE7VzlLtp-4')).formats.length);
+  assert.equal(client.extractions.length, 2);
+  assert.ok(client.extractions.every(args => !args.some(arg => /player_skip|player_client=web_embedded/.test(arg))));
+  const restricted = downloader({ inspectionErrors: ["Sign in to confirm you're not a bot. Connection reset"] });
+  await assert.rejects(restricted.api.inspect('YE7VzlLtp-4'), /sign-in/i); assert.equal(restricted.extractions.length, 1);
+});
+
+test('tool readiness includes the configured JavaScript runtime, FFprobe and downloader version', async () => {
+  const ready = await downloader().api.capabilities();
+  assert.equal(ready.ready, true); assert.equal(ready.downloaderVersion, '2026.10.26'); assert.equal(ready.probe, true);
+  const oldNode = await downloader({ nodeVersion: '20.19.0' }).api.capabilities();
+  assert.equal(oldNode.ready, false); assert.match(oldNode.message, /Node.js 22/);
+  const missing = await downloader({ missingProbe: true }).api.capabilities();
+  assert.equal(missing.converter, true); assert.equal(missing.probe, false); assert.equal(missing.ready, false);
+});
+
+test('abandoned metadata cancels only after its last subscriber leaves and releases inspection capacity', async () => {
+  const client = downloader({ holdInitial: true }), first = new AbortController(), second = new AbortController();
+  const left = client.api.inspect('YE7VzlLtp-4', { signal: first.signal }), right = client.api.inspect('YE7VzlLtp-4', { signal: second.signal });
+  first.abort(); await assert.rejects(left, { name: 'AbortError' });
+  assert.equal(client.initial.signal.aborted, false, 'one viewer must not cancel another viewer sharing metadata');
+  client.initial.finish(); assert.ok((await right).formats.length); assert.equal(client.extractions.length, 1);
+  const abandoned = downloader({ holdInitial: true }), controller = new AbortController();
+  const pending = abandoned.api.inspect('YE7VzlLtp-4', { signal: controller.signal });
+  controller.abort(); await assert.rejects(pending, { name: 'AbortError' }); await turn();
+  assert.equal(abandoned.initial.signal.aborted, true);
+  assert.ok((await abandoned.api.inspect('aqz-KE-bpKQ')).formats.length);
 });

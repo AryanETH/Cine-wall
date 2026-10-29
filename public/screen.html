@@ -11,13 +11,13 @@
   <meta name="description" content="Join a numbered CineWall display or speaker for shared playback, 3D stereo sound, and a sound-reactive gradient controlled by the source laptop.">
   <meta name="robots" content="noindex, nofollow">
   
-  <script src="icons.js?v=20261002-icons-18"></script>
+  <script src="icons.js?v=20261029-settings-19"></script>
   <script src="theme.js"></script>
   <script src="device-support.js?v=20261025-mobile-42"></script>
   <script src="session.js?v=20261028-links-5"></script>
   <script src="media-peer.js?v=20261027-entry-2"></script>
   <link rel="stylesheet" href="styles.css?v=20261028-local-2">
-  <link rel="stylesheet" href="hand-controls.css?v=20261029-player-4">
+  <link rel="stylesheet" href="hand-controls.css?v=20261029-player-5">
   <link rel="stylesheet" href="device-support.css?v=20261025-mobile-42">
   <link rel="stylesheet" href="/rooms.css?v=20261027-links-3">
 </head>
@@ -90,10 +90,13 @@
     <span id="screenShortcuts" class="screen-shortcuts">Space · Play/Pause &nbsp; ← → · Seek &nbsp; F · Fullscreen</span>
   </section>
 
-  <details id="playerHandSettings" class="screen-hand-settings" hidden>
-    <summary>Hand gestures</summary>
-          <div id="handControlPanel" class="hand-panel" hidden>
-            <label class="hand-toggle" for="handControlToggle">Hand gestures <input id="handControlToggle" type="checkbox" role="switch"></label>
+  <section id="playerHandSettings" class="screen-hand-settings" aria-label="Hand gesture controls" hidden>
+    <div id="handControlPanel" class="hand-panel" hidden>
+      <div class="screen-hand-toggle-row">
+        <label class="hand-toggle" for="handControlToggle">Hand gestures <input id="handControlToggle" type="checkbox" role="switch"></label>
+        <details id="handPlayerOptions" class="screen-hand-options" hidden>
+          <summary aria-label="Gesture camera and practice options" title="Camera and practice"><span class="fi" aria-hidden="true">&#xE713;</span></summary>
+          <div class="hand-options-panel">
             <p id="handControlHint" class="hand-note" role="status" hidden>Off</p>
             <div id="handCameraOptions" hidden>
               <div class="hand-camera-controls"><select id="handCameraSelect" aria-label="Gesture camera"></select><button id="handPracticeAgain" class="button subtle" type="button">Practice again</button></div>
@@ -103,10 +106,13 @@
             </div>
             <div id="handCameraMount"><div id="handCameraFeed" class="hand-feed" hidden><video id="handCamera" autoplay muted playsinline aria-label="Live gesture camera"></video><span id="handDetected">Show your hand</span></div></div>
           </div>
-  </details>
+        </details>
+      </div>
+    </div>
+  </section>
   <div id="handPlayerStatus" class="hand-player-status" role="status" hidden></div>
   <dialog id="handPractice" class="hand-practice" aria-labelledby="handPracticeTitle" aria-describedby="handPracticeCopy">
-    <div class="hand-practice-top"><span id="handPracticeProgress">1 / 6</span><button id="handPracticeStop" class="button subtle" type="button">Turn off</button></div>
+    <div class="hand-practice-top"><span id="handPracticeProgress">1 / 6</span><div class="hand-practice-actions"><button id="handPracticeStop" class="button subtle" type="button">Turn off</button><button id="handPracticeClose" class="hand-practice-close" type="button" aria-label="Close practice" title="Close practice"><span class="fi" aria-hidden="true">&#xE711;</span></button></div></div>
     <span id="handPracticeIcon" class="hand-practice-icon" aria-hidden="true"></span>
     <h2 id="handPracticeTitle">Practice hand gestures</h2>
     <p id="handPracticeCopy"></p>
@@ -115,7 +121,7 @@
     <div id="handPracticeCamera"></div>
     <progress id="handPracticeHold" max="1" value="0" aria-label="Gesture hold progress"></progress>
     <p id="handPracticeHint" class="hand-note" role="status"></p>
-    <p class="hand-note">Practice only. Playback stays unchanged. Lower your hand between gestures.</p>
+    <p class="hand-note">Video pauses during practice. Lower your hand between gestures.</p>
   </dialog>
 
   <section id="removedScreen" class="removed-screen" role="status" aria-live="polite" hidden>
@@ -154,8 +160,8 @@
   <script src="video-3d.js?v=20261028-local-6"></script>
   <script src="hand-gestures.js?v=20261029-poses-2"></script>
   <script src="hand-tabs.js?v=20261029-handoff-2"></script>
-  <script src="hand-controls.js?v=20261029-handoff-5"></script>
-  <script src="desktop-entry.js?v=20261025-mobile-42" data-src="screen.js?v=20261029-hands-4"></script>
+  <script src="hand-controls.js?v=20261029-practice-6"></script>
+  <script src="desktop-entry.js?v=20261025-mobile-42" data-src="screen.js?v=20261029-controls-5"></script>
   <script src="/rooms-ui.js?v=20261027-links-4"></script>
 </body>
 </html>

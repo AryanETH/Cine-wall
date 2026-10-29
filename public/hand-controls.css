@@ -19,6 +19,11 @@
 .hand-practice::backdrop { background: #0009; }
 .hand-practice-top { display: flex; justify-content: space-between; align-items: center; gap: 16px; }
 .hand-practice-top span { color: var(--muted); font-size: .8rem; }
+.hand-practice-actions { display: flex; align-items: center; gap: 8px; }
+.hand-practice-close { display: grid; place-items: center; flex: 0 0 34px; width: 34px; height: 34px; padding: 0; border: 1px solid var(--line); border-radius: 50%; background: var(--surface); color: var(--ink); cursor: pointer; }
+.hand-practice-close .fi { font-size: 16px; }
+.hand-practice-close:hover { background: var(--surface-2); }
+.hand-practice-close:focus-visible { outline: 3px solid var(--accent); outline-offset: 3px; }
 .hand-practice h2 { margin: 16px 0 8px; font-size: 1.4rem; }
 .hand-practice-icon { display: block; font-size: 44px; margin-top: 8px; }
 .hand-practice p { line-height: 1.5; margin: 8px 0; }
@@ -33,11 +38,16 @@
 .hand-panel [hidden], .hand-player-status[hidden] { display: none !important; }
 .screen-hand-settings { position: fixed; z-index: 18; top: 78px; right: 18px; max-width: min(340px, calc(100vw - 36px)); color: var(--ink); }
 .screen-hand-settings[hidden] { display: none; }
-.screen-hand-settings > summary { display: flex; align-items: center; gap: 12px; width: fit-content; margin-left: auto; padding: 10px 14px; list-style: none; border: 1px solid var(--line); border-radius: 999px; background: var(--shell); cursor: pointer; font-size: 13px; font-weight: 650; }
-.screen-hand-settings > summary::-webkit-details-marker { display: none; }
-.screen-hand-settings > summary::after { content: 'OFF'; color: var(--muted); font-size: 10px; }
-.screen-hand-settings:has(#handControlToggle:checked) > summary::after { content: 'ON'; color: var(--accent); }
-.screen-hand-settings .hand-panel { width: min(340px, calc(100vw - 36px)); max-height: calc(100dvh - 140px); overflow: auto; margin-top: 8px; padding: 16px; border: 1px solid var(--line); border-radius: 14px; background: var(--shell); box-shadow: 0 8px 28px #0004; }
+.screen-hand-settings .hand-panel { position: relative; }
+.screen-hand-toggle-row { display: flex; align-items: center; justify-content: flex-end; gap: 8px; }
+.screen-hand-toggle-row > .hand-toggle { gap: 12px; width: fit-content; padding: 8px 10px 8px 14px; border: 1px solid var(--line); border-radius: 999px; background: var(--shell); font-size: 13px; font-weight: 650; }
+.screen-hand-options > summary { display: grid; place-items: center; width: 42px; height: 42px; padding: 0; list-style: none; border: 1px solid var(--line); border-radius: 50%; background: var(--shell); cursor: pointer; }
+.screen-hand-options > summary::-webkit-details-marker { display: none; }
+.screen-hand-options > summary::marker { content: ''; }
+.screen-hand-options > summary:focus-visible { outline: 3px solid var(--accent); outline-offset: 3px; }
+.screen-hand-options[open] > summary { color: var(--accent); border-color: var(--accent); }
+.hand-options-panel { position: absolute; top: calc(100% + 8px); right: 0; width: min(340px, calc(100vw - 36px)); max-height: calc(100dvh - 160px); overflow: auto; padding: 16px; border: 1px solid var(--line); border-radius: 14px; background: var(--shell); box-shadow: 0 8px 28px #0004; }
+.screen-hand-options[hidden] { display: none !important; }
 .screen-body .hand-player-status { position: fixed; top: auto; bottom: 160px; left: 50%; transform: translateX(-50%); max-width: min(440px, calc(100vw - 36px)); }
 .screen-body .screen-hand-settings, .screen-body .hand-player-status { opacity: 0; visibility: hidden; pointer-events: none; transition: opacity .28s ease, visibility .28s; }
 .screen-body:has(#screenControls.available.visible) .screen-hand-settings,

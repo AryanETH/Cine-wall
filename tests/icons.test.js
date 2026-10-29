@@ -48,7 +48,8 @@ test('every icon used in pages and dynamic controls has a local SVG, with no Win
   assert.match(styles, /\.cw-icon[^}]+pointer-events: none/);
   for (const page of ['index.html', 'admin.html', 'screen.html']) {
     const html = fs.readFileSync(path.join(publicDir, page), 'utf8');
-    assert.match(html, /<script src="icons\.js\?v=20261002-icons-18"><\/script>/);
+    const iconVersion = page === 'index.html' ? '20261002-icons-18' : '20261029-settings-19';
+    assert.ok(html.includes(`icons.js?v=${iconVersion}`));
     const styleVersions = { 'index.html': '20261027-links-3', 'admin.html': '20261028-local-2', 'screen.html': '20261028-local-2' };
     assert.ok(html.includes(`styles.css?v=${styleVersions[page]}`));
     assert.ok(html.indexOf('icons.js') < html.indexOf('theme.js'));

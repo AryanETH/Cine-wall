@@ -12,23 +12,28 @@ test('player mute and unmute apply before a slow reply and pending sound survive
   const client = player(1); await nextTurn();
   const requests = [];
   client.context.fetch = async (route, init) => new Promise(resolve => requests.push({ body: JSON.parse(init.body), resolve }));
-  client.evaluate('localAutoplayMuted = false; currentState.audioSettings[1].muted = false; applyAudioSettings()');
+  client.evaluate('localAutoplayMuted = false; currentState.audioSettings[1] = { volume: .65, muted: false }; applyAudioSettings()');
   const video = client.nodes.get('#video');
   const mute = client.evaluate("command({ type: 'screen-audio', screen: 1, muted: true })");
   assert.equal(video.muted, true, 'sound changes within the click, before fetch completes');
+  assert.equal(Number(client.nodes.get('#screenVolume').value), 0); assert.equal(client.nodes.get('#screenVolumeValue').textContent, '0%');
+  assert.equal(client.evaluate('audioSetting().volume'), .65, 'mute preserves the stored level');
   client.evaluate('applyStateAppearance({ ...currentState, audioSettings: { 1: { volume: 1, muted: false } } })');
   assert.equal(video.muted, true, 'a stale state event cannot undo the pending mute');
   const unmute = client.evaluate("command({ type: 'screen-audio', screen: 1, muted: false })");
   assert.equal(video.muted, false, 'the second click is immediate even while the first request waits');
+  assert.equal(Number(client.nodes.get('#screenVolume').value), .65);
   await nextTurn();
-  const reply = (index, muted, commandId) => requests[index].resolve({ ok: true, json: async () => ({ command: { ...client.state, type: 'screen-audio', executeAt: Date.now(), commandId, audioSettings: { 1: { volume: 1, muted } } } }) });
+  const reply = (index, muted, commandId) => requests[index].resolve({ ok: true, json: async () => ({ command: { ...client.state, type: 'screen-audio', executeAt: Date.now(), commandId, audioSettings: { 1: { volume: .65, muted } } } }) });
   reply(0, true, 8); await mute; await nextTurn();
   assert.equal(video.muted, false, 'an older acknowledgement preserves the newest click');
   reply(1, false, 9); await unmute;
   client.evaluate('localAutoplayMuted = true; applyAudioSettings()');
+  assert.equal(Number(client.nodes.get('#screenVolume').value), 0);
   client.nodes.get('#screenMute').handlers.click();
   assert.equal(client.evaluate('localAutoplayMuted'), false, 'an explicit unmute also releases the autoplay-muted fallback');
   assert.equal(video.muted, false);
+  assert.equal(Number(client.nodes.get('#screenVolume').value), .65);
   await nextTurn(); reply(2, false, 10); await nextTurn();
 });
 
@@ -78,7 +83,7 @@ function player(screen, mode = 'video', peer = null, fullscreen = async () => {}
     document: { querySelector: node, addEventListener(name, handler) { documentHandlers[name] = handler; }, body: { dataset: {} }, documentElement: { requestFullscreen: fullscreen } },
     window: { addEventListener() {}, CineWallFilePeer: peer ? { FilePeer: class { constructor() { return peer; } } } : undefined },
     EventSource: class { addEventListener() {} },
-    setTimeout: (handler, delay) => { timers.push({ handler, delay }); return timers.length; }, clearTimeout() {}, setInterval(handler, delay) { intervals.push({ handler, delay }); },
+    setTimeout: (handler, delay) => { timers.push({ handler, delay }); return timers.length; }, clearTimeout(id) { if (timers[id - 1]) timers[id - 1].cancelled = true; }, setInterval(handler, delay) { intervals.push({ handler, delay }); },
     fetch: async (url, init) => {
       if (url.startsWith('/api/time')) return { ok: true, json: async () => ({ serverTime: Date.now() }) };
       if (init?.body) statuses.push(JSON.parse(init.body));
@@ -88,6 +93,24 @@ function player(screen, mode = 'video', peer = null, fullscreen = async () => {}
   vm.runInContext(fs.readFileSync(path.join(__dirname, '../public/screen.js'), 'utf8'), context);
   return { context, state, nodes, statuses, documentHandlers, timers, intervals, evaluate: (code) => vm.runInContext(code, context) };
 }
+
+test('player mute cancels pending slider unmute and restores the just-selected level', async () => {
+  const client = player(1); await nextTurn(); const requests = [];
+  client.context.fetch = async (route, init) => new Promise(resolve => requests.push({ body: JSON.parse(init.body), resolve }));
+  client.evaluate('localAutoplayMuted = false; currentState.audioSettings[1] = { volume: .6, muted: true }; applyAudioSettings()');
+  const slider = client.nodes.get('#screenVolume'); slider.value = .35; slider.handlers.input();
+  assert.equal(client.nodes.get('#video').muted, false, 'moving a muted slider enables the chosen level');
+  const timer = client.timers.at(-1);
+  const mute = client.evaluate("command({type:'screen-audio',screen:1,muted:true})");
+  assert.equal(timer.cancelled, true); assert.equal(Number(slider.value), 0); assert.equal(client.evaluate('audioSetting().volume'), .35);
+  await nextTurn(); assert.equal(requests.length, 1); assert.equal(requests[0].body.volume, .35); assert.equal(requests[0].body.muted, true);
+  requests[0].resolve({ ok: true, json: async () => ({ command: { ...client.state, type: 'screen-audio', commandId: 8, executeAt: Date.now(), audioSettings: { 1: { volume: .35, muted: true } } } }) });
+  await mute;
+  const unmute = client.evaluate("command({type:'screen-audio',screen:1,muted:false})");
+  assert.equal(Number(slider.value), .35); await nextTurn();
+  requests[1].resolve({ ok: true, json: async () => ({ command: { ...client.state, type: 'screen-audio', commandId: 9, executeAt: Date.now(), audioSettings: { 1: { volume: .35, muted: false } } } }) });
+  await unmute;
+});
 
 test('five-second checkpoint recovers missed seeks once, including an ended or buffering guest', async () => {
   const client = player(2); await nextTurn();

@@ -11,7 +11,7 @@
   let remoteOrigin = location.origin, localNetwork = !window.CineWallSession.hosted;
   let context, bus, output, voiceOutput, micGain, sendGain, analyser, microphone, micSource, fileSource;
   let broadcasting = false, micStarting = false, fileUrl = '', status = 'waiting', signalQueue = Promise.resolve();
-  let speakerEnabled = false, speakerMuted = false, speakerOutput;
+  let speakerEnabled = false, speakerMuted = false, speakerVolume = 1, speakerOutput;
   let recorder = null, recordStarting = false, recordStarted = 0, recordTimer, recordDuration = 0, saving = false;
   let scrolling = false, scrollFrame, scrollLast = 0, scrollPosition = 0, wakeLock = null;
   let iceServers = [];
@@ -274,15 +274,24 @@
       if (incomingAudio.srcObject && speakerOutput.stream !== incomingAudio.srcObject) {
         speakerOutput.source?.disconnect(); speakerOutput.source = speakerOutput.context.createMediaStreamSource(incomingAudio.srcObject); speakerOutput.source.connect(speakerOutput.gain); speakerOutput.stream = incomingAudio.srcObject;
       }
-      speakerOutput.gain.gain.value = speakerMuted ? 0 : Number($('#speakerVolume').value);
+      speakerOutput.gain.gain.value = speakerMuted ? 0 : speakerVolume;
     } else if (incomingAudio.srcObject) await incomingAudio.play();
-    incomingAudio.volume = Number($('#speakerVolume').value); incomingAudio.muted = speakerMuted;
+    renderSpeakerVolume();
     speakerEnabled = true; $('#enableSpeaker').hidden = true; setStatus(incomingAudio.srcObject ? 'connected' : 'waiting');
     if (state) applyState(state); void wake();
   }
   $('#enableSpeaker').addEventListener('click', () => { void playSpeaker().catch(e => showError(message(e))); });
-  $('#speakerVolume').addEventListener('input', e => { incomingAudio.volume = Number(e.target.value); $('#volumeValue').textContent = `${Math.round(Number(e.target.value) * 100)}%`; if (speakerOutput) speakerOutput.gain.gain.value = speakerMuted ? 0 : Number(e.target.value); });
-  $('#muteSpeaker').addEventListener('click', () => { speakerMuted = !speakerMuted; incomingAudio.muted = speakerMuted; if (speakerOutput) speakerOutput.gain.gain.value = speakerMuted ? 0 : Number($('#speakerVolume').value); $('#muteSpeaker').textContent = speakerMuted ? 'Unmute' : 'Mute'; });
+  function renderSpeakerVolume() {
+    const shownVolume = speakerMuted ? 0 : speakerVolume;
+    incomingAudio.volume = speakerVolume; incomingAudio.muted = speakerMuted;
+    if (speakerOutput) speakerOutput.gain.gain.value = shownVolume;
+    $('#speakerVolume').value = shownVolume;
+    $('#volumeValue').textContent = `${Math.round(shownVolume * 100)}%`;
+    $('#muteSpeaker').textContent = speakerMuted ? 'Unmute' : 'Mute';
+    $('#muteSpeaker').setAttribute('aria-pressed', String(speakerMuted));
+  }
+  $('#speakerVolume').addEventListener('input', e => { speakerVolume = Math.max(0, Math.min(1, Number(e.target.value) || 0)); speakerMuted = false; renderSpeakerVolume(); });
+  $('#muteSpeaker').addEventListener('click', () => { speakerMuted = !speakerMuted; renderSpeakerVolume(); });
 
   function loadScript() {
     try { $('#scriptText').value = localStorage.getItem('cinewall-mic-script') || ''; } catch {}

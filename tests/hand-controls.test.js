@@ -69,7 +69,7 @@ test('model failure releases camera and worker; audio is never requested', async
   assert.equal(media.track.stopped, true); assert.equal(worker.stopped, true); assert.equal(video.srcObject, null);
 });
 
-function uiFixture({ complete = false, tab = null, initiallyAvailable = true, permission } = {}) {
+function uiFixture({ complete = false, tab = null, initiallyAvailable = true, permission, onPracticeStart = () => {} } = {}) {
   const nodes = new Map(), values = new Map(), workers = [], streams = [], timers = new Map();
   let nextTimer = 0, allowed = initiallyAvailable;
   function element(id) {
@@ -107,7 +107,7 @@ function uiFixture({ complete = false, tab = null, initiallyAvailable = true, pe
     setInterval: () => 0, clearInterval() {}
   });
   const actions = [];
-  const ui = window.CineWallHandControls.create({ available: () => allowed, onAction: action => { actions.push(action); return true; } });
+  const ui = window.CineWallHandControls.create({ available: () => allowed, onPracticeStart, onAction: action => { actions.push(action); return true; } });
   function send(label, start) {
     for (let t = start; t <= start + 700; t += 100) workers.at(-1).onmessage({ data: { type: 'result', timestamp: t,
       result: { landmarks: label ? [[]] : [], gestures: label ? [[{ categoryName: label, score: .95 }]] : [] } } });
@@ -147,6 +147,18 @@ test('completed practice is remembered while camera always starts off', async ()
   await f.enable(); assert.equal(f.element('handPractice').open, false);
   f.send('Open_Palm', 0); assert.deepEqual(f.actions, ['play']);
   f.element('handPracticeAgain').events.click(); assert.equal(f.element('handPractice').open, true); f.ui.stop();
+});
+
+test('practice pauses through the player hook before opening; X closes it, stops capture and never resumes playback', async () => {
+  const calls = [];
+  const f = uiFixture({ complete: true, onPracticeStart: () => { calls.push('pause'); assert.equal(f.element('handPractice').open, false); } });
+  await f.enable(); assert.deepEqual(calls, []);
+  f.element('handPracticeAgain').events.click();
+  assert.deepEqual(calls, ['pause']); assert.equal(f.element('handPractice').open, true);
+  f.element('handPracticeClose').events.click();
+  assert.equal(f.element('handPractice').open, false); assert.equal(f.ui.enabled, false);
+  assert.equal(f.streams[0].track.stopped, true); assert.equal(f.workers[0].stopped, true);
+  assert.deepEqual(f.actions, []); assert.deepEqual(calls, ['pause']);
 });
 test('a camera can be changed during first-use practice without leaving the old camera open', async () => {
   const f = uiFixture(); await f.enable();
@@ -216,9 +228,12 @@ test('Display 1 gestures use the player transport and never enable on guest scre
   };
   const start = source.indexOf('function playerHandAvailable()'), end = source.indexOf('\nsyncClock();', start);
   vm.runInNewContext(source.slice(start, end), context);
+  config.onPracticeStart();
+  assert.deepEqual(commands.map(item => item.type), ['pause'], 'practice pauses through the synchronized player command');
   for (const action of ['play', 'pause', 'forward', 'back', 'volume-up', 'volume-down']) assert.equal(config.onAction(action), true);
-  assert.deepEqual(commands.map(item => item.type), ['play', 'pause', 'screen-audio', 'screen-audio']); assert.deepEqual(seeks, [10, -10]);
+  assert.deepEqual(commands.map(item => item.type), ['pause', 'play', 'pause', 'screen-audio', 'screen-audio']); assert.deepEqual(seeks, [10, -10]);
   context.screenNumber = 2; assert.equal(config.available(), false); assert.notEqual(config.onAction('play'), true);
+  config.onPracticeStart(); assert.equal(commands.length, 5, 'other displays cannot pause from practice');
   context.screenNumber = 1; context.window.CineWallSession.membership.admin = false; assert.equal(config.available(), false);
   context.window.CineWallSession.membership.admin = true; context.sessionMode = 'audio'; assert.equal(config.available(), false);
   const html = fs.readFileSync(path.join(__dirname, '../public/screen.html'), 'utf8');
