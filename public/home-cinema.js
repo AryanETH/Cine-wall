@@ -3,40 +3,71 @@
 function stickerPosition(width, height, size, anchor, angle = 0) {
   const radians = angle * Math.PI / 180;
   const extra = size * (Math.abs(Math.cos(radians)) + Math.abs(Math.sin(radians)) - 1) / 2;
-  const inset = extra + 5;
+  // Reduce inset to allow more overlapping with container edges
+  const inset = Math.max(0, extra - size * 0.15);
+  // Allow stickers to overflow container edges by extending the range
+  const xRange = width + size * 0.3;
   return {
-    x: inset + Math.max(0, width - size - inset * 2) * anchor,
-    y: height - size - extra + Math.min(22, size * .18)
+    x: -size * 0.15 + xRange * anchor,
+    y: height - size * 0.7 - extra
   };
 }
 
 function setupCinemaStickers(surface, stickers, motion, observeResize, random = Math.random) {
   if (!surface || !stickers.length) return;
-  const turns = [-10, 8, -6, 9, -8, 12, -9, 6];
+  const turns = [-15, 12, -8, 14, -11, 16, -13, 9];
   const animations = new Map();
   const drifts = new Map();
+  const dragStates = new Map();
+  const physics = new Map();
+  
+  // Physics constants
+  const GRAVITY = 0.6;
+  const BOUNCE_DAMPING = 0.65;
+  const FRICTION = 0.98;
+  const MIN_VELOCITY = 0.3;
+  
   function drift(i) {
-    if (motion.matches) return;
+    if (motion.matches || dragStates.get(i)?.dragging) return;
     const image = stickers[i].querySelector('img');
     if (!image?.animate) return;
-    const sway = (random() - .5) * 10;
-    const bob = 3 + random() * 6;
+    const sway = (random() - .5) * 15;
+    const bob = 5 + random() * 10;
+    const rotate = (random() - .5) * 8;
     const a = image.animate([
       { transform: 'translate(0, 0) rotate(0deg)' },
-      { transform: `translate(${sway}px, ${-bob}px) rotate(${(random()-.5)*5}deg)` },
+      { transform: `translate(${sway}px, ${-bob}px) rotate(${rotate}deg)`, offset: 0.5 },
       { transform: 'translate(0, 0) rotate(0deg)' }
-    ], { duration: 4200 + random() * 5000, iterations: Infinity, easing: 'ease-in-out' });
+    ], { duration: 3500 + random() * 4500, iterations: Infinity, easing: 'ease-in-out' });
     a.currentTime = random() * 3000;
     drifts.set(i, a);
   }
+  
   function settle(i) {
     animations.get(i)?.cancel();
     animations.delete(i);
+    
+    // Cancel any running physics animation
+    if (physics.has(i)) {
+      const p = physics.get(i);
+      if (p.frame) cancelAnimationFrame(p.frame);
+      physics.delete(i);
+    }
+    
+    // Reset image transform
+    const image = stickers[i].querySelector('img');
+    if (image) {
+      image.style.transform = '';
+      image.style.transition = '';
+    }
+    
     stickers[i].dataset.motion = 'home';
   }
+  
   function layout() {
     const rect = surface.getBoundingClientRect();
     stickers.forEach((sticker, i) => {
+      if (dragStates.get(i)?.dragging) return;
       settle(i);
       drifts.get(i)?.cancel();
       const point = stickerPosition(rect.width, rect.height, sticker.offsetWidth, i / Math.max(1, stickers.length - 1), turns[i % turns.length]);
@@ -47,34 +78,220 @@ function setupCinemaStickers(surface, stickers, motion, observeResize, random = 
       drift(i);
     });
   }
-  function move(i) {
-    if (motion.matches || animations.has(i)) return;
-    const sticker = stickers[i], image = sticker.querySelector('img');
-    if (!image?.animate) return;
-    const start = typeof getComputedStyle === 'function' ? getComputedStyle(image).transform : 'none';
+  
+  function animateWithPhysics(i, initialVx = 0, initialVy = 0, initialRotation = 0) {
+    if (motion.matches) return;
+    const sticker = stickers[i];
+    const image = sticker.querySelector('img');
+    if (!image) return;
+    
     drifts.get(i)?.cancel();
     drifts.delete(i);
-    const rect = surface.getBoundingClientRect(), size = sticker.offsetWidth;
+    animations.get(i)?.cancel();
+    
+    const rect = surface.getBoundingClientRect();
+    const size = sticker.offsetWidth;
     const home = stickerPosition(rect.width, rect.height, size, i / Math.max(1, stickers.length - 1), turns[i % turns.length]);
-    const direction = random() < .5 ? -1 : 1;
-    const travel = Math.min(size * (.3 + random() * .55), 110) * direction;
-    const dx = Math.max(-home.x + 12, Math.min(rect.width - home.x - size - 12, travel));
-    const lift = Math.min(rect.height * .4, size * (.65 + random() * .7));
-    const rotation = direction * (10 + random() * 20);
-    const animation = image.animate([
-      { transform: start === 'none' ? 'translate(0, 0) rotate(0deg)' : start, offset: 0 },
-      { transform: `translate(${dx}px, ${-lift}px) rotate(${rotation}deg)`, offset: .36 },
-      { transform: `translate(${dx * -.18}px, ${-lift * .2}px) rotate(${direction * -9}deg)`, offset: .75 },
-      { transform: 'translate(0, 0) rotate(0deg)', offset: 1 }
-    ], { duration: 1800 + random() * 900, easing: 'cubic-bezier(.25,.65,.35,1)' });
-    animations.set(i, animation);
+    
+    let x = 0, y = 0, vx = initialVx, vy = initialVy;
+    let rotation = initialRotation;
+    let bounceCount = 0;
+    const maxBounces = 2 + Math.floor(random() * 2);
+    
     sticker.dataset.motion = 'floating';
-    animation.onfinish = () => { settle(i); drift(i); };
+    
+    const animate = () => {
+      // Apply gravity
+      vy += GRAVITY;
+      
+      // Apply friction
+      vx *= FRICTION;
+      vy *= FRICTION;
+      
+      // Update position
+      x += vx;
+      y += vy;
+      
+      // Rotation based on horizontal velocity
+      rotation += vx * 0.5;
+      
+      // Bounce detection
+      const groundY = 0;
+      if (y > groundY && vy > 0) {
+        y = groundY;
+        vy *= -BOUNCE_DAMPING;
+        vx *= 0.9; // Reduce horizontal velocity on bounce
+        bounceCount++;
+        
+        // Add slight random direction change on bounce
+        vx += (random() - 0.5) * 2;
+      }
+      
+      // Side boundaries with bounce
+      const leftBound = -home.x + 12;
+      const rightBound = rect.width - home.x - size - 12;
+      if (x < leftBound && vx < 0) {
+        x = leftBound;
+        vx *= -0.7;
+      } else if (x > rightBound && vx > 0) {
+        x = rightBound;
+        vx *= -0.7;
+      }
+      
+      // Apply transform
+      image.style.transform = `translate(${x}px, ${y}px) rotate(${rotation}deg)`;
+      
+      // Continue animation or settle
+      if (bounceCount < maxBounces || Math.abs(vx) > MIN_VELOCITY || Math.abs(vy) > MIN_VELOCITY || y < groundY) {
+        const frame = requestAnimationFrame(animate);
+        physics.set(i, { frame, x, y, vx, vy, rotation });
+      } else {
+        // Return to home with smooth animation
+        returnToHome(i);
+      }
+    };
+    
+    const frame = requestAnimationFrame(animate);
+    physics.set(i, { frame, x, y, vx, vy, rotation });
   }
+  
+  function returnToHome(i) {
+    const image = stickers[i].querySelector('img');
+    if (!image) return;
+    
+    // Get current transform state
+    const currentTransform = getComputedStyle(image).transform;
+    
+    // Cancel any existing physics animation
+    if (physics.has(i)) {
+      const p = physics.get(i);
+      if (p.frame) cancelAnimationFrame(p.frame);
+      physics.delete(i);
+    }
+    
+    // Animate back to home position
+    const animation = image.animate([
+      { transform: currentTransform === 'none' ? 'translate(0, 0) rotate(0deg)' : currentTransform },
+      { transform: 'translate(0, 0) rotate(0deg)' }
+    ], { 
+      duration: 800, 
+      easing: 'cubic-bezier(0.34, 1.56, 0.64, 1)',
+      fill: 'forwards'
+    });
+    
+    animations.set(i, animation);
+    animation.onfinish = () => { 
+      settle(i); 
+      drift(i); 
+    };
+  }
+  
+  function move(i) {
+    if (motion.matches || dragStates.get(i)?.dragging) return;
+    
+    // Cancel any existing animations first
+    animations.get(i)?.cancel();
+    animations.delete(i);
+    drifts.get(i)?.cancel();
+    drifts.delete(i);
+    
+    if (physics.has(i)) {
+      const p = physics.get(i);
+      if (p.frame) cancelAnimationFrame(p.frame);
+      physics.delete(i);
+    }
+    
+    // Random trajectory parameters
+    const direction = random() < .5 ? -1 : 1;
+    const vx = direction * (8 + random() * 15);
+    const vy = -(12 + random() * 18); // Initial upward velocity
+    const initialRotation = (random() - 0.5) * 360;
+    
+    animateWithPhysics(i, vx, vy, initialRotation);
+  }
+  
+  // Drag and drop functionality
   stickers.forEach((sticker, i) => {
-    sticker.addEventListener('pointerenter', event => { if (event.pointerType !== 'touch') move(i); });
-    sticker.addEventListener('click', () => move(i));
+    const image = sticker.querySelector('img');
+    if (!image) return;
+    
+    let dragState = { dragging: false, startX: 0, startY: 0, lastX: 0, lastY: 0, velocityX: 0, velocityY: 0 };
+    dragStates.set(i, dragState);
+    
+    const onPointerDown = (e) => {
+      if (motion.matches) return;
+      e.preventDefault();
+      
+      drifts.get(i)?.cancel();
+      animations.get(i)?.cancel();
+      if (physics.has(i)) {
+        const p = physics.get(i);
+        cancelAnimationFrame(p.frame);
+        physics.delete(i);
+      }
+      
+      dragState.dragging = true;
+      dragState.startX = e.clientX;
+      dragState.startY = e.clientY;
+      dragState.lastX = e.clientX;
+      dragState.lastY = e.clientY;
+      dragState.lastTime = Date.now();
+      sticker.dataset.motion = 'dragging';
+      sticker.style.cursor = 'grabbing';
+      image.style.transition = 'none';
+      
+      sticker.setPointerCapture(e.pointerId);
+    };
+    
+    const onPointerMove = (e) => {
+      if (!dragState.dragging) return;
+      
+      const dx = e.clientX - dragState.startX;
+      const dy = e.clientY - dragState.startY;
+      
+      const now = Date.now();
+      const dt = now - dragState.lastTime;
+      if (dt > 0) {
+        dragState.velocityX = (e.clientX - dragState.lastX) / dt * 16;
+        dragState.velocityY = (e.clientY - dragState.lastY) / dt * 16;
+      }
+      
+      dragState.lastX = e.clientX;
+      dragState.lastY = e.clientY;
+      dragState.lastTime = now;
+      
+      // Full 360-degree rotation based on drag distance
+      const distance = Math.sqrt(dx * dx + dy * dy);
+      const rotation = (distance * 0.5) % 360;
+      
+      image.style.transform = `translate(${dx}px, ${dy}px) rotate(${rotation}deg)`;
+    };
+    
+    const onPointerUp = (e) => {
+      if (!dragState.dragging) return;
+      
+      dragState.dragging = false;
+      sticker.dataset.motion = 'floating';
+      sticker.style.cursor = '';
+      
+      // Launch with velocity
+      animateWithPhysics(i, dragState.velocityX, dragState.velocityY, parseFloat(image.style.transform.match(/rotate\(([^)]+)\)/)?.[1] || 0));
+    };
+    
+    sticker.addEventListener('pointerdown', onPointerDown);
+    sticker.addEventListener('pointermove', onPointerMove);
+    sticker.addEventListener('pointerup', onPointerUp);
+    sticker.addEventListener('pointercancel', onPointerUp);
+    
+    // Hover animation
+    sticker.addEventListener('pointerenter', event => { 
+      if (event.pointerType !== 'touch' && !dragState.dragging) move(i); 
+    });
+    sticker.addEventListener('click', (e) => {
+      if (!dragState.dragging) move(i);
+    });
   });
+  
   motion.addEventListener('change', layout);
   observeResize(layout).observe(surface);
   layout();

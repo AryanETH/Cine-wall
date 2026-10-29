@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1440 810" preserveAspectRatio="none">
+  <!-- Match the two laptop silhouettes in the demo, leaving the room visible around them. -->
+  <g fill="white">
+    <rect x="65" y="170" width="655" height="440" rx="14"/>
+    <rect x="718" y="170" width="655" height="440" rx="14"/>
+    <path d="M7 608H1431V621Q1431 635 1417 635H1393L1389 640H1355L1351 635H88L84 640H50L46 635H21Q7 635 7 621Z"/>
+  </g>
+</svg>

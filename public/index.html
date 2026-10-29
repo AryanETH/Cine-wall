@@ -80,12 +80,13 @@
   
   <script src="icons.js?v=20261002-icons-18"></script>
   <script src="theme.js"></script>
-  <script src="device-support.js?v=20261027-entry-2"></script>
   <script src="session.js?v=20261028-links-5"></script>
+  <script src="device-support.js?v=20261027-entry-2"></script>
+  <script src="mode-switcher.js"></script>
   <link rel="preload" href="/fonts/Anta-Regular.ttf" as="font" type="font/ttf" crossorigin>
   <link rel="preload" as="image" href="/assets/cinewall-demo-poster.jpg?v=20261029-cinema-8" fetchpriority="high">
   <link rel="stylesheet" href="styles.css?v=20261027-links-3">
-  <link rel="stylesheet" href="home.css?v=20261029-cinema-8">
+  <link rel="stylesheet" href="home.css?v=20261029-cinema-11">
   <link rel="stylesheet" href="device-support.css?v=20261025-mobile-42">
   <link rel="stylesheet" href="/rooms.css?v=20261027-links-3">
 </head>
@@ -108,7 +109,7 @@
     <section class="mode-hero">
       <div class="home-hero-intro">
         <h1>Your free mini theatre <span class="mode-hero-gradient-word">at home.</span></h1>
-        <p class="home-hero-copy">Your laptops. One wider view. No install.</p>
+        <p class="home-hero-copy">Your Laptops Feel Better Togeather.</p>
         <div class="home-hero-actions">
           <a class="button accent" data-session-mode="video" href="/admin.html?mode=video">Try it free <span class="fi" aria-hidden="true">&#xE72A;</span></a>
           <a class="button subtle" href="#tools">More from CineWall</a>
@@ -200,7 +201,12 @@
     </section>
 
     <section id="faq" class="home-section home-faq" aria-labelledby="faqHeading">
-      <div class="home-section-heading"><h2 id="faqHeading">A few quick answers.</h2></div>
+      <div class="home-section-heading">
+        <h2 id="faqHeading">A few quick answers.</h2>
+        <div class="home-spotify-embed">
+          <iframe data-testid="embed-iframe" style="border-radius:12px" src="https://open.spotify.com/embed/playlist/5NLMFO1YZY4U2EqSvwq8YF?utm_source=generator&theme=0&si=17a22bf2bda54af8" width="70%" height="352" frameBorder="0" allowfullscreen="" allow="autoplay; clipboard-write; encrypted-media; fullscreen; picture-in-picture" loading="lazy"></iframe>
+        </div>
+      </div>
       <div class="home-faq-list">
         <details><summary>Is CineWall free?</summary><p>Yes. All four tools are free. No app or extension needed.</p></details>
         <details id="faq-devices"><summary>Which devices work?</summary><p>Use laptops or PCs for video, audio and screen sharing. A portrait phone can be your microphone.</p></details>

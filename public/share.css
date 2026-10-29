@@ -1,4 +1,4 @@
-.share-body { margin: 0; padding: 24px; background: var(--page); color: var(--ink); }
+.share-body { margin: 0; padding: 24px; background: #000000; color: var(--ink); }
 .share-shell { width: min(1240px, 100%); margin: auto; }
 .share-nav, .share-heading, .share-start-row, .share-links-heading, .share-player-bar { display: flex; align-items: center; justify-content: space-between; gap: 20px; }
 .share-heading { margin: 40px 0 24px; }
@@ -57,7 +57,7 @@
 .viewer .share-call-caption { display: grid; gap: 3px; }
 .viewer .share-call .share-error { position: static; background: var(--surface); color: var(--ink); font-size: .8rem; }
 .share-body button:focus-visible, .share-body a:focus-visible, .share-body select:focus-visible { outline: 3px solid var(--accent); outline-offset: 3px; }
-.share-body.viewer { padding: 0; background: #0b0e17; }
+.share-body.viewer { padding: 0; background: #000000; }
 .viewer .share-shell { width: 100%; }
 .viewer .share-nav, .viewer .share-heading, .viewer .share-help { display: none; }
 .viewer .share-stage { position: fixed; inset: 0; height: 100%; width: 100%; aspect-ratio: auto; border: 0; border-radius: 0; }
@@ -65,7 +65,7 @@
 .viewer .share-player-bar:hover, .viewer .share-player-bar:focus-within, .viewer .share-player-bar.show { opacity: 1; }
 .viewer .share-player-bar button { color: #f8faf6; background: #202739; }
 .viewer .share-error { position: fixed; z-index: 4; top: 12px; left: 12px; right: 12px; background: #151a28; color: #fff; }
-.share-stage:fullscreen { border: 0; border-radius: 0; aspect-ratio: auto; background: #0b0e17; }
+.share-stage:fullscreen { border: 0; border-radius: 0; aspect-ratio: auto; background: #000000; }
 @media(max-width: 720px) {
   .share-body { padding: 16px; }
   .share-heading, .share-start-row { align-items: flex-start; flex-direction: column; }

@@ -1220,9 +1220,9 @@ function serveStatic(req, res, pathname) {
       'Content-Length': data.length,
       'Cache-Control': 'no-cache',
       'Referrer-Policy': 'strict-origin-when-cross-origin',
-      'Permissions-Policy': 'autoplay=(self "https://www.youtube.com" "https://www.youtube-nocookie.com")',
+      'Permissions-Policy': 'autoplay=(self "https://www.youtube.com" "https://www.youtube-nocookie.com" "https://open.spotify.com")',
       'X-Content-Type-Options': 'nosniff',
-      'Content-Security-Policy': "default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self' https://www.youtube.com https://s.ytimg.com; media-src 'self' blob:; img-src 'self' data: blob: https://i.ytimg.com https://yt3.ggpht.com https://api.qrserver.com; connect-src 'self' https://www.youtube.com; frame-src 'self' blob: https://www.youtube.com https://www.youtube-nocookie.com; object-src 'self'",
+      'Content-Security-Policy': "default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self' https://www.youtube.com https://s.ytimg.com; media-src 'self' blob:; img-src 'self' data: blob: https://i.ytimg.com https://yt3.ggpht.com https://api.qrserver.com; connect-src 'self' https://www.youtube.com; frame-src 'self' blob: https://www.youtube.com https://www.youtube-nocookie.com https://open.spotify.com; object-src 'self'",
     });
     res.end(req.method === 'HEAD' ? undefined : data);
   });

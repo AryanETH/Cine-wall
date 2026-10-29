@@ -1,4 +1,4 @@
-.mic-body { background: var(--page); color: var(--ink); }
+.mic-body { background: #000000; color: var(--ink); }
 .mic-shell { max-width: 1120px; margin: auto; padding: 0 28px 40px; }
 .mic-nav { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 26px 0; border-bottom: 1px solid var(--line); }
 .mic-brand { color: var(--ink); text-decoration: none; font-family: Anta, sans-serif; letter-spacing: .04em; }

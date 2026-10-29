@@ -2,13 +2,13 @@
 
 :root {
   color-scheme: dark;
-  --page: #05070c;
-  --shell: #0b0e17;
-  --shell-2: #111624;
-  --surface: #151a28;
-  --surface-2: #1c2231;
-  --canvas: #111624;
-  --canvas-2: #171d2c;
+  --page: #000000;
+  --shell: #121212;
+  --shell-2: #121212;
+  --surface: #1a1a1a;
+  --surface-2: #242424;
+  --canvas: #121212;
+  --canvas-2: #1a1a1a;
   --ink: #f8faf6;
   --ink-dark: #f8faf6;
   --muted: #9298a8;
@@ -23,7 +23,7 @@
   --danger: #ff6b71;
   --warning: #ffc65c;
   --success: #83e6b5;
-  --shadow: 0 28px 80px rgba(12, 14, 23, .24);
+  --shadow: 0 28px 80px rgba(0, 0, 0, .4);
   --button-glint: rgba(255, 255, 255, .2);
   --button-edge: rgba(0, 0, 0, .3);
   --button-shadow: rgba(0, 0, 0, .24);
@@ -71,7 +71,7 @@ button { cursor: pointer; }
 .admin-body {
   min-height: 100vh;
   padding: 34px;
-  background: var(--page);
+  background: #000000;
   color: var(--ink);
 }
 
@@ -80,7 +80,7 @@ button { cursor: pointer; }
   margin: 0 auto;
   padding: 18px 22px 24px;
   overflow: hidden;
-  border: 10px solid #070910;
+  border: 10px solid #000000;
   border-radius: 32px;
   background: var(--shell);
   box-shadow: var(--shadow);
@@ -241,8 +241,8 @@ body[data-session-mode="audio"] .top-settings { grid-template-columns: 1fr; }
 .audio-panel { grid-column: auto; }
 
 /* Mode launcher */
-.mode-body { min-height: 100vh; margin: 0; padding: 34px; background: var(--page); color: var(--ink); }
-.mode-shell { width: min(1360px, 100%); min-height: calc(100vh - 68px); margin: 0 auto; padding: 22px 26px 24px; border: 10px solid #070910; border-radius: 32px; background: var(--shell); box-shadow: var(--shadow); }
+.mode-body { min-height: 100vh; margin: 0; padding: 34px; background: #000000; color: var(--ink); }
+.mode-shell { width: min(1360px, 100%); min-height: calc(100vh - 68px); margin: 0 auto; padding: 22px 26px 24px; border: 10px solid #000000; border-radius: 32px; background: var(--shell); box-shadow: var(--shadow); }
 .mode-nav { display: flex; align-items: center; justify-content: space-between; }
 .mode-hero { position: relative; isolation: isolate; display: flex; flex-direction: column; justify-content: center; min-height: 380px; margin: 32px 0 24px; padding: 48px 16px; overflow: hidden; border-radius: 24px; background: #fdfffc; color: #080b12; }
 .mode-hero-photo { position: absolute; z-index: -1; inset: 0 0 0 auto; width: 66%; height: 100%; object-fit: cover; object-position: center; transform: translateX(3%); pointer-events: none; -webkit-mask-image: linear-gradient(to right, transparent, #000 22%); mask-image: linear-gradient(to right, transparent, #000 22%); }
@@ -487,7 +487,7 @@ body[data-session-mode="audio"] .top-settings { grid-template-columns: 1fr; }
 }
 
 @media (max-width: 720px) {
-  .admin-body { padding: 0; background: var(--shell); }
+  .admin-body { padding: 0; background: #121212; }
   .app-shell { padding: 13px; border: 0; border-radius: 0; }
   .app-nav { gap: 12px; }
   .connection-chip { padding: 10px; }
