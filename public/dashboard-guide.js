@@ -29,7 +29,7 @@
       title: speaker ? 'Connect your speakers' : 'Connect your screens',
       copy: speaker
         ? 'Open each numbered link on the laptop you want to use as a speaker.'
-        : 'Open each numbered link on its matching laptop. This laptop is Screen 1.'
+        : 'Select Add screen, then open its numbered link on another laptop. This laptop is Screen 1.'
     }];
 
     if (visible('#viewerSource')) {
@@ -58,6 +58,14 @@
       copy: mode === 'presentation' ? 'Use the arrows to change pages on every screen.'
         : 'Play, pause, skip, and adjust the volume here.'
     });
+    if (!visible('#viewerSource')) {
+      if (mode === 'video') {
+        result.push({ target: '#video3dToggle', title: 'Try 3D view', copy: 'Select 3D view and use red/cyan glasses. Adjust 3D-ness in Settings. Ordinary videos use a simulated filter.' });
+        result.push({ target: '#settings', title: 'Try 3D sound', copy: 'In Settings, choose 3D Sound to spread stereo audio across two or more laptops.' });
+      } else if (speaker) {
+        result.push({ target: '#try3d', title: 'Try 3D sound', copy: 'Select Try in 3D to spread left and right sound across two or more laptops. Normal restores full sound on each laptop.' });
+      }
+    }
     return result.filter((step) => visible(step.target));
   }
 

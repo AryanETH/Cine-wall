@@ -144,6 +144,7 @@
 
 .guide-backdrop { position: fixed; inset: 0; z-index: 1000; background: rgba(8, 15, 27, .68); }
 .studio-body .guide-focus { position: relative; z-index: 1001; pointer-events: none; outline: 3px solid var(--accent); outline-offset: 5px; border-radius: 10px; box-shadow: 0 0 0 9px color-mix(in srgb, var(--accent) 20%, transparent); }
+.studio-body .preview-3d-toggle.guide-focus { position: absolute; }
 .guide-card { position: fixed; z-index: 1002; width: min(360px, calc(100vw - 32px)); padding: 20px; border: 1px solid var(--line); border-radius: 14px; background: var(--surface); color: var(--ink); box-shadow: 0 24px 70px rgba(0, 0, 0, .32); }
 .guide-top, .guide-actions { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .guide-progress { color: var(--accent); font-size: 12px; font-weight: 700; letter-spacing: .04em; }

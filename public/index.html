@@ -1,4 +1,4 @@
-<!doctype html>
+﻿<!doctype html>
 <html lang="en">
 <head>
   <meta charset="utf-8">
@@ -83,9 +83,9 @@
   <script src="device-support.js?v=20261027-entry-2"></script>
   <script src="session.js?v=20261028-links-5"></script>
   <link rel="preload" href="/fonts/Anta-Regular.ttf" as="font" type="font/ttf" crossorigin>
-  <link rel="preload" as="image" href="/assets/robots-laptops-poster.jpg" fetchpriority="high">
+  <link rel="preload" as="image" href="/assets/cinewall-demo-poster.jpg?v=20261029-cinema-8" fetchpriority="high">
   <link rel="stylesheet" href="styles.css?v=20261027-links-3">
-  <link rel="stylesheet" href="home.css?v=20261027-community-3">
+  <link rel="stylesheet" href="home.css?v=20261029-cinema-8">
   <link rel="stylesheet" href="device-support.css?v=20261025-mobile-42">
   <link rel="stylesheet" href="/rooms.css?v=20261027-links-3">
 </head>
@@ -96,9 +96,9 @@
         <span class="brand-icon" aria-hidden="true"><img src="/assets/removed_background (24).png" alt="CineWall Logo"></span>
         <span><strong>CINEWALL</strong></span>
       </div>
-      <nav class="home-nav" aria-label="Explore CineWall"><a href="#how-it-works">How it works</a><a href="#demo">Tutorial</a><a href="#use-cases">Use cases</a><a href="#about">About</a><a href="#faq">FAQs</a></nav>
+      <nav class="home-nav" aria-label="Explore CineWall"><a href="#tools">Tools</a><a href="#demo">Demo</a><a href="#how-it-works">How it works</a><a href="#faq">FAQs</a></nav>
       <div class="nav-actions">
-        <button id="openSupport" class="button support-button" type="button"><span class="fi">&#xE006;</span><span>Support this project</span></button>
+        <button id="openSupport" class="button support-button" type="button" aria-label="Support this project"><span class="fi">&#xE006;</span><span>Support this project</span></button>
         <button class="theme-toggle" data-theme-toggle type="button"><span class="fi" data-theme-icon>&#xE706;</span><span data-theme-label>Light</span></button>
         <span id="launcherConnection" class="connection-chip"><span class="status-dot"></span><span>Connecting…</span></span>
       </div>
@@ -106,21 +106,44 @@
 
 
     <section class="mode-hero">
-      <video class="mode-hero-photo" autoplay muted loop playsinline preload="metadata" poster="/assets/robots-laptops-poster.jpg" aria-hidden="true" tabindex="-1" width="1280" height="720">
-        <source src="/assets/robots-laptops-hero.mp4" type="video/mp4">
-      </video>
-      <h1>Your free mini<br>theatre <span class="mode-hero-gradient-word">at home.</span></h1>
-      <p class="home-hero-copy">Bring your laptops together for a movie night with friends, 3D music or live screen sharing. Start in your browser, with no app or extension to install.</p>
+      <div class="home-hero-intro">
+        <h1>Your free mini theatre <span class="mode-hero-gradient-word">at home.</span></h1>
+        <p class="home-hero-copy">Your laptops. One wider view. No install.</p>
+        <div class="home-hero-actions">
+          <a class="button accent" data-session-mode="video" href="/admin.html?mode=video">Try it free <span class="fi" aria-hidden="true">&#xE72A;</span></a>
+          <a class="button subtle" href="#tools">More from CineWall</a>
+        </div>
+      </div>
+      <div id="demo" class="home-preview" aria-label="CineWall video wall demo">
+        <div class="home-preview-bar"><span><span class="fi" aria-hidden="true">&#xE714;</span> See CineWall in action</span></div>
+        <svg class="cinema-lights" viewBox="0 0 1200 250" preserveAspectRatio="none" aria-hidden="true"><defs><radialGradient id="cinemaGlow"><stop stop-color="#ffd889" stop-opacity=".38"/><stop offset=".45" stop-color="#ffb443" stop-opacity=".14"/><stop offset="1" stop-color="#ffb443" stop-opacity="0"/></radialGradient></defs><g class="cinema-cords" fill="none"><path d="M-40,0 Q270,160 590,30"/><path d="M590,30 Q900,160 1240,0"/><path d="M-60,45 Q260,290 610,100"/><path d="M610,100 Q920,260 1260,45"/></g><g class="cinema-bulb" transform="translate(-11.8 13.9)"><path d="M0 0v8"/><circle cy="14" r="17" fill="url(#cinemaGlow)"/><ellipse cy="13" rx="4" ry="6" fill="#ffdf98"/><ellipse cy="11" rx="1.5" ry="3" fill="#fff8df"/></g><g class="cinema-bulb" transform="translate(44.7 38.2)"><path d="M0 0v8"/><circle cy="14" r="17" fill="url(#cinemaGlow)"/><ellipse cy="13" rx="4" ry="6" fill="#ffdf98"/><ellipse cy="11" rx="1.5" ry="3" fill="#fff8df"/></g><g class="cinema-bulb" transform="translate(101.4 57.7)"><path d="M0 0v8"/><circle cy="14" r="17" fill="url(#cinemaGlow)"/><ellipse cy="13" rx="4" ry="6" fill="#ffdf98"/><ellipse cy="11" rx="1.5" ry="3" fill="#fff8df"/></g><g class="cinema-bulb" transform="translate(158.3 72.5)"><path d="M0 0v8"/><circle cy="14" r="17" fill="url(#cinemaGlow)"/><ellipse cy="13" rx="4" ry="6" fill="#ffdf98"/><ellipse cy="11" rx="1.5" ry="3" fill="#fff8df"/></g><g class="cinema-bulb" transform="translate(215.3 82.4)"><path d="M0 0v8"/><circle cy="14" r="17" fill="url(#cinemaGlow)"/><ellipse cy="13" rx="4" ry="6" fill="#ffdf98"/><ellipse cy="11" rx="1.5" ry="3" fill="#fff8df"/></g><g class="cinema-bulb" transform="translate(272.5 87.5)"><path d="M0 0v8"/><circle cy="14" r="17" fill="url(#cinemaGlow)"/><ellipse cy="13" rx="4" ry="6" fill="#ffdf98"/><ellipse cy="11" rx="1.5" ry="3" fill="#fff8df"/></g><g class="cinema-bulb" transform="translate(329.9 87.8)"><path d="M0 0v8"/><circle cy="14" r="17" fill="url(#cinemaGlow)"/><ellipse cy="13" rx="4" ry="6" fill="#ffdf98"/><ellipse cy="11" rx="1.5" ry="3" fill="#fff8df"/></g><g class="cinema-bulb" transform="translate(387.4 83.4)"><path d="M0 0v8"/><circle cy="14" r="17" fill="url(#cinemaGlow)"/><ellipse cy="13" rx="4" ry="6" fill="#ffdf98"/><ellipse cy="11" rx="1.5" ry="3" fill="#fff8df"/></g><g class="cinema-bulb" transform="translate(445.1 74.1)"><path d="M0 0v8"/><circle cy="14" r="17" fill="url(#cinemaGlow)"/><ellipse cy="13" rx="4" ry="6" fill="#ffdf98"/><ellipse cy="11" rx="1.5" ry="3" fill="#fff8df"/></g><g class="cinema-bulb" transform="translate(502.9 60.1)"><path d="M0 0v8"/><circle cy="14" r="17" fill="url(#cinemaGlow)"/><ellipse cy="13" rx="4" ry="6" fill="#ffdf98"/><ellipse cy="11" rx="1.5" ry="3" fill="#fff8df"/></g><g class="cinema-bulb" transform="translate(560.9 41.2)"><path d="M0 0v8"/><circle cy="14" r="17" fill="url(#cinemaGlow)"/><ellipse cy="13" rx="4" ry="6" fill="#ffdf98"/><ellipse cy="11" rx="1.5" ry="3" fill="#fff8df"/></g><g class="cinema-bulb" transform="translate(618.2 41.2)"><path d="M0 0v8"/><circle cy="14" r="17" fill="url(#cinemaGlow)"/><ellipse cy="13" rx="4" ry="6" fill="#ffdf98"/><ellipse cy="11" rx="1.5" ry="3" fill="#fff8df"/></g><g class="cinema-bulb" transform="translate(675.1 60.1)"><path d="M0 0v8"/><circle cy="14" r="17" fill="url(#cinemaGlow)"/><ellipse cy="13" rx="4" ry="6" fill="#ffdf98"/><ellipse cy="11" rx="1.5" ry="3" fill="#fff8df"/></g><g class="cinema-bulb" transform="translate(732.5 74.1)"><path d="M0 0v8"/><circle cy="14" r="17" fill="url(#cinemaGlow)"/><ellipse cy="13" rx="4" ry="6" fill="#ffdf98"/><ellipse cy="11" rx="1.5" ry="3" fill="#fff8df"/></g><g class="cinema-bulb" transform="translate(790.3 83.4)"><path d="M0 0v8"/><circle cy="14" r="17" fill="url(#cinemaGlow)"/><ellipse cy="13" rx="4" ry="6" fill="#ffdf98"/><ellipse cy="11" rx="1.5" ry="3" fill="#fff8df"/></g><g class="cinema-bulb" transform="translate(848.7 87.8)"><path d="M0 0v8"/><circle cy="14" r="17" fill="url(#cinemaGlow)"/><ellipse cy="13" rx="4" ry="6" fill="#ffdf98"/><ellipse cy="11" rx="1.5" ry="3" fill="#fff8df"/></g><g class="cinema-bulb" transform="translate(907.5 87.5)"><path d="M0 0v8"/><circle cy="14" r="17" fill="url(#cinemaGlow)"/><ellipse cy="13" rx="4" ry="6" fill="#ffdf98"/><ellipse cy="11" rx="1.5" ry="3" fill="#fff8df"/></g><g class="cinema-bulb" transform="translate(966.8 82.4)"><path d="M0 0v8"/><circle cy="14" r="17" fill="url(#cinemaGlow)"/><ellipse cy="13" rx="4" ry="6" fill="#ffdf98"/><ellipse cy="11" rx="1.5" ry="3" fill="#fff8df"/></g><g class="cinema-bulb" transform="translate(1026.7 72.5)"><path d="M0 0v8"/><circle cy="14" r="17" fill="url(#cinemaGlow)"/><ellipse cy="13" rx="4" ry="6" fill="#ffdf98"/><ellipse cy="11" rx="1.5" ry="3" fill="#fff8df"/></g><g class="cinema-bulb" transform="translate(1087.0 57.7)"><path d="M0 0v8"/><circle cy="14" r="17" fill="url(#cinemaGlow)"/><ellipse cy="13" rx="4" ry="6" fill="#ffdf98"/><ellipse cy="11" rx="1.5" ry="3" fill="#fff8df"/></g><g class="cinema-bulb" transform="translate(1147.8 38.2)"><path d="M0 0v8"/><circle cy="14" r="17" fill="url(#cinemaGlow)"/><ellipse cy="13" rx="4" ry="6" fill="#ffdf98"/><ellipse cy="11" rx="1.5" ry="3" fill="#fff8df"/></g><g class="cinema-bulb" transform="translate(1209.2 13.9)"><path d="M0 0v8"/><circle cy="14" r="17" fill="url(#cinemaGlow)"/><ellipse cy="13" rx="4" ry="6" fill="#ffdf98"/><ellipse cy="11" rx="1.5" ry="3" fill="#fff8df"/></g><g class="cinema-bulb" transform="translate(-30.8 66.4)"><path d="M0 0v8"/><circle cy="14" r="17" fill="url(#cinemaGlow)"/><ellipse cy="13" rx="4" ry="6" fill="#ffdf98"/><ellipse cy="11" rx="1.5" ry="3" fill="#fff8df"/></g><g class="cinema-bulb" transform="translate(27.8 103.7)"><path d="M0 0v8"/><circle cy="14" r="17" fill="url(#cinemaGlow)"/><ellipse cy="13" rx="4" ry="6" fill="#ffdf98"/><ellipse cy="11" rx="1.5" ry="3" fill="#fff8df"/></g><g class="cinema-bulb" transform="translate(87.0 133.9)"><path d="M0 0v8"/><circle cy="14" r="17" fill="url(#cinemaGlow)"/><ellipse cy="13" rx="4" ry="6" fill="#ffdf98"/><ellipse cy="11" rx="1.5" ry="3" fill="#fff8df"/></g><g class="cinema-bulb" transform="translate(146.7 156.9)"><path d="M0 0v8"/><circle cy="14" r="17" fill="url(#cinemaGlow)"/><ellipse cy="13" rx="4" ry="6" fill="#ffdf98"/><ellipse cy="11" rx="1.5" ry="3" fill="#fff8df"/></g><g class="cinema-bulb" transform="translate(206.8 172.7)"><path d="M0 0v8"/><circle cy="14" r="17" fill="url(#cinemaGlow)"/><ellipse cy="13" rx="4" ry="6" fill="#ffdf98"/><ellipse cy="11" rx="1.5" ry="3" fill="#fff8df"/></g><g class="cinema-bulb" transform="translate(267.5 181.3)"><path d="M0 0v8"/><circle cy="14" r="17" fill="url(#cinemaGlow)"/><ellipse cy="13" rx="4" ry="6" fill="#ffdf98"/><ellipse cy="11" rx="1.5" ry="3" fill="#fff8df"/></g><g class="cinema-bulb" transform="translate(328.7 182.7)"><path d="M0 0v8"/><circle cy="14" r="17" fill="url(#cinemaGlow)"/><ellipse cy="13" rx="4" ry="6" fill="#ffdf98"/><ellipse cy="11" rx="1.5" ry="3" fill="#fff8df"/></g><g class="cinema-bulb" transform="translate(390.3 176.9)"><path d="M0 0v8"/><circle cy="14" r="17" fill="url(#cinemaGlow)"/><ellipse cy="13" rx="4" ry="6" fill="#ffdf98"/><ellipse cy="11" rx="1.5" ry="3" fill="#fff8df"/></g><g class="cinema-bulb" transform="translate(452.5 163.9)"><path d="M0 0v8"/><circle cy="14" r="17" fill="url(#cinemaGlow)"/><ellipse cy="13" rx="4" ry="6" fill="#ffdf98"/><ellipse cy="11" rx="1.5" ry="3" fill="#fff8df"/></g><g class="cinema-bulb" transform="translate(515.1 143.7)"><path d="M0 0v8"/><circle cy="14" r="17" fill="url(#cinemaGlow)"/><ellipse cy="13" rx="4" ry="6" fill="#ffdf98"/><ellipse cy="11" rx="1.5" ry="3" fill="#fff8df"/></g><g class="cinema-bulb" transform="translate(578.2 116.4)"><path d="M0 0v8"/><circle cy="14" r="17" fill="url(#cinemaGlow)"/><ellipse cy="13" rx="4" ry="6" fill="#ffdf98"/><ellipse cy="11" rx="1.5" ry="3" fill="#fff8df"/></g><g class="cinema-bulb" transform="translate(638.2 113.8)"><path d="M0 0v8"/><circle cy="14" r="17" fill="url(#cinemaGlow)"/><ellipse cy="13" rx="4" ry="6" fill="#ffdf98"/><ellipse cy="11" rx="1.5" ry="3" fill="#fff8df"/></g><g class="cinema-bulb" transform="translate(695.1 136.7)"><path d="M0 0v8"/><circle cy="14" r="17" fill="url(#cinemaGlow)"/><ellipse cy="13" rx="4" ry="6" fill="#ffdf98"/><ellipse cy="11" rx="1.5" ry="3" fill="#fff8df"/></g><g class="cinema-bulb" transform="translate(752.5 153.4)"><path d="M0 0v8"/><circle cy="14" r="17" fill="url(#cinemaGlow)"/><ellipse cy="13" rx="4" ry="6" fill="#ffdf98"/><ellipse cy="11" rx="1.5" ry="3" fill="#fff8df"/></g><g class="cinema-bulb" transform="translate(810.3 163.9)"><path d="M0 0v8"/><circle cy="14" r="17" fill="url(#cinemaGlow)"/><ellipse cy="13" rx="4" ry="6" fill="#ffdf98"/><ellipse cy="11" rx="1.5" ry="3" fill="#fff8df"/></g><g class="cinema-bulb" transform="translate(868.7 168.2)"><path d="M0 0v8"/><circle cy="14" r="17" fill="url(#cinemaGlow)"/><ellipse cy="13" rx="4" ry="6" fill="#ffdf98"/><ellipse cy="11" rx="1.5" ry="3" fill="#fff8df"/></g><g class="cinema-bulb" transform="translate(927.5 166.3)"><path d="M0 0v8"/><circle cy="14" r="17" fill="url(#cinemaGlow)"/><ellipse cy="13" rx="4" ry="6" fill="#ffdf98"/><ellipse cy="11" rx="1.5" ry="3" fill="#fff8df"/></g><g class="cinema-bulb" transform="translate(986.8 158.2)"><path d="M0 0v8"/><circle cy="14" r="17" fill="url(#cinemaGlow)"/><ellipse cy="13" rx="4" ry="6" fill="#ffdf98"/><ellipse cy="11" rx="1.5" ry="3" fill="#fff8df"/></g><g class="cinema-bulb" transform="translate(1046.7 143.9)"><path d="M0 0v8"/><circle cy="14" r="17" fill="url(#cinemaGlow)"/><ellipse cy="13" rx="4" ry="6" fill="#ffdf98"/><ellipse cy="11" rx="1.5" ry="3" fill="#fff8df"/></g><g class="cinema-bulb" transform="translate(1107.0 123.4)"><path d="M0 0v8"/><circle cy="14" r="17" fill="url(#cinemaGlow)"/><ellipse cy="13" rx="4" ry="6" fill="#ffdf98"/><ellipse cy="11" rx="1.5" ry="3" fill="#fff8df"/></g><g class="cinema-bulb" transform="translate(1167.8 96.7)"><path d="M0 0v8"/><circle cy="14" r="17" fill="url(#cinemaGlow)"/><ellipse cy="13" rx="4" ry="6" fill="#ffdf98"/><ellipse cy="11" rx="1.5" ry="3" fill="#fff8df"/></g><g class="cinema-bulb" transform="translate(1229.2 63.8)"><path d="M0 0v8"/><circle cy="14" r="17" fill="url(#cinemaGlow)"/><ellipse cy="13" rx="4" ry="6" fill="#ffdf98"/><ellipse cy="11" rx="1.5" ry="3" fill="#fff8df"/></g></svg>
+        <video id="homeDemoVideo" class="home-preview-video" autoplay muted loop playsinline preload="metadata" controlslist="nodownload nofullscreen noremoteplayback" disablepictureinpicture disableremoteplayback draggable="false" tabindex="-1" poster="/assets/cinewall-demo-poster.jpg?v=20261029-cinema-8" data-dark-src="/assets/cinewall-demo-dark.mp4?v=20261029-cinema-8" data-dark-poster="/assets/cinewall-demo-dark-poster.jpg?v=20261029-cinema-8" aria-label="Add a screen, then watch one video split across two matching laptop frames" width="1440" height="810">
+          <source src="/assets/cinewall-demo.mp4?v=20261029-cinema-8" type="video/mp4">
+        </video>
+        <div class="cinema-stickers">
+          <button class="cinema-sticker" type="button" aria-label="Move popcorn sticker" style="--entry-delay:0s"><img src="/assets/cinema-stickers/popcorn.png" width="512" height="512" loading="lazy" decoding="async" draggable="false" alt=""></button>
+          <button class="cinema-sticker" type="button" aria-label="Move 3D glasses sticker" style="--entry-delay:0.12s"><img src="/assets/cinema-stickers/glasses.png" width="512" height="512" loading="lazy" decoding="async" draggable="false" alt=""></button>
+          <button class="cinema-sticker" type="button" aria-label="Move clapperboard sticker" style="--entry-delay:0.24s"><img src="/assets/cinema-stickers/clapper.png" width="512" height="512" loading="lazy" decoding="async" draggable="false" alt=""></button>
+          <button class="cinema-sticker" type="button" aria-label="Move film reel sticker" style="--entry-delay:0.36s"><img src="/assets/cinema-stickers/reel.png" width="512" height="512" loading="lazy" decoding="async" draggable="false" alt=""></button>
+          <button class="cinema-sticker" type="button" aria-label="Move Apple headphones sticker" style="--entry-delay:0.48s"><img src="/assets/cinema-stickers/headphones.png" width="512" height="512" loading="lazy" decoding="async" draggable="false" alt=""></button>
+          <button class="cinema-sticker" type="button" aria-label="Move movie camera sticker" style="--entry-delay:0.6s"><img src="/assets/cinema-stickers/camera.png" width="512" height="512" loading="lazy" decoding="async" draggable="false" alt=""></button>
+          <button class="cinema-sticker" type="button" aria-label="Move cinema drink sticker" style="--entry-delay:0.72s"><img src="/assets/cinema-stickers/drink.png" width="512" height="512" loading="lazy" decoding="async" draggable="false" alt=""></button>
+          <button class="cinema-sticker" type="button" aria-label="Move cinema tickets sticker" style="--entry-delay:0.84s"><img src="/assets/cinema-stickers/tickets.png" width="512" height="512" loading="lazy" decoding="async" draggable="false" alt=""></button>
+        </div>
+        <p id="homeDemoFallback" class="home-demo-fallback" hidden>Demo unavailable. <a href="https://www.youtube.com/watch?v=nKjiv6_XSN4" target="_blank" rel="noopener noreferrer">Watch the tutorial</a></p>
+      </div>
     </section>
 
-    <section class="mode-grid" aria-label="CineWall modes" data-nosnippet>
+    <section id="tools" class="home-section home-tools" aria-labelledby="toolsHeading">
+      <div class="home-section-heading"><h2 id="toolsHeading">What would you like to do?</h2></div>
+      <div class="mode-grid" role="group" aria-label="CineWall modes" data-nosnippet>
       <a class="mode-card featured" data-session-mode="video" href="/admin.html?mode=video">
         <span class="mode-card-visual" aria-hidden="true"><span class="mode-card-art"></span></span>
         <span class="mode-card-number">01</span>
         <span class="mode-card-icon fi" aria-hidden="true">&#xE714;</span>
         <span class="mode-card-content">
           <span class="mode-card-copy"><strong>Stream a video</strong><small>Up to 3 screens</small></span>
-          <span class="mode-card-action">Open video wall <i class="fi" aria-hidden="true">&#xE72A;</i></span>
+          <span class="mode-card-action">Try free <i class="fi" aria-hidden="true">&#xE72A;</i></span>
         </span>
       </a>
       <a class="mode-card" data-session-mode="audio" href="/admin.html?mode=audio">
@@ -128,8 +151,8 @@
         <span class="mode-card-number">02</span>
         <span class="mode-card-icon fi" aria-hidden="true">&#xE8D6;</span>
         <span class="mode-card-content">
-          <span class="mode-card-copy"><strong>Stream audio</strong><small>5 speakers · 10-song playlists</small></span>
-          <span class="mode-card-action">Open speaker room <i class="fi" aria-hidden="true">&#xE72A;</i></span>
+          <span class="mode-card-copy"><strong>Stream audio</strong><small>5 laptops · 10 songs</small></span>
+          <span class="mode-card-action">Open audio <i class="fi" aria-hidden="true">&#xE72A;</i></span>
         </span>
       </a>
       <a class="mode-card" data-bg="screen-sharing" href="/share.html">
@@ -137,7 +160,7 @@
         <span class="mode-card-number">03</span>
         <span class="mode-card-icon fi" aria-hidden="true">&#xE7F4;</span>
         <span class="mode-card-content">
-          <span class="mode-card-copy"><strong>Screen sharing</strong><small>Up to 10 screens · Mic &amp; camera</small></span>
+          <span class="mode-card-copy"><strong>Screen sharing</strong><small>Up to 10 screens</small></span>
           <span class="mode-card-action">Start sharing <i class="fi" aria-hidden="true">&#xE72A;</i></span>
         </span>
       </a>
@@ -150,6 +173,16 @@
           <span class="mode-card-action">Start speaking <i class="fi" aria-hidden="true">&#xE72A;</i></span>
         </span>
       </a>
+    </div>
+    </section>
+
+    <section id="how-it-works" class="home-section" aria-labelledby="howHeading">
+      <div class="home-section-heading home-heading-row"><h2 id="howHeading">Three steps. You’re in.</h2><a class="home-text-link" href="https://www.youtube.com/watch?v=nKjiv6_XSN4" target="_blank" rel="noopener noreferrer">Setup tutorial <span class="fi" aria-hidden="true">&#xE8A7;</span></a></div>
+      <ol class="home-steps">
+        <li><span>01</span><div><h3>Choose a tool</h3><p>Video, music, screen sharing or mic.</p></div></li>
+        <li><span>02</span><div><h3>Open device links</h3><p>A different link on each laptop. Same Wi-Fi.</p></div></li>
+        <li><span>03</span><div><h3>Play or try 3D</h3><p>3D view for video. 3D sound for music.</p></div></li>
+      </ol>
     </section>
 
     <section class="community-section" aria-labelledby="communityHeading">
@@ -166,58 +199,14 @@
       </div></div></div>
     </section>
 
-    <section id="how-it-works" class="home-section" aria-labelledby="howHeading">
-      <div class="home-section-heading"><span class="section-kicker">A SIMPLE SETUP</span><h2 id="howHeading">One source. Everyone connected.</h2><p>Choose a video, a playlist, a live screen or your phone microphone.</p></div>
-      <ol class="home-steps"><li><span>01</span><h3>Get together</h3><p>Connect your devices to the same Wi-Fi or hotspot. Place laptops side by side for a video wall.</p></li><li><span>02</span><h3>Share device links</h3><p>Choose a mode and copy its screen, speaker or phone links. Open the matching link on each device to connect.</p></li><li><span>03</span><h3>Play or present</h3><p>For videos and music, wait until every screen is ready, then press Play. For screen sharing, choose a tab, window or screen. Join the call if you want to talk.</p></li></ol>
-    </section>
-
-    <section id="demo" class="home-section home-demo" aria-labelledby="demoHeading">
-      <div class="home-section-heading"><span class="section-kicker">SEE IT IN ACTION</span><h2 id="demoHeading">From two laptops<br>to one video wall.</h2><p>Watch the setup tutorial before you start.</p><a class="home-text-link" href="https://www.youtube.com/watch?v=nKjiv6_XSN4" target="_blank" rel="noopener noreferrer">Watch on YouTube <span class="fi" aria-hidden="true">&#xE8A7;</span></a></div>
-      <div id="homeDemoPlayer" class="home-demo-player"><button id="playHomeDemo" type="button" aria-label="Play the CineWall setup tutorial"><img src="/assets/robots-laptops-poster.jpg" width="1280" height="720" loading="lazy" alt="Two laptops placed together as a video wall"><span class="home-demo-play"><span class="fi" aria-hidden="true">&#xE768;</span></span><span class="home-demo-caption">Watch the setup tutorial</span></button></div>
-    </section>
-
-    <section id="use-cases" class="home-section" aria-labelledby="usesHeading">
-      <div class="home-section-heading"><span class="section-kicker">WHY MORE THAN ONE SCREEN?</span><h2 id="usesHeading">Make more of the devices you have.</h2><p>One screen is enough for everyday watching. CineWall is for the times you want a wider view or shared sound.</p></div>
-      <div class="home-use-grid"><article><span class="fi" aria-hidden="true">&#xE714;</span><h3>Your movie night, together</h3><p>Host a watch party at home: place two or three laptops side by side and turn one movie into a wider picture. Bring your own video file and match screen heights and brightness for the best view.</p></article><article><span class="fi" aria-hidden="true">&#xE8D6;</span><h3>Music around the room</h3><p>Queue up to ten songs on five laptops. Songs advance automatically; the last song repeats. Try 3D sound to spread stereo audio across them, with a gradient that follows each speaker.</p></article><article><span class="fi" aria-hidden="true">&#xE7F4;</span><h3>Show an app or a lesson</h3><p>Share a tab, window or screen so everyone sees the same view. Turn on your mic and camera to talk through it together.</p></article></div>
-    </section>
-
-    <section id="about" class="home-section home-about" aria-labelledby="aboutHeading"><div><span class="section-kicker">ABOUT CINEWALL</span><h2 id="aboutHeading">Built for laptops.<br>Made for sharing.</h2></div><div><p>CineWall is a free home cinema and watch-party browser app built by <a href="https://www.linkedin.com/in/aryan686/" target="_blank" rel="noopener noreferrer">Aryan</a>. Watch together on a laptop video wall, fill the room with 3D audio playlists, or share a live screen with friends. It also includes room calls and a phone microphone with a teleprompter and voice recording.</p><p>No special display hardware is needed for a video wall. Screen edges stay visible, and playback depends on your Wi-Fi and each laptop's browser.</p><a class="home-text-link" href="/share.html">Try live screen sharing <span class="fi" aria-hidden="true">&#xE72A;</span></a></div></section>
-
     <section id="faq" class="home-section home-faq" aria-labelledby="faqHeading">
-      <div class="home-section-heading"><span class="section-kicker">HERE TO HELP</span><h2 id="faqHeading">Frequently asked questions</h2><p>From your first movie night to joining a speaker room, find the help you need to get everyone connected.</p>
-        <nav class="home-faq-nav" aria-label="Help topics"><a href="#faq-devices">Devices &amp; browsers</a><a href="#faq-start">Getting started</a><a href="#faq-room">Hosting &amp; joining</a><a href="#faq-playback">Playback &amp; sound</a><a href="#faq-privacy">Privacy &amp; troubleshooting</a></nav>
-      </div>
+      <div class="home-section-heading"><h2 id="faqHeading">A few quick answers.</h2></div>
       <div class="home-faq-list">
-        <section id="faq-devices" class="home-faq-group" aria-labelledby="faqDevicesHeading"><h3 id="faqDevicesHeading">Devices &amp; browsers</h3>
-          <details><summary>Which devices can I use with CineWall?</summary><p>Video streaming, music streaming and screen sharing are designed for laptops and desktop PCs. Start with a current Chrome or Edge browser. On smartphones, Mic and Speaker is available in portrait mode; the other modes show a laptop-only warning.</p></details>
-          <details><summary>Can I use my phone as a microphone or speaker?</summary><p>Yes. Open Mic and Speaker on your phone in portrait mode. Choose Phone mic to broadcast your voice, or open a numbered speaker link to listen. A typical room uses one phone microphone and up to three laptop speakers. Phone microphone access needs trusted HTTPS and your permission.</p></details>
-          <details><summary>Do I need an app, extension or special display?</summary><p>No app or browser extension is needed to use the online website. Open CineWall in your browser. A video wall uses the laptops you already have, placed side by side; their screen edges stay visible. The optional local server is a separate setup for use on your own network.</p></details>
-        </section>
-        <section id="faq-start" class="home-faq-group" aria-labelledby="faqStartHeading"><h3 id="faqStartHeading">Getting started</h3>
-          <details><summary>Is CineWall free?</summary><p>Yes. The video wall, 3D audio playlists, screen sharing and Mic and Speaker features are free to use. Supporting the project is optional.</p></details>
-          <details><summary>How do I set up a mini theatre at home?</summary><p>Connect your laptops to the same Wi-Fi or hotspot. Choose Stream a video on one laptop, select your video file, and open a different numbered screen link on each laptop. Place the screens side by side, wait until they are ready, and press Play on the source dashboard.</p></details>
-          <details><summary>Can I watch Netflix or other subscription services here?</summary><p>CineWall plays your selected video or audio files, and the Video and Audio dashboards include YouTube downloads. It does not integrate Netflix, Disney+, Prime Video or other subscription services. Protected video may appear black when screen sharing.</p></details>
-          <details><summary>Which video and music files work?</summary><p>MP4 with H.264 video and AAC sound is the safest video choice. Some WebM and H.264/AAC MKV files also work. For music, try MP3, WAV or AAC. Each laptop must support the file's codecs. CineWall checks your selection and does not convert it.</p></details>
-        </section>
-        <section id="faq-room" class="home-faq-group" aria-labelledby="faqRoomHeading"><h3 id="faqRoomHeading">Hosting &amp; joining</h3>
-          <details><summary>How do I invite friends to my room?</summary><p>Choose a mode, then copy the device links from the dashboard. Open a different numbered screen or speaker link on each laptop. For Mic and Speaker, open the phone link on your phone. Keep the source dashboard open for Instant sharing.</p></details>
-          <details><summary>Does everyone need their own copy of the file?</summary><p>No. Choose your movie or songs on the source laptop only. It shares the selected file with the devices that join its room.</p></details>
-          <details><summary>How many screens or speakers can join?</summary><p>Video walls support 1–3 laptops, with 2–3 recommended for a wider picture. Audio rooms support up to 5 speakers and 10 songs. Screen sharing supports up to 10 numbered screens, plus the presenter. An optional room call supports up to 4 devices. Mic and Speaker supports one phone and up to three speaker slots.</p></details>
-          <details><summary>Can we talk while sharing a screen?</summary><p>Yes. Join the room call from the Screen sharing page, then enable your microphone or camera if you want. Up to four devices can join the call. Use headphones to reduce echo. Camera and microphone access need a secure connection and browser permission.</p></details>
-          <details><summary>Can I present slides or a document?</summary><p>Open the file in its usual app, choose Screen sharing on a laptop or PC, and share that window, tab or screen. Viewers see the same view. This does not create an extended desktop or let one computer control another computer's apps.</p></details>
-        </section>
-        <section id="faq-playback" class="home-faq-group" aria-labelledby="faqPlaybackHeading"><h3 id="faqPlaybackHeading">Playback &amp; sound</h3>
-          <details><summary>Do songs play automatically in order?</summary><p>Yes. Add up to ten songs and drag them into order. When a song ends, the next one loads and starts after every selected speaker is ready. If there is no next song, the current song plays again. Keep the source dashboard open.</p></details>
-          <details><summary>How do I try 3D sound?</summary><p>Click Try in 3D in the audio player or select 3D Sound in Settings. The recording's left and right channels are spread across laptops in speaker-number order. A smooth gradient follows the stereo mix and grows where sound is louder. Volume, mute and pause affect it too. Mono recordings stay balanced; CineWall does not create Dolby Atmos.</p></details>
-          <details><summary>Why do I need to enable sound on each laptop?</summary><p>Browsers can block sound until you interact with a page. Click Enable sound or Enable speaker once when asked, then use the source dashboard for playback and individual volume controls.</p></details>
-          <details><summary>Why can playback or sound have a little delay?</summary><p>Wi-Fi, browser buffering and device speakers can add different delays. Use the same strong Wi-Fi, keep the source laptop awake and avoid Bluetooth speakers for less delay. Screen sharing Auto quality reduces traffic as more viewers join. Exact timing across every device is not guaranteed.</p></details>
-        </section>
-        <section id="faq-privacy" class="home-faq-group" aria-labelledby="faqPrivacyHeading"><h3 id="faqPrivacyHeading">Privacy &amp; troubleshooting</h3>
-          <details><summary>What is the difference between Instant and Upload?</summary><p>Instant shares a file from the source laptop; keep its dashboard open. On the online website, use the same Wi-Fi or hotspot. Upload first saves a temporary copy on the server for the other screens to play. Neither option converts the file.</p></details>
-          <details><summary>Who can join my session?</summary><p>Share device links only with people you want to join. Each guest opens their screen or speaker link; the creator controls the session. Your browser asks for permission before using your microphone, camera or screen.</p></details>
-          <details><summary>Can CineWall work without internet?</summary><p>The online website needs internet to load and connect your room. For local use without internet, run the CineWall server on one laptop and connect the others to the same Wi-Fi or hotspot. Phone microphone access still needs trusted HTTPS; see <a href="/mic-setup.html">Mic and Speaker setup help</a>.</p></details>
-          <details><summary>What should I check if a screen will not play?</summary><p>Open the correct numbered link, check that every laptop is on the same Wi-Fi, and keep the source dashboard awake. Enable sound when asked and wait for each screen to report ready. If Instant cannot connect, allow local network access if prompted or try Upload. Refresh pages after a website update so every device uses the same version.</p></details>
-        </section>
+        <details><summary>Is CineWall free?</summary><p>Yes. All four tools are free. No app or extension needed.</p></details>
+        <details id="faq-devices"><summary>Which devices work?</summary><p>Use laptops or PCs for video, audio and screen sharing. A portrait phone can be your microphone.</p></details>
+        <details><summary>How do I connect my laptops?</summary><p>Use the same Wi-Fi or hotspot. Open each numbered device link and keep the source dashboard open.</p></details>
+        <details><summary>Which files can I play?</summary><p>MP4 with H.264 video and AAC audio works best. Other formats depend on your browser’s codecs.</p></details>
+        <details><summary>Will the screens be seamless?</summary><p>Laptop edges stay visible. Playback timing depends on your network, browsers and devices.</p></details>
       </div>
     </section>
 
@@ -250,7 +239,9 @@
   </div>
   <div id="launcherBusy" class="launcher-busy" hidden><span class="spinner"></span><strong>Preparing your studio…</strong></div>
   <script src="home-footer.js?v=20261025-copy-41"></script>
-  <script src="launcher.js?v=20261025-mobile-42"></script>
+  <script src="home-demo.js?v=20261029-cinema-8"></script>
+  <script src="home-cinema.js?v=20261029-cinema-8"></script>
+  <script src="launcher.js?v=20261029-demo-1"></script>
   <script src="/community.js?v=20261027-community-3"></script>
   <script src="/rooms-ui.js?v=20261027-links-4"></script>
 </body>

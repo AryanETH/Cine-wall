@@ -167,5 +167,8 @@ test('screen-sharing UI is mirror-only and homepage section links are inside the
   assert.doesNotMatch(html, /Split wall|data-layout="wall"|id="shareLayout"/);
   assert.match(html, /share-call\.js/);
   const header = home.match(/<header class="mode-nav">[\s\S]*?<\/header>/)?.[0];
-  for (const target of ['how-it-works', 'demo', 'use-cases', 'about', 'faq']) assert.ok(header.includes(`href="#${target}"`));
+  for (const target of ['tools', 'demo', 'how-it-works', 'faq']) {
+    assert.ok(header.includes(`href="#${target}"`));
+    assert.ok(home.includes(`id="${target}"`), 'every navigation link reaches an existing section');
+  }
 });

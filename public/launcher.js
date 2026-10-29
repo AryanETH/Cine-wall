@@ -5,24 +5,6 @@ const supportModal = document.querySelector('#supportModal');
 const supportForm = document.querySelector('#supportForm');
 const supportQrResult = document.querySelector('#supportQrResult');
 const supportAmount = document.querySelector('#supportAmount');
-const heroVideo = document.querySelector('.mode-hero-photo');
-const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
-function syncHeroMotion() {
-  if (reducedMotion.matches) heroVideo.pause();
-  else heroVideo.play().catch(() => {});
-}
-reducedMotion.addEventListener('change', syncHeroMotion);
-syncHeroMotion();
-
-document.querySelector('#playHomeDemo')?.addEventListener('click', () => {
-  const frame = document.createElement('iframe');
-  frame.src = 'https://www.youtube-nocookie.com/embed/nKjiv6_XSN4?autoplay=1';
-  frame.title = 'CineWall setup tutorial';
-  frame.allow = 'autoplay; encrypted-media; picture-in-picture; fullscreen';
-  frame.allowFullscreen = true;
-  frame.referrerPolicy = 'strict-origin-when-cross-origin';
-  document.querySelector('#homeDemoPlayer').replaceChildren(frame);
-});
 
 function closeSupport() {
   supportModal.hidden = true;

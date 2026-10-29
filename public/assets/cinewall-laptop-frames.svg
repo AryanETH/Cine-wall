@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1920" height="1080" viewBox="0 0 1920 1080">
+  <defs>
+    <linearGradient id="lid" x2="0" y2="1"><stop stop-color="#c5cbd2"/><stop offset=".55" stop-color="#f4f5f7"/><stop offset="1" stop-color="#969fa9"/></linearGradient>
+    <linearGradient id="deck" x2="0" y2="1"><stop stop-color="#eef0f3"/><stop offset="1" stop-color="#bdc4cd"/></linearGradient>
+    <linearGradient id="edge" x2="0" y2="1"><stop stop-color="#d8dde3"/><stop offset="1" stop-color="#8d97a4"/></linearGradient>
+    <radialGradient id="shadow"><stop stop-color="#162238" stop-opacity=".17"/><stop offset="1" stop-color="#162238" stop-opacity="0"/></radialGradient>
+    <pattern id="keys" width="35" height="9" patternUnits="userSpaceOnUse"><rect x="2" y="1" width="30" height="6" rx="1.5" fill="#747e8b" opacity=".65"/></pattern>
+    <g id="laptop">
+      <rect width="804" height="508" rx="12" fill="url(#lid)" stroke="#949da8" stroke-width="1"/>
+      <rect x="2" y="2" width="800" height="504" rx="10" fill="#171d25"/>
+      <rect x="8" y="8" width="788" height="492" rx="4" fill="#000"/>
+      <circle cx="402" cy="4.5" r="1.4" fill="#647181"/>
+      <path d="M0 508H804L812 564H-8Z" fill="url(#deck)" stroke="#a8b0bb"/>
+      <path d="M47 517H757L762 541H42Z" fill="url(#keys)"/>
+      <rect x="318" y="545" width="168" height="14" rx="3" fill="#dce1e7" stroke="#aab3bf" stroke-width=".7"/>
+      <path d="M-8 564H812L803 575H1Z" fill="url(#edge)" stroke="#a1aab6" stroke-width=".6"/>
+      <path d="M330 564H474L470 568H334Z" fill="#99a3af"/>
+      <path d="M5 575H799" stroke="#788493" stroke-opacity=".45"/>
+    </g>
+  </defs>
+  <rect width="1920" height="1080" fill="#fdfffc"/>
+  <ellipse cx="546" cy="837" rx="440" ry="28" fill="url(#shadow)"/>
+  <ellipse cx="1374" cy="837" rx="440" ry="28" fill="url(#shadow)"/>
+  <use href="#laptop" x="144" y="250"/>
+  <use href="#laptop" x="972" y="250"/>
+</svg>
