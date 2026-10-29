@@ -67,6 +67,7 @@ const pendingControls = new Map();
 const queuedRevisions = new Map();
 let sharingMode = 'instant';
 let adminDisplayWindow = null;
+let handControls = null;
 try { sharingMode = localStorage.getItem('cinewall-sharing') === 'server' ? 'server' : 'instant'; } catch {}
 
 function sourceLocked() {
@@ -308,6 +309,7 @@ async function command(payload) {
 
 function renderModeShell() {
   const state = status.state;
+  handControls?.sync();
   const config = modeConfig[state.sessionMode] || modeConfig.video;
   document.body.dataset.sessionMode = state.sessionMode;
   $('#modeSwitchIcon').innerHTML = config.icon;
@@ -1439,4 +1441,27 @@ async function bootstrap() {
   window.CineWallGuide?.autoStart();
 }
 
+handControls = window.CineWallHandControls?.create({
+  available: () => status.state.sessionMode === 'video' && !sourceLocked(),
+  onAction: action => {
+    if (status.state.sessionMode !== 'video' || sourceLocked()) return 'Video controls unavailable';
+    if (!status.state.asset) return 'Load a video first';
+    if (uploadBusy || removeBusy || isPreparing() || status.state.seekPending) return 'Wait for the video to be ready';
+    if (action === 'play') {
+      if (!playbackReady()) return 'Wait for all screens to be ready';
+      playOnAdminDisplay();
+    } else if (action === 'pause') {
+      audioQueue.queue.cancelAutoplay(); command({ type: 'pause' });
+    } else if (action === 'forward' || action === 'back') {
+      seekRelative(action === 'forward' ? 10 : -10);
+    } else if (action === 'volume-up' || action === 'volume-down') {
+      const value = Math.max(0, Math.min(1, audioSetting(1).volume + (action === 'volume-up' ? .1 : -.1)));
+      media.volume = value;
+      $('#adminVolume').value = value;
+      $('#adminVolumeValue').textContent = `${Math.round(value * 100)}%`;
+      queueVolume(1, value);
+    } else return false;
+    return true;
+  }
+});
 bootstrap();

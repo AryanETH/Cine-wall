@@ -28,7 +28,8 @@
   <script src="media-peer.js?v=20261027-entry-2"></script>
   <script src="video-validation.js?v=20261002-mkv-17"></script>
   <link rel="stylesheet" href="styles.css?v=20261028-local-2">
-  <link rel="stylesheet" href="studio.css?v=20261029-guide-3">
+  <link rel="stylesheet" href="studio.css?v=20261029-settings-4">
+  <link rel="stylesheet" href="hand-controls.css?v=20261029-2">
   <link rel="stylesheet" href="device-support.css?v=20261025-mobile-42">
   <link rel="stylesheet" href="/rooms.css?v=20261027-links-3">
 </head>
@@ -192,6 +193,17 @@
             </div>
             <p id="audioModeHint">Full sound on every laptop.</p>
           </div>
+          <div id="handControlPanel" class="hand-panel" hidden>
+            <label class="hand-toggle" for="handControlToggle">Hand gestures <input id="handControlToggle" type="checkbox" role="switch"></label>
+            <p id="handControlHint" class="hand-note" role="status" hidden>Off</p>
+            <div id="handCameraOptions" hidden>
+              <div class="hand-camera-controls"><select id="handCameraSelect" aria-label="Gesture camera"></select><button id="handPracticeAgain" class="button subtle" type="button">Practice again</button></div>
+              <ul class="hand-reference" aria-label="Hand gestures">
+                <li>✋ Play</li><li>✊ Pause</li><li>👍 Volume +10%</li><li>👎 Volume −10%</li><li>✌️ Forward 10s</li><li>🤟 Back 10s</li>
+              </ul>
+            </div>
+            <div id="handCameraMount"><div id="handCameraFeed" class="hand-feed" hidden><video id="handCamera" autoplay muted playsinline aria-label="Live gesture camera"></video><span id="handDetected">Show your hand</span></div></div>
+          </div>
           <div id="presenterTips" hidden><h3>Page controls</h3></div>
           <div class="extra-controls">
             <button id="identify" class="button subtle"><span class="fi">&#xE8B0;</span>Identify screens</button>
@@ -205,6 +217,7 @@
 
     <section id="player" class="player-console">
       <div id="previewStage" class="preview-stage">
+        <div id="handPlayerStatus" class="hand-player-status" role="status" hidden>Gestures on</div>
         <video id="mediaPreview" playsinline preload="metadata"></video>
         <canvas id="previewAnaglyph" class="video-anaglyph" aria-label="Red/cyan 3D video preview" hidden></canvas>
         <div id="audioPreview" class="audio-visual" hidden>
@@ -267,6 +280,18 @@
 
   </main>
   <div id="guideBackdrop" class="guide-backdrop" aria-hidden="true" hidden></div>
+  <dialog id="handPractice" class="hand-practice" aria-labelledby="handPracticeTitle" aria-describedby="handPracticeCopy">
+    <div class="hand-practice-top"><span id="handPracticeProgress">1 / 6</span><button id="handPracticeStop" class="button subtle" type="button">Turn off</button></div>
+    <span id="handPracticeIcon" class="hand-practice-icon" aria-hidden="true"></span>
+    <h2 id="handPracticeTitle">Practice hand gestures</h2>
+    <p id="handPracticeCopy"></p>
+    <label class="hand-note" for="handPracticeCameraSelect">Camera</label>
+    <select id="handPracticeCameraSelect" aria-label="Practice camera"></select>
+    <div id="handPracticeCamera"></div>
+    <progress id="handPracticeHold" max="1" value="0" aria-label="Gesture hold progress"></progress>
+    <p id="handPracticeHint" class="hand-note" role="status"></p>
+    <p class="hand-note">Practice only. Playback stays unchanged. Lower your hand between gestures.</p>
+  </dialog>
   <section id="dashboardGuide" class="guide-card" role="dialog" aria-modal="true" aria-labelledby="guideTitle" aria-describedby="guideCopy" hidden>
     <div class="guide-top"><span id="guideProgress" class="guide-progress"></span><button id="guideSkip" class="guide-skip" type="button">Skip</button></div>
     <h2 id="guideTitle"></h2>
@@ -280,7 +305,9 @@
   <script src="glasses-geometry.js?v=20261028-local-6"></script>
   <script src="glasses-3d.js?v=20261028-local-6"></script>
   <script src="video-3d.js?v=20261028-local-6"></script>
-  <script src="desktop-entry.js?v=20261025-mobile-42" data-src="admin.js?v=20261028-seek-7"></script>
+  <script src="hand-gestures.js?v=20261029-1"></script>
+  <script src="hand-controls.js?v=20261029-2"></script>
+  <script src="desktop-entry.js?v=20261025-mobile-42" data-src="admin.js?v=20261029-hands-1"></script>
   <script src="youtube-download.js?v=20261004-studio-25"></script>
   <script src="/rooms-ui.js?v=20261027-links-4"></script>
   <script src="mode-switcher-dashboard.js"></script>

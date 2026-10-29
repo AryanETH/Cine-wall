@@ -94,12 +94,17 @@
 .studio-body .format-info-card p { font-size: 13px; line-height: 1.5; }
 .studio-body .viewer-source h2 { font-size: 20px; }
 .studio-body .viewer-source p { font-size: 14px; }
-.studio-body .studio-settings { margin-top: auto; padding-top: 26px; }
+.studio-body .studio-settings { margin-top: 20px; padding-top: 0; }
 .studio-body .audio-mode-panel { margin-top: 20px; padding-top: 18px; border-top: 1px solid var(--line); }
 .studio-body .audio-mode-panel .segmented { margin: 0; }
 .studio-body .audio-mode-panel .segmented button { flex: 1; }
 .studio-body .audio-mode-panel p { margin: 10px 0 0; color: var(--muted); font-size: 13px; line-height: 1.45; }
-.studio-settings summary { display: flex; align-items: center; justify-content: flex-end; gap: 8px; padding: 10px 0; color: var(--accent); font-size: 14px; font-weight: 550; cursor: pointer; list-style: none; }
+.studio-settings summary { display: flex; align-items: center; justify-content: flex-start; gap: 12px; min-height: 52px; padding: 12px 14px; border: 1px solid color-mix(in srgb, var(--accent) 35%, var(--line)); border-radius: 12px; background: color-mix(in srgb, var(--accent) 9%, var(--surface)); color: var(--ink); box-shadow: 0 3px 10px #00000009; font-size: 16px; font-weight: 700; cursor: pointer; list-style: none; }
+.studio-settings summary .fi { color: var(--accent); }
+.studio-settings summary::after { content: ''; position: static; flex: 0 0 8px; width: 8px; height: 8px; margin: 0 2px 4px auto; border-right: 2px solid var(--accent); border-bottom: 2px solid var(--accent); transform: rotate(45deg); }
+.studio-settings summary:hover { border-color: var(--accent); }
+.studio-settings summary:focus-visible { outline: 3px solid var(--accent); outline-offset: 3px; }
+.studio-settings[open] summary::after { margin-bottom: 0; transform: rotate(225deg); }
 .studio-settings summary::-webkit-details-marker { display: none; }
 .studio-settings[open] summary { margin-bottom: 12px; }
 .studio-settings .extra-controls { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 16px; }

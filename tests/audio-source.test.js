@@ -74,7 +74,7 @@ test('audio YouTube tab survives dashboard refreshes without video conversion co
   };
   $('#youtubeDownloadPanel').hidden = false;
   const context = vm.createContext({ $, window: {}, status: { state: { sessionMode: 'audio', asset: null } }, document: { body: { dataset: {} } },
-    video3d: null, uploadBusy: false, removeBusy: false, isPreparing: () => false, sourceLocked: () => false, modeConfig: { audio: { label: 'Audio' }, video: { label: 'Video' }, presentation: { label: 'Presentation' } },
+    handControls: null, video3d: null, uploadBusy: false, removeBusy: false, isPreparing: () => false, sourceLocked: () => false, modeConfig: { audio: { label: 'Audio' }, video: { label: 'Video' }, presentation: { label: 'Presentation' } },
   });
   vm.runInContext(code.slice(code.indexOf('function renderModeShell('), code.indexOf('function renderScreens(')), context);
   vm.runInContext('renderModeShell(); renderModeShell()', context);
