@@ -66,13 +66,13 @@ test('joined guests follow a mode change with the same ticket and no second join
   assert.equal(client.storage.get('cinewall-active-room'), room);
 });
 
-test('landing pages stay idle and legacy entry links automatically open a new workspace', async () => {
+test('landing pages stay idle and first-time legacy entry links allocate a workspace', async () => {
   const saved = new Map([['cinewall-active-room', room], [`cinewall-room-${room}`, JSON.stringify({room, ticket:'ticket', recoveryKey:'private-key'})]]);
   const client = sessionPage('https://watch.aitoyz.in/', saved);
   await client.window.CineWallSession.ready;
   assert.equal(client.window.CineWallSession.room, ''); assert.equal(client.window.CineWallSession.membership, null); assert.equal(client.calls.length, 0);
   for (const mode of ['video','audio','share','mic']) {
-    const entry = sessionPage(`https://watch.aitoyz.in/connect.html?mode=${mode}&room=${room}`, saved);
+    const entry = sessionPage(`https://watch.aitoyz.in/connect.html?mode=${mode}`);
     await turn();
     assert.equal(entry.window.CineWallSession.room, '');
     const request = entry.calls.find(call => call[0] === 'fetch');
@@ -82,8 +82,8 @@ test('landing pages stay idle and legacy entry links automatically open a new wo
   }
   const app = sessionPage(`https://watch.aitoyz.in/admin.html?mode=video&room=${room}`, saved);
   await app.window.CineWallSession.ready;
-  for (const href of ['https://watch.aitoyz.in/','https://watch.aitoyz.in/connect.html?mode=audio&join=1']) {
-    const anchor = {href}; app.clicks[0]({target:{closest:()=>anchor}}); assert.equal(anchor.href, href, 'landing and entry links do not inherit a room');
+  for (const href of ['https://watch.aitoyz.in/', 'https://external.invalid/connect.html?mode=audio']) {
+    const anchor = {href}; app.clicks[0]({target:{closest:()=>anchor}}); assert.equal(anchor.href, href, 'homepage and external links do not inherit a room');
   }
 });
 

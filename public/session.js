@@ -16,7 +16,7 @@
   const page = new URL(location.href);
   const peerId = uuid();
   const local = /^(localhost|127\.0\.0\.1|\[::1\])$/.test(page.hostname) || /^(10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.)/.test(page.hostname);
-  const enrollmentPage = page.pathname === '/' || page.pathname === '/connect.html';
+  const enrollmentPage = ['/', '/index.html', '/connect.html'].includes(page.pathname);
   const explicitRoom = enrollmentPage ? '' : page.searchParams.get('room') || '';
   const room = explicitRoom;
   const workspacePage = /\/(admin|screen|share|mic|room)\.html$/.test(page.pathname);
@@ -24,6 +24,15 @@
   const nativeFetch = window.fetch.bind(window);
   const identityHeaders = { 'X-CineWall-Device': deviceId, 'X-CineWall-Key': deviceKey };
   let membership = null;
+  function savedHost() {
+    if (page.searchParams.has('new')) return null;
+    // A homepage opened from a dashboard belongs to that room, even if another
+    // tab has since changed the browser's last-active room.
+    const id = page.searchParams.get('room') || storage.get('cinewall-active-room');
+    let saved;
+    try { saved = JSON.parse(storage.get(`cinewall-room-${id}`) || 'null'); } catch {}
+    return saved?.room === id && saved.admin === true && saved.ticket ? saved : null;
+  }
   function remember(data) {
     let previous = membership?.room === data.room ? membership : null;
     if (!previous) { try { previous = JSON.parse(storage.get(`cinewall-room-${data.room}`) || 'null'); } catch {} }
@@ -63,6 +72,22 @@
     if (!response.ok) throw Object.assign(new Error(data.error || 'Could not connect to this room.'), { status: response.status });
     return remember(data);
   }
+  async function changeMode(mode, info, resumed = false) {
+    if (!info.admin) throw new Error('Only the room admin can switch modes.');
+    // Only a fresh resume can confirm the mode; another tab may have changed
+    // it since this page last received a membership update.
+    if (resumed && info.mode === mode) return info;
+    const target = new URL('/api/rooms/mode', location.origin);
+    target.searchParams.set('room', info.room);
+    target.searchParams.set('ticket', info.ticket);
+    return roomRequest(`mode${target.search}`, { mode });
+  }
+  async function resumeHost(mode) {
+    const saved = savedHost();
+    if (!saved) return null;
+    const info = await roomRequest('resume', { room: saved.room, ticket: saved.ticket });
+    return changeMode(mode, info, true);
+  }
   const ready = room ? (async () => {
     let saved; try { saved = JSON.parse(storage.get(`cinewall-room-${room}`) || 'null'); } catch {}
     let inherited; try { if (window.opener?.location.origin === location.origin && window.opener.CineWallSession?.room === room) inherited = window.opener.CineWallSession.membership?.ticket; } catch {}
@@ -87,7 +112,7 @@
     if (receiver) throw new Error('Open the full device link shared by the host.');
     const selected = page.pathname === '/mic.html' ? 'mic' : page.pathname === '/share.html' ? 'share' : page.searchParams.get('mode');
     const mode = ['video', 'audio', 'share', 'mic'].includes(selected) ? selected : 'video';
-    navigate(await roomRequest('create', { mode }), true);
+    navigate(await resumeHost(mode) || await roomRequest('create', { mode }), true);
     // Wait for the room URL before any workspace API or event stream starts.
     return new Promise(() => {});
   })() : Promise.resolve(null);
@@ -171,12 +196,13 @@
   }
   async function switchMode(mode) {
     await ready;
-    const response = await nativeFetch(scoped('/api/rooms/mode', true), { method: 'POST', headers: { ...identityHeaders, 'Content-Type': 'application/json' }, body: JSON.stringify({ mode }) });
-    const data = await response.json(); if (!response.ok) throw new Error(data.error || 'Could not switch modes.');
-    remember(data); navigate(data);
+    if (!['video', 'audio', 'share', 'mic'].includes(mode)) throw new Error('Choose Video, Audio, Screen sharing or Mic and Speaker.');
+    const data = membership ? await changeMode(mode, membership) : await resumeHost(mode);
+    if (!data) throw new Error('Open a workspace before switching modes.');
+    navigate(data);
   }
   if (room) ready.then(() => { refreshTimer = setTimeout(refreshRoom, 1500); }).catch(() => {});
   window.addEventListener('pagehide', () => { ended = true; clearTimeout(refreshTimer); });
   window.addEventListener('pageshow', event => { if (event.persisted && room) location.reload(); });
-  window.CineWallSession = { get room() { return room; }, hosted: !local, link, navigate, switchMode, get deviceId() { return deviceId; }, peerId, ready, storage, roomRequest, get membership() { return membership; }, mediaLink: value => scoped(value, true) };
+  window.CineWallSession = { get room() { return room; }, get hostRoom() { return savedHost()?.room || ''; }, hosted: !local, link, navigate, switchMode, get deviceId() { return deviceId; }, peerId, ready, storage, roomRequest, get membership() { return membership; }, mediaLink: value => scoped(value, true) };
 })();

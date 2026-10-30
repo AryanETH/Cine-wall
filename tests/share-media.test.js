@@ -40,15 +40,18 @@ test('sender tuning prioritizes audio and limits traffic; unsupported settings n
 
 test('homepage enables Screen sharing and replaces the YouTube placeholder with Mic and Speaker', () => {
   const home = fs.readFileSync(path.join(__dirname, '../public/index.html'), 'utf8');
-  const card = home.match(/<a class="mode-card" data-bg="screen-sharing"[\s\S]*?<\/a>/)?.[0];
+  const cards = [...home.matchAll(/<a\b[^>]*>[\s\S]*?<\/a>/g)].map(match => match[0]);
+  const card = cards.find(value => /<a\b[^>]*\bdata-bg="screen-sharing"/.test(value));
   assert.ok(card);
   assert.match(card, /href="\/share.html"/);
   assert.match(card, /Up to 10 screens/);
-  assert.doesNotMatch(card, /coming-soon|data-session-mode/);
+  assert.match(card, /data-session-mode="share"/);
+  assert.doesNotMatch(card, /coming-soon/);
   assert.doesNotMatch(home, /data-bg="presentation"/);
   assert.doesNotMatch(home, /class="home-share-banner"/);
-  const micCard = home.match(/<a class="mode-card mic-mode-card"[\s\S]*?<\/a>/)?.[0];
+  const micCard = cards.find(value => /<a\b[^>]*\bclass="[^"]*\bmic-mode-card\b/.test(value));
   assert.ok(micCard);
+  assert.match(micCard, /data-session-mode="mic"/);
   assert.match(micCard, /href="\/mic.html"/);
   assert.match(micCard, /Mic and Speaker/);
   assert.match(micCard, /1 phone · up to 3 laptops/);

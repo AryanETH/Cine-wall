@@ -49,7 +49,10 @@ test('issued room lifecycle rejects the audit attacks and coordinates joined dev
   for (const mode of ['audio', 'share', 'mic', 'video']) {
     const switched = await api('/api/rooms/mode', {mode}, admin, room);
     assert.equal(switched.status, 200); assert.equal(switched.data.code, created.code);
+    assert.equal(switched.data.room, room, `${mode} preserves the host room ID`);
+    assert.equal(switched.data.ticket, created.ticket, `${mode} preserves the host membership`);
     const current = await api('/api/rooms/current', undefined, guest, room);
+    assert.equal(current.data.room, room, `${mode} keeps connected devices in the same room`);
     assert.equal(current.data.mode, mode); assert.equal(current.data.ticket, joined.ticket); assert.equal(current.data.waiting, false);
     if (mode === 'audio' || mode === 'video') assert.equal((await api('/api/status', undefined, admin, room)).data.state.sessionMode, mode);
     if (mode === 'share') { assert.match(current.data.path, /share.html\?screen=1/); assert.equal((await api('/api/command', {type:'play'}, guest, room)).status, 409); }

@@ -1,4 +1,4 @@
-﻿<!doctype html>
+<!doctype html>
 <html lang="en">
 <head>
   <meta charset="utf-8">
@@ -80,9 +80,9 @@
   
   <script src="icons.js?v=20261002-icons-18"></script>
   <script src="theme.js"></script>
-  <script src="session.js?v=20261028-links-5"></script>
+  <script src="session.js?v=20261030-room-1"></script>
   <script src="device-support.js?v=20261027-entry-2"></script>
-  <script src="mode-switcher.js"></script>
+  <script src="mode-switcher.js?v=20261030-room-1"></script>
   <link rel="preload" href="/fonts/Anta-Regular.ttf" as="font" type="font/ttf" crossorigin>
   <link rel="preload" as="image" href="/assets/cinewall-demo-poster.jpg?v=20261029-cinema-8" fetchpriority="high">
   <link rel="stylesheet" href="styles.css?v=20261027-links-3">
@@ -156,7 +156,7 @@
           <span class="mode-card-action">Open audio <i class="fi" aria-hidden="true">&#xE72A;</i></span>
         </span>
       </a>
-      <a class="mode-card" data-bg="screen-sharing" href="/share.html">
+      <a class="mode-card" data-session-mode="share" data-bg="screen-sharing" href="/share.html">
         <span class="mode-card-visual" aria-hidden="true"><span class="mode-card-art"></span></span>
         <span class="mode-card-number">03</span>
         <span class="mode-card-icon fi" aria-hidden="true">&#xE7F4;</span>
@@ -165,7 +165,7 @@
           <span class="mode-card-action">Start sharing <i class="fi" aria-hidden="true">&#xE72A;</i></span>
         </span>
       </a>
-      <a class="mode-card mic-mode-card" data-bg="mic" href="/mic.html">
+      <a class="mode-card mic-mode-card" data-session-mode="mic" data-bg="mic" href="/mic.html">
         <span class="mode-card-visual" aria-hidden="true"><span class="mode-card-art"></span></span>
         <span class="mode-card-number">04</span>
         <span class="mode-card-icon fi" aria-hidden="true">&#xE720;</span>
