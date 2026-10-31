@@ -1243,6 +1243,8 @@ const requestHandler = async (req, res) => {
   }
 
   if (req.method === 'GET' && url.pathname === '/api/health') { respondJson(res, 200, { ok: true, roomLinksExpire: false, roomStorage: process.env.RAILWAY_VOLUME_MOUNT_PATH ? 'persistent-volume' : 'filesystem' }); return; }
+  // Lightweight health check for uptime monitoring
+  if (req.method === 'GET' && url.pathname === '/health') { res.writeHead(200, { 'Content-Type': 'text/plain', 'Content-Length': '2' }); res.end('OK'); return; }
   const room = url.searchParams.get('room') || '';
   if (room || /^\/(?:api\/|events$|share-events$|mic-events$|__cinewall_peer__\/|(?:admin|screen|share|mic)\.html$)/.test(url.pathname)) res.setHeader('X-Robots-Tag', 'noindex, nofollow');
   if (room && !/^[a-f0-9-]{36}$/.test(room)) { respondJson(res, 400, { error: 'Invalid room link.' }); return; }

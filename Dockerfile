@@ -5,5 +5,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg python3 
     && rm -rf /var/lib/apt/lists/*
 ENV PATH="/opt/download-tools/bin:${PATH}" CINEWALL_HOSTED=1 CINEWALL_CACHE_DIR=/tmp/cinewall-cache
 WORKDIR /app
+COPY package.json package-lock.json ./
+RUN npm ci --omit=dev
 COPY . .
 CMD ["node", "server.js"]
