@@ -171,27 +171,17 @@ test('a camera can be changed during first-use practice without leaving the old 
   assert.equal(f.element('handPracticeProgress').textContent, '1 / 6'); f.ui.stop();
 });
 
-test('video gestures reuse synchronized transport, clamp volume and reject other modes or locked sources', () => {
-  let config, locked = false, ready = true;
-  const commands = [], seeks = [], volumes = [], nodes = new Map();
-  const context = { handControls: null, status: { state: { sessionMode: 'video', asset: { version: 'v1' } } },
-    window: { CineWallHandControls: { create(options) { config = options; } } },
-    sourceLocked: () => locked, uploadBusy: false, removeBusy: false, isPreparing: () => false, playbackReady: () => ready,
-    playOnAdminDisplay: () => commands.push('play'), command: value => commands.push(value.type), seekRelative: value => seeks.push(value),
-    audioQueue: { queue: { cancelAutoplay() {} } }, audioSetting: () => ({ volume: .95 }), media: { volume: .95 }, queueVolume: (screen, volume) => volumes.push([screen, volume]),
-    $: selector => { if (!nodes.has(selector)) nodes.set(selector, {}); return nodes.get(selector); }
-  };
-  const source = fs.readFileSync(path.join(__dirname, '../public/admin.js'), 'utf8');
-  vm.runInNewContext(source.slice(source.lastIndexOf('handControls = window.'), source.lastIndexOf('bootstrap();')), context);
-  for (const action of ['play', 'pause', 'forward', 'back', 'volume-up', 'volume-down']) assert.equal(config.onAction(action), true);
-  assert.deepEqual(commands, ['play', 'pause']); assert.deepEqual(seeks, [10, -10]);
-  assert.equal(volumes[0][1], 1); assert.equal(volumes[1][1], .85);
-  ready = false; assert.notEqual(config.onAction('play'), true);
-  locked = true; assert.equal(config.available(), false); assert.notEqual(config.onAction('forward'), true);
-  locked = false; context.status.state.sessionMode = 'audio'; assert.equal(config.available(), false); assert.notEqual(config.onAction('pause'), true);
-  context.status.state.sessionMode = 'video'; context.status.state.asset = null; assert.notEqual(config.onAction('back'), true);
-  assert.deepEqual(seeks, [10, -10]);
+test('dashboard cannot initialize camera controls; gesture UI remains on the player', () => {
+  const admin = fs.readFileSync(path.join(__dirname, '../public/admin.html'), 'utf8');
+  const script = fs.readFileSync(path.join(__dirname, '../public/admin.js'), 'utf8');
+  assert.doesNotMatch(admin, /handControlPanel|handControlToggle|handPractice|hand-(?:controls|gestures|tabs)\.js/);
+  assert.doesNotMatch(script, /CineWallHandControls|handControls/);
+  const player = fs.readFileSync(path.join(__dirname, '../public/screen.html'), 'utf8');
+  assert.match(player, /id="handControlToggle"/);
+  assert.match(player, /id="handPractice"/);
+  assert.match(player, /hand-controls\.js/);
 });
+
 test('real UI camera sessions hand off to the player on tab switches and turn off together', async () => {
   const shared = require('./hand-tabs-fixture.cjs').sharedTabs();
   const admin = uiFixture({ complete: true, tab: shared.tab('admin') });

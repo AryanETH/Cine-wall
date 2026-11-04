@@ -63,6 +63,15 @@ test('a switch error stays visible and never redirects to an unrelated new room'
   assert.equal(ui.errors[0].type, 'cinewall-room-error');
   assert.equal(ui.errors[0].detail, 'Connection lost');
 });
+test('a signed-out mode switch returns to login with the same host room and requested mode', async () => {
+  const ui = switcher({ changeMode: async () => { throw Object.assign(new Error('Sign in'), { status: 401 }); } });
+  await ui.click('audio').pending;
+  const next = new URL(ui.location.href).searchParams.get('next');
+  assert.equal(new URL(next, 'https://cinema.test').pathname, '/connect.html');
+  assert.equal(new URL(next, 'https://cinema.test').searchParams.get('room'), 'shared-room');
+  assert.equal(new URL(next, 'https://cinema.test').searchParams.get('mode'), 'audio');
+  assert.equal(ui.errors.length, 0);
+});
 
 test('rapid tool clicks cannot race two mode changes', async () => {
   let finish;

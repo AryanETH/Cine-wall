@@ -85,7 +85,16 @@
   async function resumeHost(mode) {
     const saved = savedHost();
     if (!saved) return null;
-    const info = await roomRequest('resume', { room: saved.room, ticket: saved.ticket });
+    let info;
+    try { info = await roomRequest('resume', { room: saved.room, ticket: saved.ticket }); }
+    catch (error) {
+      // An implicit last-used room can disappear after a server reset. A new
+      // workspace intent may recover; an explicit shared link must never move.
+      if (error.status !== 404 || page.searchParams.has('room')) throw error;
+      storage.remove(`cinewall-room-${saved.room}`);
+      if (storage.get('cinewall-active-room') === saved.room) storage.remove('cinewall-active-room');
+      return null;
+    }
     return changeMode(mode, info, true);
   }
   const ready = room ? (async () => {
@@ -116,7 +125,21 @@
     // Wait for the room URL before any workspace API or event stream starts.
     return new Promise(() => {});
   })() : Promise.resolve(null);
-  ready.catch(error => { const show = () => window.dispatchEvent(new CustomEvent('cinewall-room-error', { detail: error.message })); if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', show, { once: true }); else show(); });
+  function reportError(error) {
+    if (error.status === 401) {
+      location.replace(`/auth.html?next=${encodeURIComponent(page.pathname + page.search)}`);
+      return;
+    }
+    const guest = page.pathname === '/screen.html' || page.pathname === '/room.html' || page.searchParams.has('screen') || page.searchParams.has('speaker') || page.searchParams.get('role') === 'phone';
+    let saved; try { saved = JSON.parse(storage.get(`cinewall-room-${room}`) || 'null'); } catch {}
+    const missingHost = error.status === 404 && !guest && saved?.admin === true;
+    const target = new URL(page.pathname, page.origin);
+    target.searchParams.set('new', '1');
+    if (page.searchParams.has('mode')) target.searchParams.set('mode', page.searchParams.get('mode'));
+    const detail = missingHost ? { message: 'This room is no longer available. Start a new room to get fresh sharing links.', newRoom: target.pathname + target.search } : error.message;
+    window.dispatchEvent(new CustomEvent('cinewall-room-error', { detail }));
+  }
+  ready.catch(error => { const show = () => reportError(error); if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', show, { once: true }); else show(); });
   function link(value, origin = location.origin) {
     const url = new URL(value, origin);
     if (room && url.origin === new URL(origin).origin) { url.searchParams.set('room', room); if (url.origin === location.origin && url.pathname.startsWith('/api/') && membership?.ticket) url.searchParams.set('ticket', membership.ticket); }
@@ -185,7 +208,7 @@
       const response = await nativeFetch(scoped('/api/rooms/current', true), { headers: identityHeaders, cache: 'no-store' });
       const data = await response.json();
       if (!response.ok) {
-        if ([403, 404].includes(response.status)) { ended = true; window.dispatchEvent(new CustomEvent('cinewall-room-error', { detail: data.error })); }
+        if ([401, 403, 404].includes(response.status)) { ended = true; reportError(Object.assign(new Error(data.error), { status: response.status })); }
         return;
       }
       const previous = membership; remember(data);
@@ -197,7 +220,7 @@
   async function switchMode(mode) {
     await ready;
     if (!['video', 'audio', 'share', 'mic'].includes(mode)) throw new Error('Choose Video, Audio, Screen sharing or Mic and Speaker.');
-    const data = membership ? await changeMode(mode, membership) : await resumeHost(mode);
+    const data = membership ? await changeMode(mode, membership) : await resumeHost(mode) || await roomRequest('create', { mode });
     if (!data) throw new Error('Open a workspace before switching modes.');
     navigate(data);
   }

@@ -19,7 +19,8 @@ function setupHomeDemo(video, fallback, motion) {
     syncScene();
   }
   function syncScene() {
-    surface.classList?.toggle('is-wall', motion.matches || (video.currentTime || 0) >= 1.25);
+    // Both laptops are present from the first frame of the three-second intro.
+    surface.classList?.toggle('is-wall', true);
   }
   function showFallback() {
     video.pause();
@@ -38,9 +39,9 @@ function setupHomeDemo(video, fallback, motion) {
 function setupDemoTheme(video, root, motion, createObserver) {
   const source = video?.querySelector('source');
   if (!source || !video.dataset.darkSrc) return;
-  const lightSrc = source.getAttribute('src');
+  const lightSrc = source.dataset?.lightSrc || source.getAttribute('src');
   const lightPoster = video.getAttribute('poster');
-  let selected = lightSrc, pendingTime = 0, pendingPlay = false;
+  let selected = source.getAttribute('src'), pendingTime = 0, pendingPlay = false;
   function update() {
     const dark = root.dataset.theme !== 'light';
     const next = dark ? video.dataset.darkSrc : lightSrc;

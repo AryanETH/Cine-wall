@@ -1,6 +1,7 @@
 'use strict';
+const { fetch } = require('./account-fixture.cjs');
 const test=require('node:test'), assert=require('node:assert/strict'), fs=require('node:fs'), os=require('node:os'), path=require('node:path');
-const {spawn}=require('node:child_process'), {randomUUID}=require('node:crypto');
+const {spawn}=require('./account-fixture.cjs'), {randomUUID}=require('node:crypto');
 const net=require('node:net');
 
 test('a separate durable room store survives loss of the entire disposable media cache', {timeout:30000}, async t=>{

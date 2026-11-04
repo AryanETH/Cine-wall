@@ -13,6 +13,10 @@ const createRooms = require('./rooms');
 const createScreenSharing = require('./screen-sharing');
 const createMicRoom = require('./mic-room');
 const fileResponse = require('./file-response');
+const serveAsset = require('./static-assets');
+const firebaseConfig = require('./firebase-config');
+const { createAccountAuth, protectedPage } = require('./account-auth');
+const accountAuth = createAccountAuth();
 const atomicJson = require('./atomic-json');
 const { getDemoVisitSnapshot } = require('./public/home-footer');
 const SERVER_ID = require('node:crypto').randomUUID();
@@ -1189,10 +1193,15 @@ function respondJson(res, status, data) { const body = JSON.stringify(data); res
 async function bodyJson(req) { let size = 0; const chunks = []; for await (const chunk of req) { size += chunk.length; if (size > MAX_JSON_BODY) throw Object.assign(new Error('Request is too large'), { status: 413 }); chunks.push(chunk); } try { return JSON.parse(Buffer.concat(chunks).toString() || '{}'); } catch { throw new Error('Invalid JSON'); } }
 function serveStatic(req, res, pathname) {
   const route = pathname === '/' ? '/index.html' : pathname === '/favicon.ico' ? '/favicon.svg' : pathname;
+  const firebasePage = route === '/auth.html' || protectedPage(route);
   const decoded = decodeURIComponent(route);
   const resolved = path.resolve(PUBLIC_DIR, `.${decoded}`);
   if (!resolved.startsWith(`${PUBLIC_DIR}${path.sep}`)) {
     respondJson(res, 403, { error: 'Forbidden' });
+    return;
+  }
+  if (route.startsWith('/assets/') || route.startsWith('/fonts/')) {
+    serveAsset(req, res, resolved, contentTypes[path.extname(resolved).toLowerCase()] || 'application/octet-stream', new URL(req.url, 'http://localhost').searchParams.has('v'));
     return;
   }
   fs.readFile(resolved, (error, data) => {
@@ -1203,11 +1212,12 @@ function serveStatic(req, res, pathname) {
     res.writeHead(200, {
       'Content-Type': route === '/manifest.json' ? 'application/manifest+json; charset=utf-8' : contentTypes[path.extname(resolved).toLowerCase()] || 'application/octet-stream',
       'Content-Length': data.length,
-      'Cache-Control': 'no-cache',
+      'Cache-Control': protectedPage(route) ? 'no-store' : 'no-cache',
       'Referrer-Policy': 'strict-origin-when-cross-origin',
       'Permissions-Policy': 'autoplay=(self "https://www.youtube.com" "https://www.youtube-nocookie.com" "https://open.spotify.com")',
       'X-Content-Type-Options': 'nosniff',
-      'Content-Security-Policy': `default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self' ${route === '/hand-gesture-worker.js' ? "'wasm-unsafe-eval' " : ''}https://www.youtube.com https://s.ytimg.com; media-src 'self' blob:; img-src 'self' data: blob: https://i.ytimg.com https://yt3.ggpht.com https://api.qrserver.com; connect-src 'self' https://www.youtube.com; frame-src 'self' blob: https://www.youtube.com https://www.youtube-nocookie.com https://open.spotify.com; object-src 'self'`,
+      'Content-Security-Policy': `default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self' ${route === '/hand-gesture-worker.js' ? "'wasm-unsafe-eval' " : ''}https://www.youtube.com https://s.ytimg.com${firebasePage ? ' https://www.gstatic.com https://www.google.com https://www.recaptcha.net https://recaptcha.google.com' : ''}; media-src 'self' blob:; img-src 'self' data: blob: https://i.ytimg.com https://yt3.ggpht.com https://api.qrserver.com; connect-src 'self' https://www.youtube.com${firebasePage ? ' https://identitytoolkit.googleapis.com https://securetoken.googleapis.com https://www.gstatic.com https://www.google.com https://www.recaptcha.net' : ''}; frame-src 'self' blob: https://www.youtube.com https://www.youtube-nocookie.com https://open.spotify.com${firebasePage ? ` https://www.google.com https://www.recaptcha.net https://recaptcha.google.com${firebaseConfig().enabled ? ` https://${firebaseConfig().config.authDomain}` : ''}` : ''}; object-src 'self'`,
+      ...(firebasePage ? { 'Cross-Origin-Opener-Policy': 'same-origin-allow-popups' } : {}),
     });
     res.end(req.method === 'HEAD' ? undefined : data);
   });
@@ -1235,6 +1245,7 @@ const requestHandler = async (req, res) => {
   let url;
   try { url = new URL(req.url, 'http://localhost'); }
   catch { respondJson(res, 400, { error: 'Invalid request URL' }); return; }
+  if (req.method === 'GET' && url.pathname === '/api/auth/config') { respondJson(res, 200, firebaseConfig()); return; }
   // Public demo counter: shared across rooms, instances and server restarts.
   if (req.method === 'GET' && url.pathname === '/api/demo-visits') {
     res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store', 'X-Robots-Tag':'noindex, nofollow' });
@@ -1242,7 +1253,14 @@ const requestHandler = async (req, res) => {
     return;
   }
 
+  // Lightweight health endpoint for uptime monitoring services
+  if (req.method === 'GET' && url.pathname === '/health') {
+    res.writeHead(200, { 'Content-Type': 'text/plain', 'Content-Length': '2' });
+    res.end('OK');
+    return;
+  }
   if (req.method === 'GET' && url.pathname === '/api/health') { respondJson(res, 200, { ok: true, roomLinksExpire: false, roomStorage: process.env.RAILWAY_VOLUME_MOUNT_PATH ? 'persistent-volume' : 'filesystem' }); return; }
+  if (await accountAuth.handle(req, res, url, bodyJson)) return;
   const room = url.searchParams.get('room') || '';
   if (room || /^\/(?:api\/|events$|share-events$|mic-events$|__cinewall_peer__\/|(?:admin|screen|share|mic)\.html$)/.test(url.pathname)) res.setHeader('X-Robots-Tag', 'noindex, nofollow');
   if (room && !/^[a-f0-9-]{36}$/.test(room)) { respondJson(res, 400, { error: 'Invalid room link.' }); return; }

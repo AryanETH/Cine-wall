@@ -20,6 +20,12 @@
       try {
         await session.switchMode(mode);
       } catch (error) {
+        if (error.status === 401) {
+          const next = new URL('/connect.html', location.origin);
+          next.searchParams.set('mode', mode); next.searchParams.set('room', session.hostRoom);
+          location.href = new URL(`/auth.html?next=${encodeURIComponent(next.pathname + next.search)}`, location.origin).href;
+          return;
+        }
         window.dispatchEvent(new CustomEvent('cinewall-room-error', { detail: error.message }));
       } finally {
         switching = false;

@@ -1,11 +1,12 @@
 'use strict';
+const { fetch } = require('./account-fixture.cjs');
 
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const http = require('node:http');
-const { spawn, execFileSync } = require('node:child_process');
+const http = require('./account-fixture.cjs').http;
+const { spawn, execFileSync } = require('./account-fixture.cjs');
 
 const root = path.resolve(__dirname, '..');
 const temporary = fs.mkdtempSync(path.join(os.tmpdir(), 'cinewall-preparation-test-'));

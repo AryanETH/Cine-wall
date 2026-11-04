@@ -11,6 +11,9 @@ function ask(client, payload) {
 }
 self.addEventListener('fetch', (event) => {
   const url = new URL(event.request.url);
+  if (url.pathname.startsWith('/assets/') && event.request.method === 'GET') {
+    event.respondWith(landingAsset(event.request, event)); return;
+  }
   if (!url.pathname.startsWith('/__cinewall_peer__/')) return;
   event.respondWith((async () => {
     try {
@@ -49,4 +52,53 @@ self.addEventListener('fetch', (event) => {
       return new Response(stream, { status: range ? 206 : 200, headers });
     } catch (error) { return new Response(error.message, { status: 503 }); }
   })());
+});
+
+const LANDING_CACHE = 'cinewall-landing-20261030-1';
+function publicLandingAsset(url) {
+  return url.origin === self.location.origin && url.pathname.startsWith('/assets/') && /\.(?:png|jpg|webp|svg|mp4)$/.test(url.pathname);
+}
+async function landingAsset(request, event) {
+  const cache = await caches.open(LANDING_CACHE).catch(() => null);
+  const hit = cache && await cache.match(request.url).catch(() => null);
+  if (!hit) {
+    const response = await fetch(request);
+    const fullRange = /^bytes 0-(\d+)\/(\d+)$/.exec(response.headers.get('content-range') || '');
+    const complete = response.status === 200 || response.status === 206 && fullRange && Number(fullRange[1]) + 1 === Number(fullRange[2]);
+    const length = Number(response.headers.get('content-length'));
+    if (cache && complete && length > 0 && length <= 12 * 1024 * 1024 && publicLandingAsset(new URL(request.url))) {
+      const headers = new Headers(response.headers); headers.delete('content-range');
+      event.waitUntil(cache.put(request.url, new Response(response.clone().body, { status: 200, headers })).catch(() => {}));
+    }
+    return response;
+  }
+  const range = request.headers.get('range');
+  if (!range) return hit;
+  const bytes = await hit.arrayBuffer(), size = bytes.byteLength, match = /^bytes=(\d*)-(\d*)$/.exec(range);
+  if (!match || (!match[1] && !match[2])) return fetch(request);
+  const start = match[1] ? Number(match[1]) : Math.max(0, size - Number(match[2]));
+  const end = match[1] && match[2] ? Math.min(size - 1, Number(match[2])) : size - 1;
+  if (!Number.isSafeInteger(start) || !Number.isSafeInteger(end) || start > end || start >= size) return new Response(null, { status: 416, headers: { 'Content-Range': `bytes */${size}` } });
+  return new Response(bytes.slice(start, end + 1), { status: 206, headers: { 'Content-Type': hit.headers.get('content-type'), 'Content-Range': `bytes ${start}-${end}/${size}`, 'Content-Length': String(end - start + 1), 'Accept-Ranges': 'bytes' } });
+}
+self.addEventListener('message', event => {
+  if (event.data?.type !== 'cache-landing-assets' || !Array.isArray(event.data.urls)) return;
+  event.waitUntil((async () => {
+    const cache = await caches.open(LANDING_CACHE);
+    const urls = [...new Set(event.data.urls)].slice(0, 48).filter(value => { try { return publicLandingAsset(new URL(value)); } catch { return false; } });
+    // Bounded concurrency keeps profile photos from flooding a slow connection.
+    async function worker() {
+      while (urls.length) {
+        const url = urls.shift();
+        try {
+          if (await cache.match(url)) continue;
+          const response = await fetch(url);
+          if (response.status === 200 && Number(response.headers.get('content-length')) <= 12 * 1024 * 1024) await cache.put(url, response);
+        } catch { /* A failed warmup must not affect playback or navigation. */ }
+      }
+    }
+    await Promise.all([worker(), worker()]);
+    const keys = await cache.keys();
+    for (const key of keys.slice(0, Math.max(0, keys.length - 48))) await cache.delete(key);
+  })().catch(() => {}));
 });

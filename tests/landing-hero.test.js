@@ -9,15 +9,15 @@ test('homepage uses a silent 16:9 demo without controls or fullscreen affordance
   const html = fs.readFileSync(path.join(publicDir, 'index.html'), 'utf8');
   const hero = html.match(/<section class="mode-hero">([\s\S]*?)<\/section>/)[1];
   const videoTag = hero.match(/<video[^>]+>/)[0];
-  assert.match(videoTag, /autoplay muted loop playsinline preload="metadata"/);
+  assert.match(videoTag, /autoplay muted loop playsinline preload="auto"/);
   assert.doesNotMatch(videoTag, /\scontrols(?:\s|=|>)/);
   assert.match(videoTag, /controlslist="nodownload nofullscreen noremoteplayback"/);
   assert.match(videoTag, /disablepictureinpicture disableremoteplayback draggable="false" tabindex="-1"/);
   assert.match(videoTag, /width="1440" height="810"/);
   assert.match(hero, /poster="\/assets\/cinewall-demo-poster\.jpg\?v=[^"]+"/);
-  assert.match(hero, /<source src="\/assets\/cinewall-demo\.mp4\?v=[^"]+" type="video\/mp4">/);
+  assert.match(hero, /<source data-light-src="\/assets\/cinewall-demo-fast\.mp4\?v=[^"]+" type="video\/mp4">/);
   assert.doesNotMatch(hero, /toggleHomeDemo|Pause demo|Explore tools|Open video wall/);
-  assert.match(hero, />Try free /);
+  assert.match(hero, />Try (?:it )?free /);
   assert.match(hero, />More from CineWall</);
   assert.match(hero, /id="homeDemoFallback"[^>]+hidden/);
   assert.ok(hero.indexOf('<h1>') < hero.indexOf('<video'));

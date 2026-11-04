@@ -1,12 +1,13 @@
 'use strict';
+const { fetch } = require('./account-fixture.cjs');
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const os = require('node:os');
 const net = require('node:net');
-const http = require('node:http');
-const { spawn } = require('node:child_process');
+const http = require('./account-fixture.cjs').http;
+const { spawn } = require('./account-fixture.cjs');
 const { randomUUID } = require('node:crypto');
 const root = path.resolve(__dirname, '..');
 const pause = (ms) => new Promise((resolve) => setTimeout(resolve, ms));

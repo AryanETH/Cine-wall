@@ -12,11 +12,16 @@
       errorDialog = document.createElement('dialog');
       errorDialog.className = 'room-dialog';
       errorDialog.setAttribute('aria-labelledby', 'connectionTitle');
-      errorDialog.innerHTML = '<h2 id="connectionTitle">Could not connect</h2><p role="alert"></p><div class="room-error-actions"><button class="button accent" type="button">Try again</button><a class="button subtle" href="/">All modes</a></div>';
+      errorDialog.innerHTML = '<h2 id="connectionTitle">Could not connect</h2><p role="alert"></p><div class="room-error-actions"><button class="button accent" type="button">Try again</button><a class="button accent" data-new-room hidden>Start new room</a><a class="button subtle" href="/">All modes</a></div>';
       errorDialog.querySelector('button').addEventListener('click', () => location.reload());
       document.body.append(errorDialog);
     }
-    errorDialog.querySelector('p').textContent = event.detail;
+    const detail = typeof event.detail === 'object' ? event.detail : { message: event.detail };
+    errorDialog.querySelector('p').textContent = detail.message;
+    const start = errorDialog.querySelector('[data-new-room]');
+    start.hidden = !detail.newRoom;
+    errorDialog.querySelector('button').hidden = Boolean(detail.newRoom);
+    if (detail.newRoom) start.setAttribute('href', detail.newRoom);
     if (!errorDialog.open) errorDialog.showModal();
   });
 

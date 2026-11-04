@@ -9,12 +9,12 @@ const source = fs.readFileSync(path.join(__dirname, '../public/session.js'), 'ut
 const room = randomUUID();
 const tick = () => new Promise(resolve => setImmediate(resolve));
 
-function client(route, { restricted = false, saved, active = false, fail = false, storage = new Map() } = {}) {
+function client(route, { restricted = false, saved, active = false, fail = false, responseStatus, storage = new Map() } = {}) {
   const requests = [], navigations = [], streams = [], errors = [];
   if (saved) storage.set(`cinewall-room-${room}`, JSON.stringify(saved));
   if (active) storage.set('cinewall-active-room', room);
   const location = new URL(route, 'https://cinema.test');
-  location.replace = value => navigations.push(new URL(value));
+  location.replace = value => navigations.push(new URL(value, location));
   class Xhr extends EventTarget { open() {} setRequestHeader() {} send() {} }
   class Events extends EventTarget { constructor(url) { super(); streams.push(url); } close() {} }
   const listeners = {};
@@ -28,7 +28,8 @@ function client(route, { restricted = false, saved, active = false, fail = false
       const result = pathname.endsWith('/create') || pathname.endsWith('/mode') ? { room: requestedRoom, mode, admin: true, ticket: 'host-ticket', path: mode === 'share' ? '/share.html' : mode === 'mic' ? '/mic.html' : `/admin.html?mode=${mode}` }
         : pathname.endsWith('/resume') ? JSON.parse(storage.get(`cinewall-room-${requestedRoom}`) || 'null') || saved
         : { room, mode: 'video', admin: false, screen: 2, role: 'screen', ticket: 'guest-ticket', path: '/screen.html?screen=2' };
-      return { ok: !fail, json: async () => fail ? { error: 'Server unavailable' } : result };
+      const status = responseStatus?.(pathname) || (fail ? 503 : 200);
+      return { ok: status < 400, status, json: async () => status >= 400 ? { error: status === 404 ? 'This shared room is unavailable on this server.' : 'Server unavailable' } : result };
     },
     EventSource: Events,
     addEventListener: (name, listener) => { listeners[name] = listener; },
@@ -218,5 +219,58 @@ test('connection failure raises a visible-error event without falling back to an
   const user = client('/admin.html?mode=video', { fail: true }); await tick();
   assert.equal(user.errors[0].detail, 'Server unavailable');
   assert.equal(user.navigations.length, 0);
+  assert.equal(user.requests.length, 1);
+});
+
+test('an implicit deleted host room recovers once when starting any of the four tools', async () => {
+  const saved = { room, mode: 'video', admin: true, ticket: 'host-ticket', path: '/admin.html?mode=video' };
+  for (const route of ['/admin.html?mode=video', '/admin.html?mode=audio', '/share.html', '/mic.html']) {
+    const user = client(route, { saved, active: true, responseStatus: path => path.endsWith('/resume') ? 404 : 200 });
+    await tick();
+    assert.deepEqual(user.requests.map(r => r.url), ['/api/rooms/resume', '/api/rooms/create']);
+    assert.equal(user.navigations.length, 1);
+    assert.equal(user.errors.length, 0);
+  }
+  const home = client('/', { saved, active: true, responseStatus: path => path.endsWith('/resume') ? 404 : 200 });
+  await home.window.CineWallSession.switchMode('audio');
+  assert.deepEqual(home.requests.map(r => r.url), ['/api/rooms/resume', '/api/rooms/create']);
+  assert.equal(new URL(home.location.href).pathname, '/admin.html');
+});
+
+test('explicit missing host links offer a new-room action without changing guest links', async () => {
+  const saved = { room, mode: 'video', admin: true, ticket: 'host-ticket', path: '/admin.html?mode=video' };
+  const host = client(`/admin.html?mode=video&room=${room}`, { saved, responseStatus: () => 404 });
+  await tick();
+  assert.equal(host.errors[0].detail.newRoom, '/admin.html?new=1&mode=video');
+  assert.equal(host.requests.length, 1);
+  assert.equal(host.navigations.length, 0);
+  for (const route of [`/screen.html?screen=2&room=${room}`, `/mic.html?role=phone&room=${room}`, `/?room=${room}`]) {
+    const guest = client(route, { saved, active: true, responseStatus: () => 404 });
+    if (route.startsWith('/?')) await assert.rejects(guest.window.CineWallSession.switchMode('audio'));
+    else await tick();
+    assert.equal(guest.requests.some(r => r.url.endsWith('/create')), false, route);
+    assert.equal(guest.navigations.length, 0);
+    if (!route.startsWith('/?')) assert.equal(typeof guest.errors[0].detail, 'string');
+  }
+});
+
+test('authorization, busy and network failures never replace a saved room', async () => {
+  const saved = { room, mode: 'video', admin: true, ticket: 'host-ticket', path: '/admin.html?mode=video' };
+  for (const status of [403, 409, 429, 500, 503]) {
+    const user = client('/admin.html?mode=video', { saved, active: true, responseStatus: () => status });
+    await tick();
+    assert.equal(user.requests.length, 1);
+    assert.equal(user.navigations.length, 0);
+    assert.equal(user.storage.get('cinewall-active-room'), room);
+  }
+});
+
+test('expired account redirects back through auth without losing a shared device URL', async () => {
+  const route = `/screen.html?screen=2&room=${room}`;
+  const user = client(route, { responseStatus: () => 401 });
+  await tick();
+  assert.equal(user.navigations.length, 1);
+  assert.equal(user.navigations[0].pathname, '/auth.html');
+  assert.equal(user.navigations[0].searchParams.get('next'), route);
   assert.equal(user.requests.length, 1);
 });

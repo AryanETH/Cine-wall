@@ -1,12 +1,13 @@
 'use strict';
+const { fetch } = require('./account-fixture.cjs');
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const os = require('node:os');
-const http = require('node:http');
+const http = require('./account-fixture.cjs').http;
 const net = require('node:net');
-const { spawn } = require('node:child_process');
+const { spawn } = require('./account-fixture.cjs');
 const { randomUUID } = require('node:crypto');
 const headers = () => ({ 'X-CineWall-Device': randomUUID(), 'X-CineWall-Key': randomUUID(), 'Content-Type': 'application/json' });
 test('issued room lifecycle rejects the audit attacks and coordinates joined devices', { timeout: 30000 }, async t => {
