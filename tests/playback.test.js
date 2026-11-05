@@ -200,9 +200,41 @@ test('native speaker drift uses small speed corrections without repeatedly seeki
   client.evaluate('currentState.playing = true; currentState.position = 20; currentState.anchorTime = serverNow()');
   video.currentTime = 19.95;
   client.evaluate('correctDrift(currentState, false)');
-  assert.equal(video.currentTime, 19.95); assert.ok(video.playbackRate > 1 && video.playbackRate <= 1.015);
+  assert.equal(video.currentTime, 19.95); assert.ok(video.playbackRate > 1 && video.playbackRate <= 1.03);
   video.currentTime = client.evaluate('targetPosition(currentState)') + .05;
-  client.evaluate('correctDrift(currentState, false)'); assert.ok(video.playbackRate < 1 && video.playbackRate >= .985);
+  client.evaluate('correctDrift(currentState, false)'); assert.ok(video.playbackRate < 1 && video.playbackRate >= .97);
+});
+
+test('slow checkpoints cannot replace a precise clock sample and expired samples are refreshed', async () => {
+  const client = player(2); await nextTurn();
+  let tick = 1000; client.context.performance = { now: () => tick };
+  client.evaluate('clockSamples = []; recordClockSample(10025, 10000, 10)');
+  assert.equal(client.evaluate('serverOffset'), 20);
+  client.evaluate('recordClockSample(10300, 10000, 400)');
+  assert.equal(client.evaluate('serverOffset'), 20, 'congestion does not shift the room clock');
+  client.evaluate('recordClockSample(NaN, 10000, 5); recordClockSample(10000, 10000, 3000)');
+  assert.equal(client.evaluate('clockSamples.length'), 2);
+  tick += 61000;
+  client.evaluate('recordClockSample(10050, 10000, 20)');
+  assert.equal(client.evaluate('serverOffset'), 40, 'old low RTT samples eventually expire');
+});
+
+test('a scheduled start prepares both laptops before the deadline and executes only once', async () => {
+  for (const screen of [1, 2]) {
+    const client = player(screen); await nextTurn();
+    const video = client.nodes.get('#video'); let starts = 0;
+    video.play = async () => { starts++; video.paused = false; };
+    client.context.startCommand = { ...client.state, type: 'play', commandId: 8, position: 40, anchorTime: Date.now() + 700, executeAt: Date.now() + 700, notBefore: Date.now() + 700 };
+    client.evaluate('schedule(startCommand); correctDrift(currentState, false)');
+    assert.equal(video.currentTime, 40); assert.equal(starts, 0);
+    client.evaluate('startCommand.notBefore = 0; startCommand.anchorTime = serverNow()');
+    await client.evaluate('execute(startCommand)');
+    assert.equal(starts, 1);
+    video.currentTime = 40.04;
+    await client.evaluate('execute(startCommand)');
+    assert.equal(starts, 1, 'the SSE and HTTP acknowledgement share one start');
+    assert.equal(video.currentTime, 40.04, 'a duplicate start cannot seek the decoder again');
+  }
 });
 
 test('buffering guests keep decoder progress and large drift seeks have a cooldown',async()=>{

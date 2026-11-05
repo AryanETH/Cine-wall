@@ -14,12 +14,16 @@ const createScreenSharing = require('./screen-sharing');
 const createMicRoom = require('./mic-room');
 const fileResponse = require('./file-response');
 const serveAsset = require('./static-assets');
+const textResponse = require('./text-response');
 const firebaseConfig = require('./firebase-config');
 const { createAccountAuth, protectedPage } = require('./account-auth');
-const accountAuth = createAccountAuth();
+const { createVerificationSender } = require('./verification-email');
+const sendVerification = createVerificationSender({ projectId: firebaseConfig().config?.projectId });
+const accountAuth = createAccountAuth({ sendVerification });
 const atomicJson = require('./atomic-json');
 const { getDemoVisitSnapshot } = require('./public/home-footer');
 const SERVER_ID = require('node:crypto').randomUUID();
+const PLAYBACK_START_LEAD_MS = 700;
 
 const PREFERRED_PORT = Number(process.env.PORT || 4173);
 const MAX_PORT_ATTEMPTS = 20;
@@ -236,15 +240,27 @@ function finishSeekIfReady() {
     // guests also identify the exact seek so delayed reports cannot resume it.
     if (latest.seekId !== null && latest.seekId !== pendingSeek.id) return;
     const end = latest.duration > 0 ? Math.max(0, latest.duration - .04) : Infinity;
-    if (Math.abs(latest.playbackTime - Math.min(end, pendingSeek.position)) > .3) return;
+    if (Math.abs(latest.playbackTime - Math.min(end, pendingSeek.position)) > .06) return;
   }
   const resume = pendingSeek.resume;
   pendingSeek = null;
-  const executeAt = Date.now() + (resume ? 250 : 0);
+  const executeAt = Date.now() + (resume ? PLAYBACK_START_LEAD_MS : 0);
   state = { ...state, playing: resume, anchorTime: executeAt, notBefore: executeAt, commandId: ++commandSequence };
   broadcast('command', { type: resume ? 'play' : 'pause', executeAt, ...snapshot() });
   broadcast('state', snapshot());
   saveSession();
+}
+
+function holdForBuffering(screen) {
+  if (!state.playing || pendingSeek || !screen.ready || screen.screen > state.screenCount || !['video', 'audio'].includes(state.sessionMode)
+      || !state.asset || screen.assetVersion !== state.asset.version || screen.error
+      || screen.seeking || screen.ended || !screen.buffering || !screen.bufferingSince
+      || Date.now() - screen.bufferingSince < 750 || Date.now() - state.anchorTime < 1200) return;
+  // Use the existing seek barrier: pause the shared timeline, let every decoder
+  // settle, then resume together. A slow guest must not play seconds behind.
+  const command = applyCommand({ type: 'seek', position: currentPosition(), assetVersion: state.asset.version });
+  broadcast('command', command);
+  broadcast('state', snapshot());
 }
 
 function sendEvent(res, event, payload) {
@@ -288,7 +304,7 @@ function applyCommand(input) {
   const now = Date.now();
   // Give every ready browser time to receive the same start, rather than
   // starting the source first. Mixer changes remain immediate.
-  const executeAt = now + (input.type === 'play' ? 120 : 0);
+  const executeAt = now + (input.type === 'play' ? PLAYBACK_START_LEAD_MS : 0);
   const type = String(input.type || '');
   let position = currentPosition(executeAt);
 
@@ -1097,6 +1113,9 @@ async function handle(req, res, url) {
       const existing = screens.get(id);
       if (existing && (existing.deviceId !== device.id || existing.deviceHash !== device.hash)) { json(res, 403, { error: 'That player belongs to another device.' }); return; }
       if (!existing && screens.size >= 20) { json(res, 429, { error: 'Too many players.' }); return; }
+      const sameAsset = body.assetVersion === state.asset?.version;
+      const bufferingSince = body.buffering && !body.seeking && sameAsset
+        ? (existing?.assetVersion === body.assetVersion && existing.bufferingSince || Date.now()) : 0;
       screens.set(id, {
         clientId: id,
         deviceId: device.id, deviceHash: device.hash,
@@ -1118,12 +1137,14 @@ async function handle(req, res, url) {
         endId: Boolean(body.ended) && body.assetVersion === state.asset?.version ? String(body.endId || '').slice(0, 120) : '',
         playerState: Number(body.playerState),
         buffering: Boolean(body.buffering),
+        bufferingSince,
         seeking: Boolean(body.seeking),
         seekId: Number.isSafeInteger(body.seekId) && body.seekId >= 0 ? body.seekId : null,
         autoplayMuted: Boolean(body.autoplayMuted),
         error: String(body.error || '').slice(0, 300),
         lastSeen: Date.now(),
       });
+      holdForBuffering(screens.get(id));
       finishSeekIfReady();
       json(res, 200, { ok: true, state: snapshot() });
       broadcast('screens', { screens: activeScreens(), serverTime: Date.now() });
@@ -1193,7 +1214,7 @@ function respondJson(res, status, data) { const body = JSON.stringify(data); res
 async function bodyJson(req) { let size = 0; const chunks = []; for await (const chunk of req) { size += chunk.length; if (size > MAX_JSON_BODY) throw Object.assign(new Error('Request is too large'), { status: 413 }); chunks.push(chunk); } try { return JSON.parse(Buffer.concat(chunks).toString() || '{}'); } catch { throw new Error('Invalid JSON'); } }
 function serveStatic(req, res, pathname) {
   const route = pathname === '/' ? '/index.html' : pathname === '/favicon.ico' ? '/favicon.svg' : pathname;
-  const firebasePage = route === '/auth.html' || protectedPage(route);
+  const firebasePage = route === '/index.html' || route === '/auth.html' || protectedPage(route);
   const decoded = decodeURIComponent(route);
   const resolved = path.resolve(PUBLIC_DIR, `.${decoded}`);
   if (!resolved.startsWith(`${PUBLIC_DIR}${path.sep}`)) {
@@ -1204,22 +1225,31 @@ function serveStatic(req, res, pathname) {
     serveAsset(req, res, resolved, contentTypes[path.extname(resolved).toLowerCase()] || 'application/octet-stream', new URL(req.url, 'http://localhost').searchParams.has('v'));
     return;
   }
-  fs.readFile(resolved, (error, data) => {
+  fs.readFile(resolved, async (error, data) => {
     if (error) {
       respondJson(res, error.code === 'ENOENT' ? 404 : 500, { error: 'Not found' });
       return;
     }
+    const type = route === '/manifest.json' ? 'application/manifest+json; charset=utf-8' : contentTypes[path.extname(resolved).toLowerCase()] || 'application/octet-stream';
+    const etag = `W/"${require('node:crypto').createHash('sha256').update(data).digest('base64url')}"`;
+    const publicFile = !protectedPage(route) && !/\.html$/.test(route);
+    if (publicFile && req.headers['if-none-match'] === etag) {
+      res.writeHead(304, { 'ETag': etag, 'Cache-Control': 'no-cache', Vary: 'Accept-Encoding' }); res.end(); return;
+    }
+    const encoded = await textResponse(req, resolved, data, type);
     res.writeHead(200, {
-      'Content-Type': route === '/manifest.json' ? 'application/manifest+json; charset=utf-8' : contentTypes[path.extname(resolved).toLowerCase()] || 'application/octet-stream',
-      'Content-Length': data.length,
+      'Content-Type': type,
+      'Content-Length': encoded.body.length,
+      ...encoded.headers,
+      ...(publicFile ? { 'ETag': etag } : {}),
       'Cache-Control': protectedPage(route) ? 'no-store' : 'no-cache',
       'Referrer-Policy': 'strict-origin-when-cross-origin',
       'Permissions-Policy': 'autoplay=(self "https://www.youtube.com" "https://www.youtube-nocookie.com" "https://open.spotify.com")',
       'X-Content-Type-Options': 'nosniff',
-      'Content-Security-Policy': `default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self' ${route === '/hand-gesture-worker.js' ? "'wasm-unsafe-eval' " : ''}https://www.youtube.com https://s.ytimg.com${firebasePage ? ' https://www.gstatic.com https://www.google.com https://www.recaptcha.net https://recaptcha.google.com' : ''}; media-src 'self' blob:; img-src 'self' data: blob: https://i.ytimg.com https://yt3.ggpht.com https://api.qrserver.com; connect-src 'self' https://www.youtube.com${firebasePage ? ' https://identitytoolkit.googleapis.com https://securetoken.googleapis.com https://www.gstatic.com https://www.google.com https://www.recaptcha.net' : ''}; frame-src 'self' blob: https://www.youtube.com https://www.youtube-nocookie.com https://open.spotify.com${firebasePage ? ` https://www.google.com https://www.recaptcha.net https://recaptcha.google.com${firebaseConfig().enabled ? ` https://${firebaseConfig().config.authDomain}` : ''}` : ''}; object-src 'self'`,
+      'Content-Security-Policy': `default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self' ${route === '/hand-gesture-worker.js' ? "'wasm-unsafe-eval' " : ''}https://www.youtube.com https://s.ytimg.com${firebasePage ? ' https://www.gstatic.com https://apis.google.com https://www.google.com https://www.recaptcha.net https://recaptcha.google.com' : ''}; media-src 'self' blob:; img-src 'self' data: blob: https://i.ytimg.com https://yt3.ggpht.com https://api.qrserver.com; connect-src 'self' https://www.youtube.com${firebasePage ? ' https://identitytoolkit.googleapis.com https://securetoken.googleapis.com https://www.gstatic.com https://www.google.com https://www.recaptcha.net https://recaptcha.google.com' : ''}; frame-src 'self' blob: https://www.youtube.com https://www.youtube-nocookie.com https://open.spotify.com${firebasePage ? ` https://www.google.com https://www.recaptcha.net https://recaptcha.google.com${firebaseConfig().enabled ? ` https://${firebaseConfig().config.authDomain}` : ''}` : ''}; object-src 'self'`,
       ...(firebasePage ? { 'Cross-Origin-Opener-Policy': 'same-origin-allow-popups' } : {}),
     });
-    res.end(req.method === 'HEAD' ? undefined : data);
+    res.end(req.method === 'HEAD' ? undefined : encoded.body);
   });
 }
 
@@ -1245,7 +1275,7 @@ const requestHandler = async (req, res) => {
   let url;
   try { url = new URL(req.url, 'http://localhost'); }
   catch { respondJson(res, 400, { error: 'Invalid request URL' }); return; }
-  if (req.method === 'GET' && url.pathname === '/api/auth/config') { respondJson(res, 200, firebaseConfig()); return; }
+  if (req.method === 'GET' && url.pathname === '/api/auth/config') { respondJson(res, 200, { ...firebaseConfig(), brandedVerification: Boolean(sendVerification) }); return; }
   // Public demo counter: shared across rooms, instances and server restarts.
   if (req.method === 'GET' && url.pathname === '/api/demo-visits') {
     res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store', 'X-Robots-Tag':'noindex, nofollow' });

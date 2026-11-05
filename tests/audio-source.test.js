@@ -69,7 +69,7 @@ test('audio source tab stays open, offers audio-only formats and loads AAC into 
 test('audio YouTube tab survives dashboard refreshes without video conversion controls', () => {
   const code = fs.readFileSync(path.join(root, 'public/admin.js'), 'utf8'), nodes = new Map();
   const $ = (selector) => {
-    if (!nodes.has(selector)) nodes.set(selector, { hidden: true, value: '', dataset: {}, classList: { toggle() {} }, setAttribute() {}, querySelectorAll: () => [] });
+    if (!nodes.has(selector)) nodes.set(selector, { hidden: true, value: '', dataset: {}, classList: { toggle() {} }, setAttribute() {}, toggleAttribute() {}, querySelectorAll: () => [] });
     return nodes.get(selector);
   };
   $('#youtubeDownloadPanel').hidden = false;

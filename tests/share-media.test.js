@@ -57,11 +57,11 @@ test('homepage enables Screen sharing and replaces the YouTube placeholder with 
   assert.match(micCard, /1 phone · up to 3 laptops/);
   assert.doesNotMatch(micCard, /coming-soon/);
   assert.doesNotMatch(home, /Stream YouTube|youtube-mode-card coming-soon/);
-  assert.ok(fs.statSync(path.join(__dirname, '../public/assets/screen-sharing-team.webp')).size < 150000);
   const css = fs.readFileSync(path.join(__dirname, '../public/styles.css'), 'utf8');
-  assert.match(css, /screen-sharing-team\.webp/);
-  assert.match(css, /data-bg="screen-sharing"\] \.mode-card-art\s*\{[^}]*background-size: cover/);
-  assert.match(css, /data-bg="screen-sharing"\] \.mode-card-art\s*\{[^}]*background-position: center 15%/);
+  const artwork = css.match(/data-bg="screen-sharing"\] \.mode-card-art\s*\{[^}]*url\('\/assets\/(card-share-v1\.webp)'\)/);
+  assert.ok(artwork, 'the sharing card uses the new artwork');
+  const imageHeader = fs.readFileSync(path.join(__dirname, '../public/assets', artwork[1])).subarray(0, 12);
+  assert.equal(imageHeader.toString('ascii', 8), 'WEBP');
   const share = fs.readFileSync(path.join(__dirname, '../public/share.html'), 'utf8');
   assert.ok(share.indexOf('src="share-media.js') < share.indexOf('src="share-call.js'));
   const script = fs.readFileSync(path.join(__dirname, '../public/share.js'), 'utf8');

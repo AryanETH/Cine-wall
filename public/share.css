@@ -1,26 +1,40 @@
-.share-body { margin: 0; padding: 24px; background: #000000; color: var(--ink); }
-.share-shell { width: min(1240px, 100%); margin: auto; }
+.share-body { color: var(--ink); }
 .share-nav, .share-heading, .share-start-row, .share-links-heading, .share-player-bar { display: flex; align-items: center; justify-content: space-between; gap: 20px; }
-.share-heading { margin: 40px 0 24px; }
-.share-heading h1 { margin: 8px 0 0; font-size: clamp(2rem, 4vw, 3rem); letter-spacing: -.045em; }
-.share-controls, .share-links-panel { padding: 24px; margin: 0 0 18px; border: 1px solid var(--line); border-radius: 20px; background: var(--surface); }
-.share-controls h2, .share-links-heading h2 { margin: 0; font-size: 1.1rem; }
+.share-body:not(.viewer) .share-heading { display: flex; flex-wrap: wrap; }
+.share-heading h1 { margin: 0; }
+.share-heading #shareStatus { padding: 7px 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface-2); color: var(--muted); font-size: .75rem; }
+.share-heading #shareStatus.online { color: var(--success); }
+.share-preview-column { grid-area: player; min-width: 0; }
+.share-sidebar { grid-area: source; min-width: 0; display: grid; align-content: start; gap: 16px; }
+.share-controls, .share-body:not(.viewer) .share-call { margin: 0; padding: 24px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); }
+.share-links-panel { margin: 0 0 16px; }
+.share-controls h2, .share-links-heading h2, .share-body:not(.viewer) .share-call h2 { margin: 0; font-size: 1.125rem; font-weight: 700; letter-spacing: -.02em; }
+.share-links-heading #addShareScreen { border-style: dashed; border-color: color-mix(in srgb, var(--accent) 35%, var(--line)); white-space: nowrap; }
+.share-links-heading #addShareScreen .fi { color: var(--accent); }
 .share-controls p, .share-help { margin: 8px 0 0; color: var(--muted); font-size: .9rem; line-height: 1.65; }
-.share-buttons { display: flex; gap: 10px; }
-.share-options { display: flex; align-items: flex-end; flex-wrap: wrap; gap: 24px; padding-top: 22px; margin-top: 22px; border-top: 1px solid var(--line); }
+.share-start-row { align-items: stretch; flex-direction: column; gap: 16px; }
+.share-buttons { display: flex; flex-wrap: wrap; gap: 10px; }
+.share-buttons button { flex: 1; }
+.share-buttons .danger { color: var(--danger); border-color: currentColor; }
+[data-theme="light"] .share-buttons .danger { color: #b42318; }
+.share-options { display: grid; gap: 14px; padding-top: 18px; margin-top: 18px; border-top: 1px solid var(--line); }
 .share-options label { display: grid; gap: 8px; color: var(--muted); font-size: .82rem; }
 .share-options .segmented { margin: 8px 0 0; }
-.share-options select { padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); color: var(--ink); font: inherit; }
-.share-options .share-check { display: flex; align-items: center; gap: 8px; padding-bottom: 12px; }
+.share-options select { padding: 10px 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface-2); color: var(--ink); font: inherit; }
+.share-options .share-check { display: flex; align-items: center; gap: 8px; }
 .share-check input { width: 18px; height: 18px; accent-color: var(--accent); }
-.share-links { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 12px; margin-top: 18px; }
-.share-link { position: relative; display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 12px; padding: 16px; border: 1px solid var(--line); border-radius: 14px; }
+.share-links { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(240px, 100%), 1fr)); gap: 10px; margin-top: 14px; }
+.share-link { position: relative; display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 10px; padding: 16px; border: 1px solid var(--line); border-radius: 10px; background: color-mix(in srgb, var(--surface-2) 65%, var(--surface)); }
 .share-link strong { font-size: .98rem; }
 .share-link small { display: block; margin-top: 5px; color: var(--muted); font-size: .8rem; }
-.share-link-actions { display: flex; align-items: center; gap: 8px; grid-column: 2 / -1; }
-.share-link-actions a, .share-link-actions button { padding: 7px 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface-2); color: var(--accent); font-size: .82rem; text-decoration: none; }
+.share-link-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; grid-column: 2 / -1; }
+.share-link-actions a, .share-link-actions button { padding: 7px 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); color: var(--ink); font-size: .82rem; text-decoration: none; }
 .share-remove { color: var(--danger); background: color-mix(in srgb, var(--danger) 10%, var(--surface)); border: 1px solid var(--danger); border-radius: 8px; width: 28px; height: 28px; }
 .share-stage { position: relative; width: 100%; aspect-ratio: 16 / 9; overflow: hidden; border: 1px solid var(--line); border-radius: 20px; background: #0b0e17; }
+.share-body:not(.viewer) .share-stage:not(:fullscreen) { border-radius: 12px; }
+.share-body:not(.viewer) .share-stage:not(:fullscreen):has(.share-empty:not([hidden])) { background: var(--surface-2); }
+.share-body:not(.viewer) .share-stage:not(:fullscreen) .share-empty { color: var(--ink); }
+.share-body:not(.viewer) .share-stage:not(:fullscreen) .share-empty :is(.fi, p) { color: var(--muted); }
 .share-canvas { position: absolute; inset: 0; }
 .share-canvas video { display: block; width: 100%; height: 100%; object-fit: contain; }
 .share-empty { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; padding: 24px; text-align: center; color: #f8faf6; }
@@ -58,7 +72,7 @@
 .viewer .share-call .share-error { position: static; background: var(--surface); color: var(--ink); font-size: .8rem; }
 .share-body button:focus-visible, .share-body a:focus-visible, .share-body select:focus-visible { outline: 3px solid var(--accent); outline-offset: 3px; }
 .share-body.viewer { padding: 0; background: #000000; }
-.viewer .share-shell { width: 100%; }
+.share-body.viewer .share-shell { max-width: none; }
 .viewer .share-nav, .viewer .share-heading, .viewer .share-help { display: none; }
 .viewer .share-stage { position: fixed; inset: 0; height: 100%; width: 100%; aspect-ratio: auto; border: 0; border-radius: 0; }
 .viewer .share-player-bar { position: fixed; z-index: 3; bottom: 12px; left: 12px; right: 12px; padding: 12px; border-radius: 14px; background: rgba(12, 16, 25, .8); color: #f8faf6; opacity: .1; transition: opacity .2s; }
@@ -67,13 +81,7 @@
 .viewer .share-error { position: fixed; z-index: 4; top: 12px; left: 12px; right: 12px; background: #151a28; color: #fff; }
 .share-stage:fullscreen { border: 0; border-radius: 0; aspect-ratio: auto; background: #000000; }
 @media(max-width: 720px) {
-  .share-body { padding: 16px; }
-  .share-heading, .share-start-row { align-items: flex-start; flex-direction: column; }
-  .share-heading { margin-top: 28px; }
-  .share-controls, .share-links-panel { padding: 18px; }
-  .share-options { gap: 18px; }
-  .share-start-row .share-buttons { width: 100%; }
-  .share-start-row .share-buttons button { flex: 1; }
+  .share-controls, .share-body:not(.viewer) .share-call { padding: 18px; }
   .share-player-bar { align-items: flex-start; flex-direction: column; }
   .share-player-bar > strong { max-width: 100%; }
   .share-player-bar button { padding: 10px; }

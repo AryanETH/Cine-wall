@@ -3,7 +3,7 @@ const crypto = require('node:crypto'), child = require('node:child_process'), na
 const { publicKey, privateKey } = crypto.generateKeyPairSync('rsa', { modulusLength: 2048 });
 const encode = value => Buffer.from(JSON.stringify(value)).toString('base64url');
 const now = Math.floor(Date.now() / 1000);
-const parts = [encode({ alg: 'RS256', kid: 'test-key' }), encode({ iss: 'https://securetoken.google.com/cinewall-test', aud: 'cinewall-test', sub: 'test-account', iat: now, auth_time: now, exp: now + 3600 })].join('.');
+const parts = [encode({ alg: 'RS256', kid: 'test-key' }), encode({ iss: 'https://securetoken.google.com/cinewall-test', aud: 'cinewall-test', sub: 'test-account', email: 'viewer@example.test', email_verified: true, iat: now, auth_time: now, exp: now + 3600 })].join('.');
 const token = `${parts}.${crypto.sign('RSA-SHA256', Buffer.from(parts), privateKey).toString('base64url')}`;
 const headers = supplied => ({ ...supplied, Authorization: `Bearer ${token}` });
 module.exports.spawn = (command, args, options) => child.spawn(command, args?.[0] === 'server.js' ? ['tests/account-server.cjs', ...args.slice(1)] : args, { ...options, env: { ...options?.env, CINEWALL_TEST_PUBLIC_KEY: publicKey.export({ type: 'spki', format: 'pem' }) } });

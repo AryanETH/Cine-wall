@@ -78,19 +78,20 @@
 }
   </script>
   
-  <script src="icons.js?v=20261002-icons-18"></script>
+  <script defer src="icons.js?v=20261002-icons-18"></script>
   <script src="theme.js"></script>
-  <script src="session.js?v=20261104-room-auth-1"></script>
-  <script src="device-support.js?v=20261027-entry-2"></script>
-  <script src="mode-switcher.js?v=20261104-room-auth-1"></script>
+  <script defer src="session.js?v=20261104-room-auth-1"></script>
+  <script defer src="device-support.js?v=20261027-entry-2"></script>
+  <script defer src="mode-switcher.js?v=20261104-room-auth-1"></script>
+  <script defer src="/account-guard.js?v=20261105-profile-card-1"></script>
   <link rel="preload" href="/fonts/Anta-Regular.ttf" as="font" type="font/ttf" crossorigin>
   <link rel="preload" as="image" href="/assets/cinewall-demo-poster.jpg?v=20261029-cinema-8" fetchpriority="high">
-  <link rel="stylesheet" href="styles.css?v=20261027-links-3">
-  <link rel="stylesheet" href="home.css?v=20261104-room-auth-1">
+  <link rel="stylesheet" href="styles.css?v=20261105-verified-1">
+  <link rel="stylesheet" href="home.css?v=20261105-verified-1">
   <link rel="stylesheet" href="device-support.css?v=20261025-mobile-42">
   <link rel="stylesheet" href="/rooms.css?v=20261027-links-3">
-  <link rel="preload" as="image" href="/assets/demo-background-fast.jpg">
-  <script src="/landing-preload.js?v=20261104-1" defer></script>
+  <link rel="preload" as="image" href="/assets/demo-background.png">
+  <script src="/landing-preload.js?v=20261105-1" defer></script>
 </head>
 <body class="mode-body">
   <main class="mode-shell">
@@ -102,7 +103,20 @@
       <nav class="home-nav" aria-label="Explore CineWall"><a href="#tools">Tools</a><a href="#demo">Demo</a><a href="#how-it-works">How it works</a><a href="#faq">FAQs</a></nav>
       <div class="nav-actions">
         <button id="openSupport" class="button support-button" type="button" aria-label="Support this project"><span class="fi">&#xE006;</span><span>Support this project</span></button>
-        <a id="accountLink" class="button account-link" href="/profile.html"><svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><circle cx="12" cy="8" r="4"/><path d="M4 22v-2a8 8 0 0 1 16 0v2"/></svg>Profile</a>
+        <button class="button support-button" type="button" data-theme-toggle aria-label="Switch to dark theme"><span class="fi" data-theme-icon aria-hidden="true">&#xE708;</span><span data-theme-label>Dark</span></button>
+        <div class="home-account" id="homeAccount">
+          <a id="accountLink" class="button account-link" href="/auth.html?next=%2F%3Faccount%3Dopen"><svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><circle cx="12" cy="8" r="4"/><path d="M4 22v-2a8 8 0 0 1 16 0v2"/></svg>Sign in</a>
+          <button id="accountTrigger" class="button account-link account-trigger" type="button" aria-controls="accountPopover" aria-expanded="false" aria-describedby="accountTooltip" hidden><span class="account-avatar" data-account-initials aria-hidden="true"></span>Profile</button>
+          <div id="accountTooltip" class="account-tooltip" role="tooltip"><strong data-account-name></strong><span data-account-email></span></div>
+          <section id="accountPopover" class="account-popover" aria-label="CineWall account" hidden>
+            <div class="account-popover-header"><strong>CineWall account</strong><button class="button account-close" type="button" aria-label="Close account panel">×</button></div>
+            <div class="account-identity"><span class="account-avatar large" data-account-initials aria-hidden="true"></span><div><strong data-account-name></strong><span data-account-email></span></div></div>
+            <a class="button account-action" href="/profile.html">Manage profile</a>
+            <a class="button account-action" href="/admin.html?mode=video">Open dashboard</a>
+            <button class="button account-action account-logout" type="button" data-account-logout>Log out</button>
+            <p data-logout-error role="alert" hidden>Could not log out. Try again.</p>
+          </section>
+        </div>
         <span id="launcherConnection" class="connection-chip"><span class="status-dot"></span><span>Connecting…</span></span>
       </div>
     </header>
@@ -124,14 +138,14 @@
           <source data-light-src="/assets/cinewall-demo-fast.mp4?v=20261104-story-1" type="video/mp4">
         </video>
         <div class="cinema-stickers">
-          <button class="cinema-sticker" type="button" aria-label="Move popcorn sticker" style="--entry-delay:0s"><img src="/assets/cinema-stickers/popcorn.webp" width="512" height="512" loading="eager" decoding="async" draggable="false" alt=""></button>
-          <button class="cinema-sticker" type="button" aria-label="Move 3D glasses sticker" style="--entry-delay:0.12s"><img src="/assets/cinema-stickers/glasses.webp" width="512" height="512" loading="eager" decoding="async" draggable="false" alt=""></button>
-          <button class="cinema-sticker" type="button" aria-label="Move clapperboard sticker" style="--entry-delay:0.24s"><img src="/assets/cinema-stickers/clapper.webp" width="512" height="512" loading="eager" decoding="async" draggable="false" alt=""></button>
-          <button class="cinema-sticker" type="button" aria-label="Move film reel sticker" style="--entry-delay:0.36s"><img src="/assets/cinema-stickers/reel.webp" width="512" height="512" loading="eager" decoding="async" draggable="false" alt=""></button>
-          <button class="cinema-sticker" type="button" aria-label="Move Apple headphones sticker" style="--entry-delay:0.48s"><img src="/assets/cinema-stickers/headphones.webp" width="512" height="512" loading="eager" decoding="async" draggable="false" alt=""></button>
-          <button class="cinema-sticker" type="button" aria-label="Move movie camera sticker" style="--entry-delay:0.6s"><img src="/assets/cinema-stickers/camera.webp" width="512" height="512" loading="eager" decoding="async" draggable="false" alt=""></button>
-          <button class="cinema-sticker" type="button" aria-label="Move cinema drink sticker" style="--entry-delay:0.72s"><img src="/assets/cinema-stickers/drink.webp" width="512" height="512" loading="eager" decoding="async" draggable="false" alt=""></button>
-          <button class="cinema-sticker" type="button" aria-label="Move cinema tickets sticker" style="--entry-delay:0.84s"><img src="/assets/cinema-stickers/tickets.webp" width="512" height="512" loading="eager" decoding="async" draggable="false" alt=""></button>
+          <button class="cinema-sticker" type="button" aria-label="Move popcorn sticker" style="--entry-delay:0s"><img src="/assets/cinema-stickers/popcorn.png" width="512" height="512" loading="eager" decoding="async" draggable="false" alt=""></button>
+          <button class="cinema-sticker" type="button" aria-label="Move 3D glasses sticker" style="--entry-delay:0.12s"><img src="/assets/cinema-stickers/glasses.png" width="512" height="512" loading="eager" decoding="async" draggable="false" alt=""></button>
+          <button class="cinema-sticker" type="button" aria-label="Move clapperboard sticker" style="--entry-delay:0.24s"><img src="/assets/cinema-stickers/clapper.png" width="512" height="512" loading="eager" decoding="async" draggable="false" alt=""></button>
+          <button class="cinema-sticker" type="button" aria-label="Move film reel sticker" style="--entry-delay:0.36s"><img src="/assets/cinema-stickers/reel.png" width="512" height="512" loading="eager" decoding="async" draggable="false" alt=""></button>
+          <button class="cinema-sticker" type="button" aria-label="Move Apple headphones sticker" style="--entry-delay:0.48s"><img src="/assets/cinema-stickers/headphones.png" width="512" height="512" loading="eager" decoding="async" draggable="false" alt=""></button>
+          <button class="cinema-sticker" type="button" aria-label="Move movie camera sticker" style="--entry-delay:0.6s"><img src="/assets/cinema-stickers/camera.png" width="512" height="512" loading="eager" decoding="async" draggable="false" alt=""></button>
+          <button class="cinema-sticker" type="button" aria-label="Move cinema drink sticker" style="--entry-delay:0.72s"><img src="/assets/cinema-stickers/drink.png" width="512" height="512" loading="eager" decoding="async" draggable="false" alt=""></button>
+          <button class="cinema-sticker" type="button" aria-label="Move cinema tickets sticker" style="--entry-delay:0.84s"><img src="/assets/cinema-stickers/tickets.png" width="512" height="512" loading="eager" decoding="async" draggable="false" alt=""></button>
         </div>
         <p id="homeDemoFallback" class="home-demo-fallback" hidden>Demo unavailable. <a href="https://www.youtube.com/watch?v=nKjiv6_XSN4" target="_blank" rel="noopener noreferrer">Watch the tutorial</a></p>
       </div>
@@ -246,11 +260,11 @@
     </section>
   </div>
   <div id="launcherBusy" class="launcher-busy" hidden><span class="spinner"></span><strong>Preparing your studio…</strong></div>
-  <script src="home-footer.js?v=20261025-copy-41"></script>
-  <script src="home-demo.js?v=20261104-room-auth-1"></script>
-  <script src="home-cinema.js?v=20261104-room-auth-1"></script>
-  <script src="launcher.js?v=20261029-demo-1"></script>
-  <script src="/community.js?v=20261027-community-3"></script>
-  <script src="/rooms-ui.js?v=20261104-room-auth-1"></script>
+  <script defer src="home-footer.js?v=20261025-copy-41"></script>
+  <script defer src="home-demo.js?v=20261105-quality-2"></script>
+  <script defer src="home-cinema.js?v=20261104-room-auth-1"></script>
+  <script defer src="launcher.js?v=20261029-demo-1"></script>
+  <script defer src="/community.js?v=20261027-community-3"></script>
+  <script defer src="/rooms-ui.js?v=20261104-room-auth-1"></script>
 </body>
 </html>

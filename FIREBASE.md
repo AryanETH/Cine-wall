@@ -11,13 +11,25 @@ CINEWALL_FIREBASE_PROJECT_ID=your-project
 CINEWALL_FIREBASE_APP_ID=your-web-app-id
 ```
 
-Restart the server after setting them. `/api/auth/config` exposes only these public fields. Never supply service-account credentials or an Admin SDK private key. Incomplete custom configuration keeps all workspaces locked; the public landing page remains available.
+Restart the server after setting them. `/api/auth/config` exposes these public fields and whether branded verification is enabled. Incomplete custom configuration keeps all workspaces locked; the public landing page remains available.
 
 At the last console setup (2026-10-31), Google, Email/Password and Phone were enabled. The public Google support email is `aryanx686@gmail.com`, approved by the owner. `watch.aitoyz.in` is authorized and SMS regions are restricted to India. At that setup, the console reported a 10 SMS/day quota for this new project. The project remains on Spark without a billing upgrade. SMS may require billing; do not enable a paid plan without the owner's approval. Use Firebase's fictional test phone numbers for development. Firebase currently documents that localhost is not allowed as a hosted domain for phone auth.
 
 The phone form informs users that Google processes their number, uses visible Firebase reCAPTCHA and a resend cooldown, then verifies the six-digit SMS code. It does not bypass CAPTCHA, SMS quotas, or provider abuse controls. Email signup sends email verification; password recovery uses Firebase's email flow. Firebase handles credentials and persistent sessions; CineWall does not store passwords or OTPs on its server.
 
-Open `/auth.html` to sign in; `/profile.html` contains profile details, logout and the light/dark toggle. Successful sign-in/signup opens the video dashboard by default, including sign-in started from Profile. Explicit protected workspace/device links return to their original destination. The Firebase SDK also refreshes sessions on protected workspaces. Provider-backed sign-in requires real configuration and successful Google/SMS/email tests before it can be considered verified. The Firebase SDK loads on authentication/profile pages and protected workspaces, keeping the public landing page light.
+## Branded verification email
+
+Email signup saves the name to the Firebase profile before requesting verification. Signup and the Profile resend button use the same verification sender. Without custom mail settings they use Firebase's built-in email. Firebase documents that real SMS delivery requires a billing-linked project; leave billing unchanged and use fictional test numbers for development.
+
+To enable the CineWall email, configure these **server-only** settings in your hosting environment:
+
+- `CINEWALL_FIREBASE_MAIL_SERVICE_ACCOUNT`: the JSON credentials for a dedicated service account in the Firebase project with permission to generate Firebase email action links (`firebaseauth.users.sendEmail`). Keep this in the host's secret manager.
+- `CINEWALL_RESEND_API_KEY`: a sending key for the verified domain. Disable click tracking for verification messages to preserve the original Firebase link.
+- `CINEWALL_VERIFICATION_FROM`: a verified sender, such as `CineWall <verify@your-domain.example>`.
+
+Restart and check that `/api/auth/config` reports `brandedVerification: true`. The server takes the recipient and name from a verified Firebase token and uses Firebase to generate the action link. It sends the HTML email with a plain-text alternative and limits requests to one per recipient per minute and 100 attempts per server per 24 hours. Never put credentials in the repository, in a public config file, or in browser code. When switching providers, verify delivery and the action link with a test account.
+
+Open `/auth.html` to sign in. Before opening a workspace or room API, the server requires a Firebase token with a verified email. The verification screen can resend the email and refresh verification after the link is opened. SMS users can link and verify an email from the same screen. Verified sign-ins open the video dashboard by default or return to the original workspace or device link. The landing page shows the profile menu for verified sessions and loads Firebase only to restore or manage an existing account. The profile page contains the theme toggle, and logout is available from the profile menu and dashboard settings.
 
 Official references: https://firebase.google.com/docs/web/setup ; https://firebase.google.com/docs/auth/web/google-signin ; https://firebase.google.com/docs/auth/web/password-auth ; https://firebase.google.com/docs/auth/web/phone-auth
 

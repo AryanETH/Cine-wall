@@ -35,6 +35,9 @@ let removedScreenNumber = 0;
 let defaultFullscreenAttempted = false;
 let fullscreenRequest = null;
 let serverOffset = 0;
+let clockSamples = [];
+let clockSyncInFlight = false;
+let lastExecutedCommand = '';
 let currentState = null;
 let handControls = null;
 let currentAssetVersion = '';
@@ -807,11 +810,14 @@ function resumeRoutedAudio() {
 
 async function execute(commandState) {
   if (currentState && (commandState.serverId !== currentState.serverId || commandState.commandId < currentState.commandId)) return;
+  const commandKey = `${commandState.serverId}/${commandState.commandId}`;
+  if (lastExecutedCommand === commandKey) return;
   applyStateAppearance(commandState);
   commandState = currentState;
   updateController();
   if (localPlaybackIntent) return;
   if (!ready) return;
+  lastExecutedCommand = commandKey;
   if (commandState.type === 'identify') {
     $('#identify').textContent = screenNumber;
     $('#identify').classList.add('show');
@@ -844,16 +850,32 @@ async function execute(commandState) {
 
   if (!Number.isFinite(video.duration)) return;
   applyAuthoritativeSeek(commandState);
-  seekTo(targetPosition(commandState));
+  // A prepared play is already at the correct frame. Avoid another decoder
+  // flush for a few milliseconds of timer jitter, or a duplicate SSE/reply.
+  const target = targetPosition(commandState);
+  if (!commandState.playing || Math.abs(target - video.currentTime) > .12) seekTo(target);
   if (commandState.playing) {
     await playLocalMedia();
+    if (currentState?.commandId === commandState.commandId) correctDrift(currentState, false);
   } else {
     video.pause();
   }
 }
 
 function schedule(commandState) {
+  if (currentState && (commandState.serverId !== currentState.serverId || commandState.commandId < currentState.commandId)) return;
+  if (lastExecutedCommand === `${commandState.serverId}/${commandState.commandId}`) return;
   const delay = Math.max(0, commandState.executeAt - serverNow());
+  if (commandState.type === 'play' && delay > 40) applyStateAppearance(commandState);
+  // Seek and decode while every device is waiting for the common start time.
+  // Seeking at the deadline makes each laptop start after its own decoder delay.
+  if (commandState.type === 'play' && delay > 40 && ready && !localPlaybackIntent
+      && ['video', 'audio'].includes(sessionMode) && mediaElementVersion === commandState.asset?.version
+      && Number.isFinite(video.duration) && (!currentState || commandState.commandId >= currentState.commandId)) {
+    video.pause();
+    video.playbackRate = 1;
+    seekTo(commandState.position || 0);
+  }
   setTimeout(() => execute(commandState), delay);
 }
 
@@ -923,13 +945,13 @@ function correctDrift(playbackState, updateAppearance = true) {
   // Never chase the clock through a seek/buffer recovery. Repeated seeks here
   // discard useful decoder progress and range reads on slower guest laptops.
   if (video.seeking || video.readyState < 3 || audioWaiting || video.ended) { video.playbackRate = 1; return; }
-  if (Math.abs(drift) > 0.22 && performance.now() - lastDriftSeek > 2500) {
+  if (Math.abs(drift) > 0.12 && performance.now() - lastDriftSeek > 1500) {
     lastDriftSeek = performance.now();
     seekTo(target);
     video.playbackRate = 1;
-  } else if (Math.abs(drift) > 0.015) {
+  } else if (Math.abs(drift) > 0.008) {
     // Gentle continuous correction rather than repeated audible jumps.
-    video.playbackRate = 1 + Math.min(.015, Math.max(-.015, drift * .2));
+    video.playbackRate = 1 + Math.min(.03, Math.max(-.03, drift * .5));
   } else {
     video.playbackRate = 1;
   }
@@ -1022,19 +1044,33 @@ function showGestureFeedback(seconds) {
   setTimeout(() => { feedback.className = 'gesture-feedback'; }, 650);
 }
 
+function recordClockSample(serverTime, started, elapsed) {
+  if (!Number.isFinite(serverTime) || !Number.isFinite(elapsed) || elapsed < 0 || elapsed > 2000) return;
+  const now = performance.now();
+  clockSamples = clockSamples.filter(sample => now - sample.at < 60000);
+  clockSamples.push({ at: now, rtt: elapsed, offset: serverTime - (started + elapsed / 2) });
+  clockSamples.sort((a, b) => a.rtt - b.rtt);
+  clockSamples = clockSamples.slice(0, 12);
+  // Keep the lowest-latency estimate across refreshes. A congested five-second
+  // checkpoint must not move one laptop's clock away from its peers.
+  serverOffset = clockSamples[0].offset;
+}
+
 async function syncClock() {
-  const samples = [];
-  for (let index = 0; index < 4; index += 1) {
-    const start = Date.now();
-    try {
-      const response = await fetch(`/api/time?t=${start}`, { cache: 'no-store' });
-      const { serverTime } = await response.json();
-      const end = Date.now();
-      samples.push({ rtt: end - start, offset: serverTime - (start + end) / 2 });
-    } catch {}
-  }
-  samples.sort((a, b) => a.rtt - b.rtt);
-  if (samples.length) serverOffset = samples[0].offset;
+  if (clockSyncInFlight) return;
+  clockSyncInFlight = true;
+  try {
+    for (let index = 0; index < 4; index += 1) {
+      const start = Date.now();
+      const tick = performance.now();
+      try {
+        const response = await fetch(`/api/time?t=${start}`, { cache: 'no-store', ...(typeof AbortSignal !== 'undefined' && AbortSignal.timeout ? { signal: AbortSignal.timeout(3000) } : {}) });
+        if (!response.ok) continue;
+        const { serverTime } = await response.json();
+        recordClockSample(serverTime, start, performance.now() - tick);
+      } catch {}
+    }
+  } finally { clockSyncInFlight = false; }
 }
 
 function mediaIsReady() {
@@ -1147,7 +1183,7 @@ async function postStatus() {
     const data = await response.json();
     if (!response.ok) throw new Error('Status request failed');
     markConnectionLive();
-    if (!currentState) serverOffset = data.state.serverTime - Date.now();
+    if (!currentState && !clockSamples.length) serverOffset = data.state.serverTime - Date.now();
     const stateChanged = !currentState || data.state.commandId !== currentState.commandId || data.state.asset?.version !== currentState.asset?.version;
     if (!currentState && requestedScreen && requestedScreen <= data.state.screenCount) {
       ready = true;
@@ -1167,13 +1203,13 @@ async function refreshTimeline() {
   timelineCheckpointInFlight = true;
   const serverId = currentState.serverId;
   const started = Date.now();
+  const tick = performance.now();
   try {
     const response = await fetch('/api/status', { cache: 'no-store', ...(typeof AbortSignal !== 'undefined' && AbortSignal.timeout ? { signal: AbortSignal.timeout(4000) } : {}) });
     if (!response.ok) throw new Error('Timeline unavailable');
     const data = await response.json();
     if (currentState.serverId !== serverId) return;
-    const elapsed = Date.now() - started;
-    if (elapsed < 1000 && Number.isFinite(data.state?.serverTime)) serverOffset = data.state.serverTime - (started + elapsed / 2);
+    recordClockSample(data.state?.serverTime, started, performance.now() - tick);
     applyWhenReady(data.state);
     correctDrift(data.state);
     markConnectionLive();
@@ -1187,7 +1223,7 @@ async function fetchInitialState() {
     const response = await fetch('/api/status', { cache: 'no-store' });
     if (!response.ok) throw new Error('Server unavailable');
     const data = await response.json();
-    if (!currentState) serverOffset = data.state.serverTime - Date.now();
+    if (!currentState && !clockSamples.length) serverOffset = data.state.serverTime - Date.now();
     if (requestedScreen && requestedScreen <= data.state.screenCount) {
       ready = true;
       setup.classList.add('hidden');

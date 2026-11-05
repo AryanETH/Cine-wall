@@ -106,7 +106,7 @@ test('hosted server separates sessions, signals only within a room, and stores n
   assert.equal((await api('/api/command', roomA, { type: 'play', position: 0 })).status, 409);
   for (const screen of [1, 2]) await api('/api/status', roomA, { clientId: `test-${screen}`, screen, ready: true, mediaReady: true, assetVersion: published.data.state.asset.version, loadProgress: 100 });
   const play = await api('/api/command', roomA, { type: 'play', position: 0 });
-  assert.equal(play.status, 200); assert.equal(play.data.command.executeAt - play.data.command.serverTime, 120);
+  assert.equal(play.status, 200); assert.ok(play.data.command.executeAt - play.data.command.serverTime >= 650);
   const audio = await api('/api/command', roomA, { type: 'screen-audio', screen: 2, volume: .37 });
   assert.equal(audio.data.command.audioSettings['2'].volume, .37); assert.ok(audio.data.command.executeAt - audio.data.command.serverTime <= 5);
   assert.equal((await api('/api/status', roomB)).data.state.playing, false);

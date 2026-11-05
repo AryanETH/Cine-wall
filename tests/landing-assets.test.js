@@ -1,5 +1,21 @@
 'use strict';
 const test = require('node:test'), assert = require('node:assert/strict'), fs = require('node:fs'), path = require('node:path'), http = require('node:http'), vm = require('node:vm');
+test('text compression preserves bytes, honors disabled encodings and invalidates changed source', async () => {
+  const encode = require('../text-response'), zlib = require('node:zlib');
+  const source = Buffer.from('CineWall styles and player controls. '.repeat(300));
+  for (const encoding of ['br', 'gzip']) {
+    const result = await encode({ headers: { 'accept-encoding': encoding } }, '/test.css', source, 'text/css');
+    assert.equal(result.headers['Content-Encoding'], encoding);
+    assert.ok(result.body.length < source.length * .2);
+    assert.deepEqual(encoding === 'br' ? zlib.brotliDecompressSync(result.body) : zlib.gunzipSync(result.body), source);
+  }
+  const identity = await encode({ headers: { 'accept-encoding': 'gzip;q=0, br;q=0, *;q=1' } }, '/test.css', source, 'text/css');
+  assert.equal(identity.headers['Content-Encoding'], undefined); assert.deepEqual(identity.body, source);
+  const changed = Buffer.from('Updated theme and player rules. '.repeat(300));
+  const result = await encode({ headers: { 'accept-encoding': 'gzip' } }, '/test.css', changed, 'text/css');
+  assert.deepEqual(zlib.gunzipSync(result.body), changed, 'compression cache cannot serve old code');
+});
+
 test('public assets stream ranges, validate caches and preserve HEAD semantics', async t => {
   const file = path.join(__dirname, '../public/assets/cinewall-demo-fast.mp4'), bytes = fs.readFileSync(file);
   const server = http.createServer((req, res) => require('../static-assets')(req, res, file, 'video/mp4', true));

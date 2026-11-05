@@ -379,7 +379,7 @@ function renderModeShell() {
   $('#previewGesture').hidden = state.sessionMode !== 'video' || !state.asset;
   const localMediaMode = ['video', 'audio'].includes(state.sessionMode);
   $('#sharingPanel').hidden = !localMediaMode;
-  $('#settings').hidden = sourceLocked();
+  $('#settings').toggleAttribute('data-room-locked', sourceLocked());
   $('#muteAll').disabled = sourceLocked();
   if (!localMediaMode) $('#youtubeDownloadPanel').hidden = true;
   const downloadingYouTube = localMediaMode && !$('#youtubeDownloadPanel').hidden;

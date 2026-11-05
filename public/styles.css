@@ -17,7 +17,7 @@
   --line-dark: rgba(255, 255, 255, .09);
   --accent: #a8ff35;
   --accent-deep: #10661d;
-  --accent-gradient: url('/assets/green-yellow-gradient.png') center / cover no-repeat;
+  --accent-gradient: linear-gradient(110deg, #ffff4d 4%, #d9ff30 42%, #86f735 69%, #29c746 100%);
   --accent-ink: #0a1507;
   --purple: #7460f5;
   --danger: #ff6b71;
@@ -71,7 +71,7 @@ button { cursor: pointer; }
 .admin-body {
   min-height: 100vh;
   padding: 34px;
-  background: #000000;
+  background: var(--shell);
   color: var(--ink);
 }
 
@@ -256,13 +256,13 @@ body[data-session-mode="audio"] .top-settings { grid-template-columns: 1fr; }
 .mode-card { position: relative; display: flex; flex-direction: column; min-width: 0; min-height: 410px; padding: 0; overflow: hidden; border: 1px solid var(--line); border-radius: 23px; background: var(--surface); color: var(--ink); text-align: left; text-decoration: none; box-shadow: 0 12px 28px rgba(15, 27, 50, .08); transition: transform .28s ease, border-color .28s ease, box-shadow .28s ease; }
 .mode-card-visual { display: block; flex: 0 0 210px; width: 100%; overflow: hidden; background: var(--surface-2); }
 .mode-card-art { display: block; width: 100%; height: 100%; background-position: center; background-size: cover; transition: transform .55s cubic-bezier(.2,.75,.2,1); }
-.mode-card[data-session-mode="video"] .mode-card-art { background-image: url('/assets/MOVIES.webp'); }
-.mode-card[data-session-mode="audio"] .mode-card-art { background-image: url('/assets/AUDIO.webp'); background-position: center 30%; }
+.mode-card[data-session-mode="video"] .mode-card-art { background-image: url('/assets/card-video-v1.webp'); }
+.mode-card[data-session-mode="audio"] .mode-card-art { background-image: url('/assets/card-audio-v1.webp'); background-position: center 35%; }
 .mode-card[data-bg="screen-sharing"] { text-decoration: none; }
-.mode-card[data-bg="screen-sharing"] .mode-card-art { background-image: url('/assets/screen-sharing-team.webp'); background-size: cover; background-position: center 15%; background-repeat: no-repeat; }
+.mode-card[data-bg="screen-sharing"] .mode-card-art { background-image: url('/assets/card-share-v1.webp'); background-repeat: no-repeat; }
 .mode-card[data-bg="youtube"] .mode-card-art { background-image: url('/assets/YOUTUBE.webp'); }
 .mode-card[data-bg="mic"] { text-decoration: none; }
-.mode-card[data-bg="mic"] .mode-card-art { background-image: url('/assets/mic-speakers.svg'); background-color: #112727; }
+.mode-card[data-bg="mic"] .mode-card-art { background-image: url('/assets/card-mic-v1.webp'); background-color: #112727; }
 .mode-card.featured { border-color: color-mix(in srgb, var(--accent) 32%, var(--line)); }
 .mode-card:hover .mode-card-art, .mode-card:focus-visible .mode-card-art { transform: scale(1.06); }
 .mode-card:not(.coming-soon):hover, .mode-card:not(.coming-soon):focus-visible { border-color: var(--accent); transform: translateY(-4px); box-shadow: 0 22px 40px rgba(15, 27, 50, .16); }
@@ -487,7 +487,7 @@ body[data-session-mode="audio"] .top-settings { grid-template-columns: 1fr; }
 }
 
 @media (max-width: 720px) {
-  .admin-body { padding: 0; background: #121212; }
+  .admin-body { padding: 0; }
   .app-shell { padding: 13px; border: 0; border-radius: 0; }
   .app-nav { gap: 12px; }
   .connection-chip { padding: 10px; }

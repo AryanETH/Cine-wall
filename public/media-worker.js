@@ -1,6 +1,9 @@
 'use strict';
 self.addEventListener('install', () => self.skipWaiting());
-self.addEventListener('activate', (event) => event.waitUntil(self.clients.claim()));
+self.addEventListener('activate', (event) => event.waitUntil((async () => {
+  for (const key of await caches.keys()) if (key.startsWith('cinewall-landing-') && key !== LANDING_CACHE) await caches.delete(key);
+  await self.clients.claim();
+})()));
 function ask(client, payload) {
   return new Promise((resolve, reject) => {
     const channel = new MessageChannel();
@@ -11,7 +14,7 @@ function ask(client, payload) {
 }
 self.addEventListener('fetch', (event) => {
   const url = new URL(event.request.url);
-  if (url.pathname.startsWith('/assets/') && event.request.method === 'GET') {
+  if ((url.pathname.startsWith('/assets/') || url.pathname.startsWith('/fonts/')) && publicLandingAsset(url) && event.request.method === 'GET') {
     event.respondWith(landingAsset(event.request, event)); return;
   }
   if (!url.pathname.startsWith('/__cinewall_peer__/')) return;
@@ -54,9 +57,10 @@ self.addEventListener('fetch', (event) => {
   })());
 });
 
-const LANDING_CACHE = 'cinewall-landing-20261030-1';
+const LANDING_CACHE = 'cinewall-landing-20261105-1';
 function publicLandingAsset(url) {
-  return url.origin === self.location.origin && url.pathname.startsWith('/assets/') && /\.(?:png|jpg|webp|svg|mp4)$/.test(url.pathname);
+  return url.origin === self.location.origin && (url.pathname.startsWith('/assets/') && /\.(?:png|jpg|webp|svg|mp4)$/.test(url.pathname)
+    || url.pathname.startsWith('/fonts/') && /\.(?:ttf|woff2?)$/.test(url.pathname));
 }
 async function landingAsset(request, event) {
   const cache = await caches.open(LANDING_CACHE).catch(() => null);
