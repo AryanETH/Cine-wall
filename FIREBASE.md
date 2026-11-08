@@ -19,7 +19,7 @@ The phone form informs users that Google processes their number, uses visible Fi
 
 ## Branded verification email
 
-Email signup saves the name to the Firebase profile before requesting verification. Signup and the Profile resend button use the same verification sender. Without custom mail settings they use Firebase's built-in email. Firebase documents that real SMS delivery requires a billing-linked project; leave billing unchanged and use fictional test numbers for development.
+Email signup saves the name to the Firebase profile before requesting verification. Signup and Resend email on the verification screen use the same verification sender. Without custom mail settings they use Firebase's built-in email. Firebase documents that real SMS delivery requires a billing-linked project; leave billing unchanged and use fictional test numbers for development.
 
 To enable the CineWall email, configure these **server-only** settings in your hosting environment:
 
@@ -29,7 +29,7 @@ To enable the CineWall email, configure these **server-only** settings in your h
 
 Restart and check that `/api/auth/config` reports `brandedVerification: true`. The server takes the recipient and name from a verified Firebase token and uses Firebase to generate the action link. It sends the HTML email with a plain-text alternative and limits requests to one per recipient per minute and 100 attempts per server per 24 hours. Never put credentials in the repository, in a public config file, or in browser code. When switching providers, verify delivery and the action link with a test account.
 
-Open `/auth.html` to sign in. Before opening a workspace or room API, the server requires a Firebase token with a verified email. The verification screen can resend the email and refresh verification after the link is opened. SMS users can link and verify an email from the same screen. Verified sign-ins open the video dashboard by default or return to the original workspace or device link. The landing page shows the profile menu for verified sessions and loads Firebase only to restore or manage an existing account. The profile page contains the theme toggle, and logout is available from the profile menu and dashboard settings.
+Open `/auth.html` to create an account or sign in. The form starts on signup for new browsers and sign-in for returning users. Either screen links to the other. Before opening a workspace or room API, the server requires a Firebase token with a verified email. The verification screen can resend the email and refresh verification after the link is opened. SMS users can link and verify an email from the same screen. Verified sign-ins open the video dashboard by default or return to the original workspace or device link. The landing page shows the profile menu for verified sessions and loads Firebase only to restore or manage an existing account. The profile page contains the theme toggle, and logout is available from the profile menu and dashboard settings.
 
 Official references: https://firebase.google.com/docs/web/setup ; https://firebase.google.com/docs/auth/web/google-signin ; https://firebase.google.com/docs/auth/web/password-auth ; https://firebase.google.com/docs/auth/web/phone-auth
 

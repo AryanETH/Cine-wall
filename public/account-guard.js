@@ -5,6 +5,7 @@
   const logoutButtons = [...document.querySelectorAll('[data-account-logout]')];
   const logoutErrors = [...document.querySelectorAll('[data-logout-error]')];
   const accountKey = 'cinewall-account-used';
+  const returningKey = 'cinewall-account-returning';
   const logoutKey = 'cinewall-account-logout';
   const login = () => location.replace(`/auth.html?next=${encodeURIComponent(location.pathname + location.search)}`);
   let firebase, signingOut = false, sessionUpdates = Promise.resolve();
@@ -72,9 +73,10 @@
       await sdk.signOut(auth);
       try {
         localStorage.removeItem(accountKey);
+        localStorage.setItem(returningKey, '1');
         localStorage.setItem(logoutKey, String(Date.now()));
       } catch {}
-      location.replace('/auth.html');
+      location.replace('/auth.html?intent=signin');
     } catch {
       signingOut = false;
       logoutButtons.forEach(button => { button.disabled = false; });
@@ -89,12 +91,12 @@
     return response.json();
   }
   function rememberAccount() {
-    try { localStorage.setItem(accountKey, '1'); } catch {}
+    try { localStorage.setItem(accountKey, '1'); localStorage.setItem(returningKey, '1'); } catch {}
   }
   function hasAccountHint() {
     try { return localStorage.getItem(accountKey) === '1'; } catch { return false; }
   }
-  let watching = false;
+  let watching = false, checkInFlight, accountVersion = 0, loggedOutElsewhere = false;
   async function watchFirebase() {
     if (watching) return;
     watching = true;
@@ -102,20 +104,30 @@
       const { auth, sdk } = await loadFirebase();
       sdk.onIdTokenChanged(auth, user => {
         sessionUpdates = sessionUpdates.then(async () => {
-          if (signingOut || auth.currentUser !== user) return;
+          if (signingOut || loggedOutElsewhere || auth.currentUser !== user) return;
           if (!user) {
-            if (!home) { await endSession(); login(); }
-            else showAccount(null);
+            await check();
             return;
           }
+          const version = ++accountVersion;
+          const idToken = await user.getIdToken();
+          if (signingOut || version !== accountVersion || auth.currentUser !== user) return;
           const result = await fetch('/api/auth/session', {
             method: 'POST', headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ idToken: await user.getIdToken() }),
+            body: JSON.stringify({ idToken }),
           });
-          if (signingOut) return;
-          if (!result.ok) { if (home) showAccount(null); else login(); return; }
+          if (signingOut || version !== accountVersion || auth.currentUser !== user) return;
+          if (!result.ok) {
+            if (result.status === 403 && (await result.json()).code === 'EMAIL_VERIFICATION_REQUIRED') {
+              if (signingOut || version !== accountVersion || auth.currentUser !== user) return;
+              if (home) showAccount(null); else login();
+            }
+            return;
+          }
+          const { account } = await result.json();
+          if (signingOut || version !== accountVersion || auth.currentUser !== user) return;
           rememberAccount();
-          if (home) showAccount((await result.json()).account);
+          if (home) showAccount(account);
         }).catch(() => {});
       });
     } catch {
@@ -123,22 +135,34 @@
       // Server authorization still applies when the provider is unreachable.
     }
   }
-  async function check() {
-    if (signingOut) return;
-    try {
+  function check() {
+    if (signingOut || loggedOutElsewhere) return;
+    const version = accountVersion;
+    if (checkInFlight?.version === version) return checkInFlight.promise;
+    const promise = (async () => {
       const state = await session();
+      if (signingOut || version !== accountVersion) return;
       if (home) {
         showAccount(state.account);
         if (state.authenticated) rememberAccount();
         if (state.authenticated || hasAccountHint()) await watchFirebase();
       } else if (!state.authenticated) login();
-    } catch {}
+    })().catch(() => {}).finally(() => { if (checkInFlight?.promise === promise) checkInFlight = undefined; });
+    checkInFlight = { version, promise };
+    return promise;
   }
 
   window.addEventListener('focus', check);
   window.addEventListener('storage', event => {
-    if (event.key === logoutKey) { if (home) showAccount(null); else login(); }
-    if (home && event.key === accountKey && event.newValue) void check();
+    if (event.key === logoutKey && event.newValue) {
+      accountVersion++;
+      loggedOutElsewhere = true;
+      if (home) showAccount(null); else login();
+    }
+    if (home && event.key === accountKey && event.newValue) {
+      loggedOutElsewhere = false;
+      void check();
+    }
   });
   if (home) {
     window.addEventListener('pageshow', event => { if (event.persisted) void check(); });

@@ -54,8 +54,14 @@
       else if (/^\/(?:admin|screen|share|mic|room|connect|profile)\.html$/.test(requested.pathname)) next = requested.pathname + requested.search;
     }
   } catch {}
-  let busy = false, signup = false, verifier, confirmation, smsResendAt = 0, emailResendAt = 0, pendingDestination;
-  $('#authRetry')?.addEventListener('click', () => location.reload());
+  const usedKey = 'cinewall-account-used', returningKey = 'cinewall-account-returning';
+  const authUrl = new URL(location.href);
+  const intent = authUrl.searchParams.get('intent');
+  let returning = false;
+  try { returning = localStorage.getItem(returningKey) === '1' || localStorage.getItem(usedKey) === '1'; } catch {}
+  let busy = false, leaving = false, signup = intent === 'signup' || (intent !== 'signin' && !returning);
+  let phoneMode = false, confirmation, lastSmsNumber, smsResendAt = 0, emailResendAt = 0;
+  let refreshAccount = () => {}, syncAfterAction = false, forceAfterAction = false;
   const message = (text, error = false) => {
     status.textContent = text;
     status.dataset.state = error ? 'error' : 'status';
@@ -67,23 +73,52 @@
     'auth/weak-password': 'Choose a stronger password.', 'auth/popup-closed-by-user': 'Google sign-in was closed. Try again.',
     'auth/popup-blocked': 'Allow the Google sign-in popup and try again.', 'auth/too-many-requests': 'Too many attempts. Please wait and try again.',
     'auth/invalid-verification-code': 'That code is incorrect. Try again.', 'auth/code-expired': 'That code expired. Request a new one.',
+    'auth/session-expired': 'That code expired. Request a new one.',
     'auth/unauthorized-domain': 'Sign-in is not enabled for this website yet.', 'auth/operation-not-allowed': 'This sign-in method has not been enabled yet.',
     'auth/network-request-failed': 'Could not reach the sign-in provider. Please try again.', 'auth/quota-exceeded': 'SMS sign-in is temporarily unavailable.',
     'auth/billing-not-enabled': 'SMS sign-in is unavailable. Continue with Google or email.',
     'auth/web-storage-unsupported': 'This browser blocks storage for Google sign-in. Open CineWall in a regular browser tab, or use email.',
     'auth/captcha-check-failed': 'The security check expired. Try sending the code again.',
     'auth/invalid-phone-number': 'Enter a valid phone number with its country code.',
+    'auth/invalid-email': 'Enter a valid email address.',
+    'auth/user-not-found': 'Check your email and password.',
+    'auth/wrong-password': 'Check your email and password.',
+    'auth/account-exists-with-different-credential': 'This email already uses another sign-in method. Sign in with that method.',
+    'auth/credential-already-in-use': 'This email belongs to another account. Use another email or switch accounts.',
+    'auth/password-does-not-meet-requirements': 'Choose a password that meets the password requirements.',
+    'auth/user-token-expired': 'Your sign-in expired. Use another account to sign in again.',
+    'auth/invalid-user-token': 'Your sign-in expired. Use another account to sign in again.',
   };
   async function run(action) {
-    if (busy) return;
+    if (busy || leaving) return;
     busy = true;
     const panel = !$('#verificationPanel').hidden ? $('#verificationPanel') : $(profilePage ? '#accountPanel' : '#authForms');
     const controls = [...document.querySelectorAll('.auth-card button:not([disabled])')];
     panel.setAttribute('aria-busy', 'true');
     controls.forEach(button => { button.disabled = true; });
     try { await action(); } catch (error) { message(errors[error.code] || 'Could not complete that request. Please try again.', true); }
-    finally { busy = false; panel.setAttribute('aria-busy', 'false'); controls.forEach(button => { button.disabled = false; }); if (pendingDestination) location.replace(pendingDestination); }
+    finally {
+      busy = false;
+      panel.setAttribute('aria-busy', 'false');
+      controls.forEach(button => { button.disabled = false; });
+      if (syncAfterAction) { syncAfterAction = false; refreshAccount(undefined, forceAfterAction); forceAfterAction = false; }
+    }
   }
+  function showEmailMode() {
+    $('#authTitle').textContent = signup ? 'Create your account.' : 'Welcome back.';
+    $('#authIntro').textContent = signup ? 'One account for all your screens.' : 'Sign in to CineWall.';
+    $('#emailSubmit').textContent = signup ? 'Create account' : 'Sign in';
+    $('#toggleSignup').textContent = signup ? 'Already have an account? Sign in' : 'New here? Create an account';
+    $('#password').autocomplete = signup ? 'new-password' : 'current-password';
+    $('#password').minLength = signup ? 6 : 0;
+    $('#signupNameField').hidden = !signup;
+    $('#signupName').disabled = !signup;
+    $('#signupName').required = signup;
+    $('#resetPassword').hidden = signup;
+  }
+  if (!profilePage) showEmailMode();
+  let retry = () => location.reload();
+  $('#authRetry')?.addEventListener('click', () => retry());
   try {
     const response = await fetch('/api/auth/config', { cache: 'no-store' });
     if (!response.ok) throw new Error('Configuration unavailable');
@@ -98,14 +133,35 @@
       const response = await fetch('/api/auth/verify-email', {
         method: 'POST', headers: { Authorization: `Bearer ${await user.getIdToken(true)}` },
       });
+      if (response.status === 429) {
+        emailResendAt = Date.now() + 60000;
+        throw Object.assign(Error(), { code: 'auth/too-many-requests' });
+      }
       if (!response.ok) throw Error('Verification email could not be sent');
     };
+    async function deliverVerification(user) {
+      try {
+        await sendVerification(user);
+        emailResendAt = Date.now() + 60000;
+        message('Verification email sent.');
+      } catch (error) {
+        message(errors[error.code] || 'Could not send the verification email. Use Resend email to try again.', true);
+      }
+    }
+    function rememberAccount(active) {
+      try {
+        localStorage.setItem(returningKey, '1');
+        if (active) localStorage.setItem(usedKey, '1');
+        else localStorage.removeItem(usedKey);
+      } catch {}
+    }
     function showVerification(user) {
       $('#authTitle').textContent = user.email ? 'Verify your email.' : 'Add your email.';
       $('#authIntro').hidden = true;
       $('#authForms').hidden = true;
       $('#accountPanel').hidden = true;
       $('#authRetry').hidden = true;
+      $('#authSwitchAccount').hidden = true;
       $('#verificationPanel').hidden = false;
       $('#verificationHelp').textContent = user.email
         ? 'Open the verification link in your inbox. Check your spam or junk folder too.'
@@ -114,67 +170,97 @@
       $('#linkEmailForm').hidden = Boolean(user.email);
       $('#checkVerification').hidden = !user.email;
       $('#resendVerification').hidden = !user.email;
-      try { localStorage.removeItem('cinewall-account-used'); } catch {}
+      rememberAccount(false);
     }
     async function startSession(user, force = false) {
+      const idToken = await user.getIdToken(force);
+      if (auth.currentUser !== user || leaving) return false;
       const response = await fetch('/api/auth/session', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ idToken: await user.getIdToken(force) }),
+        body: JSON.stringify({ idToken }),
       });
-      if (response.status === 403 && (await response.json()).code === 'EMAIL_VERIFICATION_REQUIRED') return false;
+      if (auth.currentUser !== user || leaving) return false;
+      if (response.status === 403 && (await response.json()).code === 'EMAIL_VERIFICATION_REQUIRED') return force ? false : startSession(user, true);
+      if (!force && response.status === 401) return startSession(user, true);
       if (!response.ok) throw Error('Session unavailable');
-      try { localStorage.setItem('cinewall-account-used', '1'); } catch {}
+      rememberAccount(true);
       return true;
     }
-    function continueAfterSignIn() {
-      if (pendingDestination) return;
-      pendingDestination = next;
-      if (!busy) location.replace(next);
+    function showProfile(user) {
+      $('#verificationPanel').hidden = true;
+      $('#authForms').hidden = true;
+      $('#authIntro').hidden = true;
+      $('#accountPanel').hidden = false;
+      $('#authRetry').hidden = true;
+      $('#authSwitchAccount').hidden = true;
+      $('#authTitle').textContent = 'Your profile.';
+      $('#profileName').textContent = user.displayName || 'CineWall account';
+      $('#profileEmail').textContent = user.email || 'Not added';
+      $('#profilePhone').textContent = user.phoneNumber || 'Not added';
+      $('#profileAvatar').textContent = (Array.from(user.displayName || user.email || 'C')[0]).toUpperCase();
     }
-    let accountQueue = Promise.resolve(), refreshedUser, renderedAccount = false;
-    sdk.onIdTokenChanged(auth, user => {
-      accountQueue = accountQueue.catch(() => {}).then(async () => {
-      if (user) {
-        try {
-          if (pendingDestination) return;
-          const refresh = !user.emailVerified && !busy && refreshedUser !== user;
-          if (refresh) {
-            refreshedUser = user;
-            try { await sdk.reload(user); } catch {}
+    let accountQueue = Promise.resolve(), refreshedUser, firstState = true, hadProviderUser = false;
+    function enter(user) {
+      message('');
+      if (profilePage) showProfile(user);
+      else { leaving = true; location.replace(next); }
+    }
+    function sessionError() {
+      message('Could not start your CineWall session. Please try again.', true);
+      $('#authRetry').hidden = false;
+      $('#authSwitchAccount').hidden = !auth.currentUser || !$('#verificationPanel').hidden || !$('#accountPanel').hidden;
+      if (auth.currentUser) $('#authForms').hidden = true;
+    }
+    refreshAccount = (user = auth.currentUser, force = false) => {
+      accountQueue = accountQueue.then(async () => {
+        if (leaving || auth.currentUser !== user) return;
+        if (busy) { syncAfterAction = true; return; }
+        if (firstState) { firstState = false; message(''); }
+        if (!user) {
+          refreshedUser = undefined;
+          // The server session is usable even when browser storage cannot restore Firebase.
+          if (!hadProviderUser) {
+            const response = await fetch('/api/auth/session', { cache: 'no-store' });
+            if (!response.ok) throw Error('Session unavailable');
+            const state = await response.json();
+            if (auth.currentUser || leaving) return;
+            if (state.authenticated) {
+              rememberAccount(true);
+              enter({ displayName: state.account?.name, email: state.account?.email, phoneNumber: state.account?.phone });
+              return;
+            }
           }
-          if (!user.emailVerified || !await startSession(user, refresh)) {
-            if (!renderedAccount && !busy) message('');
-            renderedAccount = true;
-            showVerification(user);
-            return;
-          }
-          if (!profilePage) { continueAfterSignIn(); return; }
-        } catch {
-          message('Could not start your CineWall session. Try again.', true);
-          $('#authRetry').hidden = false;
+          if (profilePage) { leaving = true; location.replace('/auth.html?next=%2Fprofile.html'); return; }
+          $('#verificationPanel').hidden = true;
+          $('#accountPanel').hidden = true;
+          $('#authRetry').hidden = true;
+          $('#authSwitchAccount').hidden = true;
+          $('#authIntro').hidden = false;
+          if (!phoneMode) showEmailMode();
+          $('#authForms').hidden = false;
           return;
         }
-      } else if (profilePage) { location.replace('/auth.html'); return; }
-      else refreshedUser = undefined;
-      $('#verificationPanel').hidden = true;
-      $('#authIntro').hidden = false;
-      $('#authForms').hidden = Boolean(user); $('#accountPanel').hidden = !user;
-      $('#authTitle').textContent = user ? 'Your profile.' : 'Welcome back.';
+        hadProviderUser = true;
+        if (user.email && !user.emailVerified && refreshedUser !== user) {
+          refreshedUser = user;
+          // A verification link may have been opened since this browser last loaded the account.
+          try { await sdk.reload(user); force = true; } catch {}
+        }
+        if (auth.currentUser !== user || leaving) return;
+        if (!user.emailVerified || !await startSession(user, force)) {
+          if (auth.currentUser === user && !leaving) showVerification(user);
+          return;
+        }
+        enter(user);
+      }).catch(() => { if (auth.currentUser === user && !leaving) sessionError(); });
+    };
+    retry = () => {
       $('#authRetry').hidden = true;
-      if (!renderedAccount && !busy) message('');
-      renderedAccount = true;
-      if (user) {
-        $('#accountIdentity').textContent = user.displayName || user.email || user.phoneNumber;
-        $('#profileName').textContent = user.displayName || 'Your profile';
-        $('#profileEmail').textContent = user.email || 'Not added';
-        $('#profilePhone').textContent = user.phoneNumber || 'Not added';
-        $('#profileAvatar').textContent = (user.displayName || user.email || 'C').slice(0, 1).toUpperCase();
-        $('#verificationState').textContent = user.email && !user.emailVerified ? 'Email not verified yet.' : '';
-        $('#verifyEmail').hidden = !user.email || user.emailVerified;
-        try { localStorage.setItem('cinewall-account-used', '1'); } catch {}
-      } else { try { localStorage.removeItem('cinewall-account-used'); } catch {} }
-      });
-    });
+      $('#authSwitchAccount').hidden = true;
+      message('Connecting…');
+      refreshAccount(auth.currentUser, true);
+    };
+    sdk.onIdTokenChanged(auth, user => refreshAccount(user));
     $('#showPassword')?.addEventListener('click', () => {
       const show = $('#password').type === 'password';
       $('#password').type = show ? 'text' : 'password';
@@ -186,15 +272,14 @@
       await sdk.signInWithPopup(auth, new sdk.GoogleAuthProvider());
     }));
     $('#toggleSignup').addEventListener('click', () => {
-      signup = !signup; $('#emailSubmit').textContent = signup ? 'Create account' : 'Sign in';
-      $('#toggleSignup').textContent = signup ? 'Already have an account?' : 'Create an account';
-      $('#password').autocomplete = signup ? 'new-password' : 'current-password';
-      $('#signupNameField').hidden = !signup;
-      $('#signupName').disabled = !signup;
-      $('#signupName').required = signup;
-      $('#resetPassword').hidden = signup;
-      $('#authTitle').textContent = signup ? 'Join CineWall.' : 'Welcome back.'; message('');
-      if (signup) $('#signupName').focus();
+      signup = !signup;
+      $('#password').value = '';
+      $('#password').type = 'password';
+      $('#showPassword').setAttribute('aria-label', 'Show password');
+      $('#showPassword').setAttribute('aria-pressed', 'false');
+      showEmailMode();
+      message('');
+      $(signup ? '#signupName' : '#email').focus();
     });
     $('#emailForm').addEventListener('submit', event => {
       event.preventDefault(); void run(async () => {
@@ -206,37 +291,63 @@
           const result = await sdk.createUserWithEmailAndPassword(auth, email, password);
           try { await sdk.updateProfile(result.user, { displayName: name }); }
           catch { /* The account exists; still send its verification link. */ }
-          try { await sendVerification(result.user); emailResendAt = Date.now() + 60000; message('Verification email sent.'); }
-          catch { message('Could not send the verification email. Use Resend email to try again.', true); }
+          await deliverVerification(result.user);
         } else await sdk.signInWithEmailAndPassword(auth, email, password);
         $('#password').value = '';
       });
     });
     $('#resetPassword').addEventListener('click', () => run(async () => {
-      if (!$('#email').reportValidity()) return;
-      await sdk.sendPasswordResetEmail(auth, $('#email').value.trim()); message('If an account exists, a reset email will arrive shortly.');
+      if (!$('#email').reportValidity()) { $('#email').focus(); return; }
+      try { await sdk.sendPasswordResetEmail(auth, $('#email').value.trim()); }
+      catch (error) { if (error.code !== 'auth/user-not-found') throw error; }
+      message('If an account exists, a reset email will arrive shortly. Check spam or junk too.');
     }));
     document.querySelectorAll('[data-auth-tab]').forEach(button => button.addEventListener('click', () => {
-      const phone = button.dataset.authTab === 'phone';
-      $('#emailForm').hidden = phone; $('#phoneForm').hidden = !phone || Boolean(confirmation); $('#codeForm').hidden = !phone || !confirmation;
-      $('#authTitle').textContent = phone ? 'Sign in with your phone.' : signup ? 'Join CineWall.' : 'Welcome back.';
+      phoneMode = button.dataset.authTab === 'phone';
+      $('#emailForm').hidden = phoneMode;
+      $('#phoneForm').hidden = !phoneMode || Boolean(confirmation);
+      $('#codeForm').hidden = !phoneMode || !confirmation;
+      if (phoneMode) {
+        $('#authTitle').textContent = 'Continue with your phone.';
+        $('#authIntro').textContent = 'We’ll text you a six-digit code.';
+      } else showEmailMode();
       document.querySelectorAll('[data-auth-tab]').forEach(tab => tab.setAttribute('aria-pressed', String(tab === button))); message('');
     }));
     $('#phoneForm').addEventListener('submit', event => {
       event.preventDefault(); void run(async () => {
         const phone = $('#phone').value.replace(/[\s()-]/g, '');
         if (!/^\+[1-9]\d{7,14}$/.test(phone)) { message('Enter a phone number with its country code, such as +91.', true); $('#phone').focus(); return; }
-        if (Date.now() < smsResendAt) { message('Wait a minute before requesting another code.'); return; }
-        if (!verifier) verifier = new sdk.RecaptchaVerifier(auth, 'recaptcha', { size: 'normal' });
+        if (phone === lastSmsNumber && Date.now() < smsResendAt) { message('Wait a minute before requesting another code.'); return; }
+        const verifier = new sdk.RecaptchaVerifier(auth, 'recaptcha', { size: 'normal' });
         message('Complete the check to receive your code.');
         try {
-          confirmation = await sdk.signInWithPhoneNumber(auth, phone, verifier); smsResendAt = Date.now() + 60000;
+          confirmation = await sdk.signInWithPhoneNumber(auth, phone, verifier);
+          smsResendAt = Date.now() + 60000;
+          lastSmsNumber = phone;
           $('#phoneForm').hidden = true; $('#codeForm').hidden = false; message('Enter the six-digit code sent to your phone.'); $('#otp').focus();
-        } finally { verifier.clear(); verifier = null; }
+        } finally { verifier.clear(); }
       });
     });
-    $('#codeForm').addEventListener('submit', event => { event.preventDefault(); void run(async () => { if (confirmation) await confirmation.confirm($('#otp').value.trim()); $('#otp').value = ''; }); });
-    $('#changePhone').addEventListener('click', () => { confirmation = null; $('#otp').value = ''; $('#codeForm').hidden = true; $('#phoneForm').hidden = false; message(''); });
+    function resetCode() {
+      confirmation = null;
+      $('#otp').value = '';
+      $('#codeForm').hidden = true;
+      $('#phoneForm').hidden = false;
+      $('#phone').focus();
+    }
+    $('#codeForm').addEventListener('submit', event => {
+      event.preventDefault();
+      void run(async () => {
+        if (!confirmation) return;
+        try { await confirmation.confirm($('#otp').value.trim()); $('#otp').value = ''; }
+        catch (error) {
+          if (error.code === 'auth/code-expired' || error.code === 'auth/session-expired') { smsResendAt = 0; resetCode(); }
+          if (error.code === 'auth/invalid-verification-code') { $('#otp').value = ''; $('#otp').focus(); }
+          throw error;
+        }
+      });
+    });
+    $('#changePhone').addEventListener('click', () => { resetCode(); message(''); });
     $('#linkEmailForm').addEventListener('submit', event => {
       event.preventDefault();
       void run(async () => {
@@ -246,48 +357,52 @@
         const { user: linkedUser } = await sdk.linkWithCredential(user, credential);
         $('#linkPassword').value = '';
         showVerification(linkedUser);
-        try { await sendVerification(linkedUser); emailResendAt = Date.now() + 60000; message('Verification email sent.'); }
-        catch { message('Could not send the verification email. Use Resend email to try again.', true); }
+      await deliverVerification(linkedUser);
       });
     });
     $('#checkVerification').addEventListener('click', () => run(async () => {
       const user = auth.currentUser;
       if (!user) return;
+      await accountQueue;
       await sdk.reload(user);
-      if (!user.emailVerified || !await startSession(user, true)) {
+      if (auth.currentUser !== user) return;
+      if (!user.emailVerified) {
         message('Your email is still waiting for verification. Check your inbox and spam folder.', true);
         return;
       }
-      if (profilePage) location.reload();
-      else continueAfterSignIn();
+      $('#verificationPanel').hidden = true;
+      message('Opening CineWall…');
+      syncAfterAction = forceAfterAction = true;
     }));
     $('#resendVerification').addEventListener('click', () => run(async () => {
       if (!auth.currentUser?.email) return;
       if (Date.now() < emailResendAt) { message('Wait a minute before requesting another email.'); return; }
-      try { await sendVerification(auth.currentUser); emailResendAt = Date.now() + 60000; message('Verification email sent.'); }
-      catch { message('Could not send the verification email. Please try again.', true); }
+      await deliverVerification(auth.currentUser);
     }));
-    $('#verifyEmail').addEventListener('click', () => run(async () => {
-      const user = auth.currentUser;
-      if (!user) return;
-      await sdk.reload(user);
-      if (user.emailVerified) {
-        $('#verifyEmail').hidden = true; $('#verificationState').textContent = ''; message('Your email is verified.'); return;
-      }
-      try { await sendVerification(user); message('Verification email sent.'); }
-      catch { message('Could not send the verification email. Wait a minute and try again.', true); }
-    }));
-    async function signOut(destination = '/auth.html') {
-      const response = await fetch('/api/auth/logout', { method: 'POST' });
-      if (!response.ok) throw Error('Could not sign out');
-      await sdk.signOut(auth);
+    async function signOut(destination = '/auth.html?intent=signin') {
+      leaving = true;
       try {
-        localStorage.removeItem('cinewall-account-used');
-        localStorage.setItem('cinewall-account-logout', String(Date.now()));
-      } catch {}
-      location.replace(destination);
+        await accountQueue;
+        const response = await fetch('/api/auth/logout', { method: 'POST' });
+        if (!response.ok) throw Error('Could not sign out');
+        await sdk.signOut(auth);
+        rememberAccount(false);
+        try { localStorage.setItem('cinewall-account-logout', String(Date.now())); } catch {}
+        location.replace(destination);
+      } catch {
+        leaving = false;
+        message('Could not log out. Check your connection and try again.', true);
+      }
     }
     $('#signOut').addEventListener('click', () => run(signOut));
-    $('#changeAccount').addEventListener('click', () => run(() => signOut(`/auth.html?next=${encodeURIComponent(next)}`)));
+    const changeAccount = () => run(() => signOut(`/auth.html?intent=signin&next=${encodeURIComponent(profilePage ? '/profile.html' : next)}`));
+    $('#changeAccount').addEventListener('click', changeAccount);
+    $('#authSwitchAccount').addEventListener('click', changeAccount);
+    if (profilePage) window.addEventListener('storage', event => {
+      if (leaving || event.key !== 'cinewall-account-logout' || !event.newValue) return;
+      leaving = true;
+      $('#accountPanel').hidden = true;
+      location.replace('/auth.html?intent=signin&next=%2Fprofile.html');
+    });
   } catch { message('Sign-in could not load. Check your connection and try again.', true); $('#authRetry').hidden = false; }
 })();

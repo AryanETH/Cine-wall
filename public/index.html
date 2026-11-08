@@ -1,4 +1,4 @@
-<!doctype html>
+﻿<!doctype html>
 <html lang="en">
 <head>
   <meta charset="utf-8">
@@ -83,11 +83,11 @@
   <script defer src="session.js?v=20261104-room-auth-1"></script>
   <script defer src="device-support.js?v=20261027-entry-2"></script>
   <script defer src="mode-switcher.js?v=20261104-room-auth-1"></script>
-  <script defer src="/account-guard.js?v=20261105-profile-card-1"></script>
+  <script defer src="/account-guard.js?v=20261108-account-flow"></script>
   <link rel="preload" href="/fonts/Anta-Regular.ttf" as="font" type="font/ttf" crossorigin>
   <link rel="preload" as="image" href="/assets/cinewall-demo-poster.jpg?v=20261029-cinema-8" fetchpriority="high">
   <link rel="stylesheet" href="styles.css?v=20261105-verified-1">
-  <link rel="stylesheet" href="home.css?v=20261105-verified-1">
+  <link rel="stylesheet" href="home.css?v=20261108-cta-frog">
   <link rel="stylesheet" href="device-support.css?v=20261025-mobile-42">
   <link rel="stylesheet" href="/rooms.css?v=20261027-links-3">
   <link rel="preload" as="image" href="/assets/demo-background.png">
@@ -103,10 +103,10 @@
       <nav class="home-nav" aria-label="Explore CineWall"><a href="#tools">Tools</a><a href="#demo">Demo</a><a href="#how-it-works">How it works</a><a href="#faq">FAQs</a></nav>
       <div class="nav-actions">
         <button id="openSupport" class="button support-button" type="button" aria-label="Support this project"><span class="fi">&#xE006;</span><span>Support this project</span></button>
-        <button class="button support-button" type="button" data-theme-toggle aria-label="Switch to dark theme"><span class="fi" data-theme-icon aria-hidden="true">&#xE708;</span><span data-theme-label>Dark</span></button>
+        <button class="button support-button home-nav-pill" type="button" data-theme-toggle aria-label="Switch to dark theme"><span class="fi" data-theme-icon aria-hidden="true">&#xE708;</span><span data-theme-label>Dark</span></button>
         <div class="home-account" id="homeAccount">
-          <a id="accountLink" class="button account-link" href="/auth.html?next=%2F%3Faccount%3Dopen"><svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><circle cx="12" cy="8" r="4"/><path d="M4 22v-2a8 8 0 0 1 16 0v2"/></svg>Sign in</a>
-          <button id="accountTrigger" class="button account-link account-trigger" type="button" aria-controls="accountPopover" aria-expanded="false" aria-describedby="accountTooltip" hidden><span class="account-avatar" data-account-initials aria-hidden="true"></span>Profile</button>
+          <a id="accountLink" class="button support-button home-nav-pill" href="/auth.html" aria-label="Account"><svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><circle cx="12" cy="8" r="4"/><path d="M4 22v-2a8 8 0 0 1 16 0v2"/></svg><span class="account-label">Account</span></a>
+          <button id="accountTrigger" class="button support-button home-nav-pill account-trigger" type="button" aria-label="Profile" aria-controls="accountPopover" aria-expanded="false" aria-describedby="accountTooltip" hidden><span class="account-avatar" data-account-initials aria-hidden="true"></span><span class="account-label">Profile</span></button>
           <div id="accountTooltip" class="account-tooltip" role="tooltip"><strong data-account-name></strong><span data-account-email></span></div>
           <section id="accountPopover" class="account-popover" aria-label="CineWall account" hidden>
             <div class="account-popover-header"><strong>CineWall account</strong><button class="button account-close" type="button" aria-label="Close account panel">×</button></div>
@@ -125,9 +125,16 @@
     <section class="mode-hero">
       <div class="home-hero-intro">
         <h1>Your free mini theatre <span class="mode-hero-gradient-word">at home.</span></h1>
-        <p class="home-hero-copy">Your laptops. Better together.</p>
+        <p class="home-hero-copy">Your laptops feel Better together.</p>
         <div class="home-hero-actions">
-          <a class="button accent" data-session-mode="video" href="/admin.html?mode=video">Try it free <span class="fi" aria-hidden="true">&#xE72A;</span></a>
+          <span class="home-frog-cta">
+            <span class="home-frog" aria-hidden="true">
+              <img src="/assets/cinewall-cta-frog.png" width="384" height="304" alt="" decoding="async" draggable="false">
+              <span class="home-frog-glasses"><i></i><i></i></span>
+            </span>
+            <a class="button accent" data-session-mode="video" href="/admin.html?mode=video">Try it free <span class="fi" aria-hidden="true">&#xE72A;</span></a>
+            <img class="home-frog-paws" src="/assets/cinewall-cta-frog.png" width="384" height="304" alt="" aria-hidden="true" decoding="async" draggable="false">
+          </span>
           <a class="button subtle" href="#tools">More from CineWall</a>
         </div>
       </div>

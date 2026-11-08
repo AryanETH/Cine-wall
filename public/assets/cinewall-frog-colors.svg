@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg">
+  <!-- Tint the yellow-green vinyl only. Keep the transparent outline, eyes and blush. -->
+  <filter id="dark" x="0" y="0" width="100%" height="100%" color-interpolation-filters="sRGB">
+    <feColorMatrix in="SourceGraphic" result="tintMask" values="0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 3.1875 -3.1875 0 -.17"/>
+    <!-- Base tone #67E63A at the frog's green midtone (219/255). -->
+    <feColorMatrix in="SourceGraphic" values="0 .65 0 0 -.15431  0 .80 0 0 .21490  0 .45 0 0 -.15824  0 0 0 0 1"/>
+    <feComposite in2="tintMask" operator="in"/>
+    <feComposite in2="SourceAlpha" operator="in"/>
+    <feComposite in2="SourceGraphic" operator="atop"/>
+  </filter>
+  <filter id="light" x="0" y="0" width="100%" height="100%" color-interpolation-filters="sRGB">
+    <feColorMatrix in="SourceGraphic" result="tintMask" values="0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 3.1875 -3.1875 0 -.17"/>
+    <!-- Base tone #1668F9 at the frog's green midtone (219/255). -->
+    <feColorMatrix in="SourceGraphic" values="0 .50 0 0 -.34314  0 .80 0 0 -.27922  0 .55 0 0 .50392  0 0 0 0 1"/>
+    <feComposite in2="tintMask" operator="in"/>
+    <feComposite in2="SourceAlpha" operator="in"/>
+    <feComposite in2="SourceGraphic" operator="atop"/>
+  </filter>
+</svg>

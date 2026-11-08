@@ -64,11 +64,12 @@
 </a>
 <div class="auth-intro">
 <span class="auth-eyebrow">MAKE YOURSELF AT HOME</span>
-<h1 id="authTitle">Welcome back.</h1>
-<p id="authIntro">Sign in. Get your screens together.</p>
+<h1 id="authTitle">Your profile.</h1>
+<p id="authIntro">One account for all your screens.</p>
 </div>
 <p id="authStatus" role="status" aria-live="polite">Connecting…</p>
 <button id="authRetry" class="button auth-wide" type="button" hidden>Try again</button>
+<button id="authSwitchAccount" class="auth-link" type="button" hidden>Use another account</button>
 <section id="verificationPanel" hidden>
 <p id="verificationHelp">Open the verification link in your inbox. Check your spam or junk folder too.</p>
 <p id="verificationAddress"></p>
@@ -127,7 +128,7 @@
 </label>
 <button id="emailSubmit" class="button accent auth-wide" type="submit">Sign in</button>
 <div class="auth-actions">
-<button id="toggleSignup" type="button">Create an account</button>
+<button id="toggleSignup" type="button">Already have an account? Sign in</button>
 <button id="resetPassword" type="button">Forgot password?</button>
 </div>
 </form>
@@ -170,9 +171,7 @@
 <path d="M4 22v-2a8 8 0 0 1 16 0v2"/>
 </svg>
 </div>
-<h2 id="profileName">Your profile</h2>
-<p id="accountIdentity">
-</p>
+<h2 id="profileName">CineWall account</h2>
 <div class="profile-details">
 <div>
 <span>Email</span>
@@ -183,9 +182,6 @@
 <strong id="profilePhone">—</strong>
 </div>
 </div>
-<p id="verificationState">
-</p>
-<button id="verifyEmail" class="button auth-wide" type="button" hidden>Verify email</button>
 <button class="button auth-wide profile-theme" data-theme-toggle type="button">
 <svg class="auth-icon" aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
 <path d="M20 13a8 8 0 0 1-9-9 8 8 0 1 0 9 9Z"/>
@@ -208,7 +204,7 @@
 </script>
 <script src="/home-cinema.js?v=20261104-room-auth-1">
 </script>
-<script src="/auth.js?v=20261105-profile-card-1" defer>
+<script src="/auth.js?v=20261108-account-flow" defer>
 </script>
 </body>
 </html>
