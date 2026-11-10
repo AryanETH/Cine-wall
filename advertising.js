@@ -29,12 +29,9 @@ function formLink(value) {
   if (!value) return '';
   try {
     const url = new URL(String(value));
-    const validPath = url.origin === 'https://docs.google.com'
-      ? /^\/forms\/d\/(?:e\/)?[A-Za-z0-9_-]+\/viewform\/?$/.test(url.pathname)
-      : url.origin === 'https://forms.gle' && /^\/[A-Za-z0-9_-]+\/?$/.test(url.pathname);
-    if (validPath && !url.username && !url.password && !url.hash) return url.href;
+    if (!url.username && !url.password && (url.protocol === 'https:' || url.protocol === 'http:')) return url.href;
   } catch {}
-  throw fail(400, 'Use a Google Forms respondent link, such as a forms.gle link.');
+  throw fail(400, 'Enter a valid HTTP or HTTPS URL.');
 }
 
 async function inspectVideo(file) {
@@ -134,7 +131,7 @@ function createAdvertising({ root, password = process.env.CINEWALL_ADS_PASSWORD,
     json(res, 200, { ok: true });
   }
 
-  async function upload(req, title) {
+  async function upload(req, title, description) {
     if (incoming) throw fail(409, 'Wait for the current upload to finish.');
     if (data.creatives.length >= CREATIVE_LIMIT) throw fail(409, 'Remove an unused video before adding another.');
     if (req.headers['content-type'] !== 'video/mp4') throw fail(415, 'Choose an MP4 file.');
@@ -143,6 +140,8 @@ function createAdvertising({ root, password = process.env.CINEWALL_ADS_PASSWORD,
     if (length > LIMIT) throw fail(413, 'Ad videos must be 25 MiB or smaller.');
     title = String(title || '').trim();
     if (!title || title.length > 80) throw fail(400, 'Enter an ad name of up to 80 characters.');
+    description = String(description || '').trim();
+    if (description && description.length > 200) throw fail(400, 'Description must be 200 characters or less.');
     const id = randomUUID();
     const destination = fileFor(id);
     incoming = true;
@@ -165,7 +164,7 @@ function createAdvertising({ root, password = process.env.CINEWALL_ADS_PASSWORD,
       finally { req.off('aborted', abort); req.off('error', abort); req.unpipe(limit); }
       if (size !== length || req.aborted) throw fail(400, 'Upload interrupted.');
       const { duration } = await inspect(destination);
-      const creative = { id, title, duration, size };
+      const creative = { id, title, description, duration, size };
       save({ ...data, creatives: [...data.creatives, creative] });
       committed = true;
       return creative;
@@ -224,7 +223,7 @@ function createAdvertising({ root, password = process.env.CINEWALL_ADS_PASSWORD,
       configure(await bodyJson(req));
       json(res, 200, data);
     } else if (route === '/advt/api/creative' && req.method === 'POST') {
-      await upload(req, url.searchParams.get('title'));
+      await upload(req, url.searchParams.get('title'), url.searchParams.get('description'));
       json(res, 201, data);
     } else if (route.startsWith('/advt/api/creative/') && req.method === 'DELETE') {
       const id = route.split('/').at(-1);

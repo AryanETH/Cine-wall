@@ -10,6 +10,7 @@
 <h2>Video library</h2>
 <form id="uploadAd">
 <label for="adTitle">Ad name</label><input id="adTitle" maxlength="80" required>
+<label for="adDescription">Description (optional)</label><textarea id="adDescription" maxlength="200" rows="2"></textarea>
 <label for="adFile">Ad video</label><input id="adFile" type="file" accept="video/mp4,.mp4" required>
 <p class="hint">H.264 MP4, with AAC audio or no audio. Up to 60 seconds and 25 MiB.</p>
 <button type="submit">Upload video</button>
@@ -21,8 +22,8 @@
 <form id="adSettings">
 <label class="check"><input id="adsEnabled" type="checkbox"> Play ads before each new movie</label>
 <div id="adSlots"></div>
-<label for="adFormUrl">Google Forms link for /advertise</label>
-<input id="adFormUrl" type="url" placeholder="https://forms.gle/…">
+<label for="adFormUrl">Advertiser contact link</label>
+<input id="adFormUrl" type="url" placeholder="https://example.com/contact">
 <button type="submit">Save settings</button>
 </form>
 </section>

@@ -70,7 +70,7 @@
       slots: [...$('#adSlots').querySelectorAll('fieldset')].map(slot => ({
         creativeId: slot.querySelector('select').value,
         format: slot.querySelector('select:last-child').value,
-      })),
+      })).filter(s => s.creativeId),
     };
   }
   function render(draft = data) {
@@ -78,18 +78,59 @@
     $('#adFormUrl').value = draft.formUrl;
     $('#adSlots').replaceChildren();
     const choices = [['', 'No ad'], ...data.creatives.map(ad => [ad.id, ad.title + ' · ' + ad.duration + 's'])];
-    for (let i = 0; i < 3; i++) {
+    
+    // Only show slots that have content or if we have less than 3 slots
+    const activeSlots = draft.slots.filter(s => s?.creativeId);
+    const slotsToShow = Math.max(activeSlots.length + (activeSlots.length < 3 ? 1 : 0), 1);
+    
+    for (let i = 0; i < Math.min(slotsToShow, 3); i++) {
       const slot = draft.slots[i];
       const row = element('fieldset');
       const format = select(formats, slot?.format || 'skippable', 'Format for slot ' + (i + 1));
       const video = select(choices, slot?.creativeId || '', 'Video for slot ' + (i + 1));
       format.disabled = !video.value;
-      video.addEventListener('change', () => { format.disabled = !video.value; });
-      row.append(element('legend', 'Slot ' + (i + 1)), video, format);
+      video.addEventListener('change', () => { 
+        format.disabled = !video.value;
+        render(currentDraft());
+      });
+      
+      const controls = element('div');
+      controls.className = 'slot-controls';
+      controls.append(video, format);
+      
+      // Add X button if slot has content
+      if (video.value) {
+        const removeBtn = element('button', '×');
+        removeBtn.type = 'button';
+        removeBtn.className = 'remove-slot';
+        removeBtn.setAttribute('aria-label', 'Remove slot ' + (i + 1));
+        removeBtn.addEventListener('click', () => {
+          const updated = currentDraft();
+          updated.slots.splice(i, 1);
+          render(updated);
+        });
+        controls.append(removeBtn);
+      }
+      
+      row.append(element('legend', 'Slot ' + (i + 1)), controls);
       $('#adSlots').append(row);
     }
+    
     $('#adLibrary').replaceChildren(...data.creatives.map(ad => {
-      const row = element('li', ad.title + ' · ' + ad.duration + 's ');
+      const row = element('li');
+      const info = element('div');
+      info.className = 'ad-info';
+      const title = element('strong', ad.title);
+      const meta = element('span', ad.duration + 's');
+      meta.className = 'ad-meta';
+      info.append(title);
+      if (ad.description) {
+        info.append(element('br'), element('span', ad.description));
+      }
+      info.append(element('br'), meta);
+      
+      const actions = element('div');
+      actions.className = 'ad-actions';
       const preview = element('a', 'Preview');
       preview.href = '/advt/api/media/' + ad.id;
       preview.target = '_blank';
@@ -99,16 +140,17 @@
       remove.className = 'quiet';
       remove.setAttribute('aria-label', 'Remove ' + ad.title);
       remove.addEventListener('click', () => {
-        if (!confirm('Remove “' + ad.title + '” from the ad library?')) return;
+        if (!confirm('Remove "' + ad.title + '" from the ad library?')) return;
         void run(async () => {
           const draft = currentDraft();
           data = await api('creative/' + ad.id, 'DELETE');
-          draft.slots = draft.slots.map(slot => slot.creativeId === ad.id ? { ...slot, creativeId: '' } : slot);
+          draft.slots = draft.slots.filter(slot => slot.creativeId !== ad.id);
           render(draft);
           notify('Video removed.');
         }, remove);
       });
-      row.append(preview, remove);
+      actions.append(preview, remove);
+      row.append(info, actions);
       return row;
     }));
   }
@@ -123,7 +165,11 @@
       if (!file || file.size > 25 * 1024 * 1024) throw Error('Choose an MP4 no larger than 25 MiB.');
       const draft = currentDraft();
       notify('Uploading and validating video…');
-      data = await api('creative?title=' + encodeURIComponent($('#adTitle').value), 'POST', file, 'video/mp4');
+      const title = $('#adTitle').value;
+      const description = $('#adDescription').value.trim();
+      const params = new URLSearchParams({ title });
+      if (description) params.set('description', description);
+      data = await api('creative?' + params.toString(), 'POST', file, 'video/mp4');
       render(draft);
       event.target.reset();
       notify('Video ready.');
@@ -133,7 +179,6 @@
     event.preventDefault();
     void run(async () => {
       const draft = currentDraft();
-      draft.slots = draft.slots.filter(slot => slot.creativeId);
       data = await api('settings', 'POST', draft);
       render();
       notify(data.enabled ? 'Pre-roll ads are enabled.' : 'Settings saved. Pre-roll ads are off.');
@@ -141,4 +186,3 @@
   });
   void run(async () => { data = await api('settings'); render(); notify(''); });
 })();
-
