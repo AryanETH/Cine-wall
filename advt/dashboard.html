@@ -16,6 +16,17 @@
 <button type="submit">Upload video</button>
 </form>
 <ul id="adLibrary"></ul>
+<h3 style="margin-top: 2rem;">Company Logo</h3>
+<form id="uploadLogo">
+<label for="logoFile">Logo image (optional)</label>
+<input id="logoFile" type="file" accept="image/png,image/jpeg,image/webp,.png,.jpg,.jpeg,.webp">
+<p class="hint">PNG, JPG, or WebP. Max 2 MiB. Shows in corner during ad playback.</p>
+<div style="display: flex; gap: .5rem;">
+<button type="submit">Upload logo</button>
+<button id="removeLogo" type="button" class="quiet" hidden>Remove logo</button>
+</div>
+</form>
+<img id="logoPreview" style="max-width: 200px; margin-top: 1rem; border-radius: .5rem;" hidden>
 </section>
 <section>
 <h2>Video wall pre-roll</h2><p class="hint">Set up to three slots. You can reuse any video.</p>

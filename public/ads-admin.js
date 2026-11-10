@@ -129,12 +129,31 @@
       }
       info.append(element('br'), meta);
       
+      // Add trim info if trimmed
+      if (ad.trimStart > 0 || ad.trimEnd < ad.originalDuration) {
+        const trimInfo = element('span', ` (trimmed from ${ad.originalDuration}s)`);
+        trimInfo.style.fontSize = '.85rem';
+        trimInfo.style.color = '#8b95a3';
+        info.append(element('br'), trimInfo);
+      }
+      
       const actions = element('div');
       actions.className = 'ad-actions';
+      
       const preview = element('a', 'Preview');
       preview.href = '/advt/api/media/' + ad.id;
       preview.target = '_blank';
       preview.rel = 'noopener';
+      
+      // Add trim button if not fully trimmed
+      if (ad.originalDuration > 6) {
+        const trim = element('button', 'Trim');
+        trim.type = 'button';
+        trim.className = 'quiet';
+        trim.addEventListener('click', () => showTrimDialog(ad));
+        actions.append(trim);
+      }
+      
       const remove = element('button', 'Remove');
       remove.type = 'button';
       remove.className = 'quiet';
@@ -153,6 +172,16 @@
       row.append(info, actions);
       return row;
     }));
+    
+    // Update logo preview
+    if (data.logo) {
+      $('#logoPreview').src = '/advt/api/logo?t=' + Date.now();
+      $('#logoPreview').hidden = false;
+      $('#removeLogo').hidden = false;
+    } else {
+      $('#logoPreview').hidden = true;
+      $('#removeLogo').hidden = true;
+    }
   }
   $('#adsLogout').addEventListener('click', () => void run(async () => {
     await api('logout', 'POST', {});
@@ -184,5 +213,59 @@
       notify(data.enabled ? 'Pre-roll ads are enabled.' : 'Settings saved. Pre-roll ads are off.');
     }, event.submitter);
   });
+  
+  $('#uploadLogo').addEventListener('submit', event => {
+    event.preventDefault();
+    void run(async () => {
+      const file = $('#logoFile').files[0];
+      if (!file || file.size > 2 * 1024 * 1024) throw Error('Choose a PNG, JPG, or WebP no larger than 2 MiB.');
+      notify('Uploading logo…');
+      data = await api('logo', 'POST', file, file.type);
+      render();
+      event.target.reset();
+      notify('Logo uploaded.');
+    }, event.submitter);
+  });
+  
+  $('#removeLogo').addEventListener('click', () => {
+    if (!confirm('Remove the logo from all ads?')) return;
+    void run(async () => {
+      data = await api('logo', 'DELETE');
+      render();
+      notify('Logo removed.');
+    }, $('#removeLogo'));
+  });
+  
+  function showTrimDialog(ad) {
+    const presets = [6, 15, 30, 60].filter(d => d <= ad.originalDuration);
+    const options = presets.map(d => `${d}s`).join(', ');
+    const choice = prompt(`Trim "${ad.title}" to:\n\nPresets: ${options}\n\nEnter duration in seconds (6-${ad.originalDuration}):`, ad.duration);
+    if (!choice) return;
+    
+    const targetDuration = Number(choice);
+    if (!Number.isFinite(targetDuration) || targetDuration < 6 || targetDuration > ad.originalDuration) {
+      alert('Enter a number between 6 and ' + ad.originalDuration);
+      return;
+    }
+    
+    let startTime = 0;
+    if (targetDuration < ad.originalDuration) {
+      const startChoice = prompt(`Start trimming at (seconds):\n\n0 = from beginning\n${Math.floor(ad.originalDuration - targetDuration)} = from end`, '0');
+      if (startChoice === null) return;
+      startTime = Number(startChoice) || 0;
+      if (startTime < 0 || startTime + targetDuration > ad.originalDuration) {
+        alert('Invalid start time. Must be between 0 and ' + (ad.originalDuration - targetDuration));
+        return;
+      }
+    }
+    
+    void run(async () => {
+      notify('Trimming video…');
+      data = await api('creative/' + ad.id + '/trim', 'POST', { duration: targetDuration, startTime });
+      render();
+      notify('Video trimmed to ' + targetDuration + 's.');
+    });
+  }
+  
   void run(async () => { data = await api('settings'); render(); notify(''); });
 })();

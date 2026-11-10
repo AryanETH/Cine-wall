@@ -17,10 +17,12 @@ const FORMATS = {
   bumper: { max: 6, skipAfter: null },
 };
 const LIMIT = 25 * 1024 * 1024;
+const LOGO_LIMIT = 2 * 1024 * 1024;
 const CREATIVE_LIMIT = 20;
 const SESSION_MS = 4 * 60 * 60 * 1000;
 const LOCKOUT_MS = 15 * 60 * 1000;
 const DEFAULT_ADVERTISER_FORM = 'https://forms.gle/x32An3oiyoXfxjiT7';
+const TRIM_PRESETS = { 6: 6, 15: 15, 30: 30, 60: 60 };
 const cookieName = 'cinewall_ads';
 const run = promisify(execFile);
 const fail = (status, message) => Object.assign(new Error(message), { status });
@@ -55,7 +57,21 @@ async function inspectVideo(file) {
     || duration < .5 || duration > FORMATS.skippable.max) {
     throw fail(400, 'Upload a 0.5–60 second H.264 MP4 with AAC audio or no audio.');
   }
-  return { duration: Math.ceil(duration * 1000) / 1000 };
+  const width = Number(video.width) || 0;
+  const height = Number(video.height) || 0;
+  return { duration: Math.ceil(duration * 1000) / 1000, width, height };
+}
+
+async function trimVideo(inputPath, outputPath, startTime, duration) {
+  try {
+    await run(process.env.CINEWALL_FFMPEG || 'ffmpeg',
+      ['-y', '-i', inputPath, '-ss', String(startTime), '-t', String(duration), 
+       '-c', 'copy', '-avoid_negative_ts', 'make_zero', outputPath],
+      { timeout: 60000, maxBuffer: 1024 * 1024, windowsHide: true });
+  } catch (error) {
+    if (error.code === 'ENOENT') throw fail(503, 'Video trimming is unavailable. Install ffmpeg.');
+    throw fail(400, 'Video trimming failed: ' + (error.message || 'Unknown error'));
+  }
 }
 
 function createAdvertising({ root, password = process.env.CINEWALL_ADS_PASSWORD,
@@ -69,12 +85,13 @@ function createAdvertising({ root, password = process.env.CINEWALL_ADS_PASSWORD,
   let incoming = false;
   let configuredForm = DEFAULT_ADVERTISER_FORM;
   try { configuredForm = formLink(fallbackForm) || configuredForm; } catch {}
-  let data = { enabled: false, formUrl: configuredForm, creatives: [], slots: [] };
+  let data = { enabled: false, formUrl: configuredForm, creatives: [], slots: [], logo: null };
   try { data = { ...data, ...JSON.parse(fs.readFileSync(manifest, 'utf8')) }; } catch (error) {
     if (error.code !== 'ENOENT') throw error;
   }
   data.formUrl ||= configuredForm;
   const fileFor = id => path.join(directory, id + '.mp4');
+  const logoFileFor = id => path.join(directory, 'logo-' + id);
   const getCreative = id => data.creatives.find(creative => creative.id === id);
   const save = next => {
     fs.mkdirSync(directory, { recursive: true, mode: 0o700 });
@@ -163,8 +180,8 @@ function createAdvertising({ root, password = process.env.CINEWALL_ADS_PASSWORD,
       try { await pipeline(limit, fs.createWriteStream(destination, { flags: 'wx', mode: 0o600 })); }
       finally { req.off('aborted', abort); req.off('error', abort); req.unpipe(limit); }
       if (size !== length || req.aborted) throw fail(400, 'Upload interrupted.');
-      const { duration } = await inspect(destination);
-      const creative = { id, title, description, duration, size };
+      const { duration, width, height } = await inspect(destination);
+      const creative = { id, title, description, duration, originalDuration: duration, width, height, size, trimStart: 0, trimEnd: duration };
       save({ ...data, creatives: [...data.creatives, creative] });
       committed = true;
       return creative;
@@ -225,6 +242,67 @@ function createAdvertising({ root, password = process.env.CINEWALL_ADS_PASSWORD,
     } else if (route === '/advt/api/creative' && req.method === 'POST') {
       await upload(req, url.searchParams.get('title'), url.searchParams.get('description'));
       json(res, 201, data);
+    } else if (route.startsWith('/advt/api/creative/') && route.endsWith('/trim') && req.method === 'POST') {
+      const id = route.split('/').at(-2);
+      const creative = getCreative(id);
+      if (!creative) throw fail(404, 'Ad video not found.');
+      const body = await bodyJson(req);
+      const targetDuration = Number(body.duration);
+      const startTime = Number(body.startTime) || 0;
+      if (!TRIM_PRESETS[targetDuration] && targetDuration !== creative.originalDuration) throw fail(400, 'Invalid trim duration.');
+      if (startTime < 0 || startTime + targetDuration > creative.originalDuration) throw fail(400, 'Invalid trim range.');
+      
+      const tempFile = fileFor(id + '-trim');
+      await trimVideo(fileFor(id), tempFile, startTime, targetDuration);
+      await fs.promises.rename(tempFile, fileFor(id));
+      
+      creative.duration = targetDuration;
+      creative.trimStart = startTime;
+      creative.trimEnd = startTime + targetDuration;
+      save(data);
+      json(res, 200, data);
+    } else if (route === '/advt/api/logo' && req.method === 'POST') {
+      if (incoming) throw fail(409, 'Wait for the current upload to finish.');
+      if (req.headers['content-type']?.startsWith('image/') === false) throw fail(415, 'Upload a PNG, JPG, or WebP image.');
+      const length = Number(req.headers['content-length']);
+      if (!Number.isSafeInteger(length) || length < 1) throw fail(411, 'Upload a file with a known size.');
+      if (length > LOGO_LIMIT) throw fail(413, 'Logo must be 2 MiB or smaller.');
+      
+      const ext = req.headers['content-type'].split('/')[1]?.split(';')[0] || 'png';
+      if (!['png', 'jpeg', 'jpg', 'webp'].includes(ext)) throw fail(415, 'Upload PNG, JPG, or WebP only.');
+      
+      const id = randomUUID();
+      const logoPath = logoFileFor(id + '.' + ext);
+      incoming = true;
+      let committed = false;
+      try {
+        fs.mkdirSync(directory, { recursive: true, mode: 0o700 });
+        await pipeline(req, fs.createWriteStream(logoPath, { flags: 'wx', mode: 0o600 }));
+        
+        // Delete old logo if exists
+        if (data.logo) await fs.promises.unlink(logoFileFor(data.logo)).catch(() => {});
+        
+        data.logo = id + '.' + ext;
+        save(data);
+        committed = true;
+        json(res, 200, data);
+      } finally {
+        incoming = false;
+        if (!committed) await fs.promises.unlink(logoPath).catch(() => {});
+      }
+    } else if (route === '/advt/api/logo' && req.method === 'DELETE') {
+      if (data.logo) {
+        await fs.promises.unlink(logoFileFor(data.logo)).catch(() => {});
+        data.logo = null;
+        save(data);
+      }
+      json(res, 200, data);
+    } else if (route === '/advt/api/logo' && ['GET', 'HEAD'].includes(req.method)) {
+      if (!data.logo) throw fail(404, 'No logo uploaded.');
+      const logoPath = logoFileFor(data.logo);
+      const ext = data.logo.split('.').pop();
+      const contentType = ext === 'png' ? 'image/png' : ext === 'webp' ? 'image/webp' : 'image/jpeg';
+      serveAsset(req, res, logoPath, contentType, false, { cacheControl: 'private, no-store' });
     } else if (route.startsWith('/advt/api/creative/') && req.method === 'DELETE') {
       const id = route.split('/').at(-1);
       if (!getCreative(id)) throw fail(404, 'Ad video not found.');
@@ -240,9 +318,10 @@ function createAdvertising({ root, password = process.env.CINEWALL_ADS_PASSWORD,
 
   function campaign() {
     if (!data.enabled) return [];
+    const logo = data.logo ? '/advt/api/logo' : null;
     return data.slots.flatMap(slot => {
       const creative = getCreative(slot.creativeId);
-      return creative && fs.existsSync(fileFor(creative.id)) ? [{ ...creative, ...FORMATS[slot.format] }] : [];
+      return creative && fs.existsSync(fileFor(creative.id)) ? [{ ...creative, ...FORMATS[slot.format], logo }] : [];
     });
   }
   return { handle, campaign, serve };
