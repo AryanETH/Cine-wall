@@ -1,12 +1,15 @@
 'use strict';
 const fs = require('node:fs');
 const fileResponse = require('./file-response');
-module.exports = function serveAsset(req, res, file, type, versioned = false) {
+module.exports = function serveAsset(req, res, file, type, versioned = false, { cacheControl, onMissing } = {}) {
   fs.stat(file, (error, stat) => {
-    if (error || !stat.isFile()) { res.writeHead(404); res.end(); return; }
+    if (error || !stat.isFile()) {
+      if (onMissing?.()) return;
+      res.writeHead(404); res.end(); return;
+    }
     const etag = `"${stat.size.toString(16)}-${Math.trunc(stat.mtimeMs).toString(16)}"`;
     const headers = { 'Content-Type': type, 'Accept-Ranges': 'bytes', 'ETag': etag, 'X-Content-Type-Options': 'nosniff',
-      'Cache-Control': versioned ? 'public, max-age=31536000, immutable' : 'public, max-age=86400, stale-while-revalidate=604800' };
+      'Cache-Control': cacheControl || (versioned ? 'public, max-age=31536000, immutable' : 'public, max-age=86400, stale-while-revalidate=604800') };
     if (req.headers['if-none-match'] === etag && !req.headers.range) { res.writeHead(304, headers); res.end(); return; }
     let start = 0, end = stat.size - 1, status = 200;
     if (req.headers.range && (!req.headers['if-range'] || req.headers['if-range'] === etag)) {

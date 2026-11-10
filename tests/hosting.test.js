@@ -37,6 +37,36 @@ test('hosted server separates sessions, signals only within a room, and stores n
   });
   assert.equal(malformed.status,400,'invalid request URLs must not crash the process');
   assert.match(malformed.body,/Invalid request URL/);
+  const browserHeaders = { Accept: 'text/html,application/xhtml+xml,*/*;q=0.8', 'Sec-Fetch-Dest': 'document' };
+  for (const [route, method, status, heading] of [
+    ['/this-page-does-not-exist', 'GET', 404, 'This page is missing'],
+    ['/assets/this-image-does-not-exist.png', 'GET', 404, 'This page is missing'],
+    ['/?room=bad', 'GET', 400, 'That link looks incomplete'],
+    ['/..%2fserver.js', 'GET', 403, 'This page is restricted'],
+    ['/this-page-does-not-exist', 'POST', 405, 'That action is unavailable'],
+    ['/advt/restricted', 'GET', 401, 'Unlock the ads dashboard'],
+  ]) {
+    const response = await fetch(base + route, { method, headers: browserHeaders });
+    assert.equal(response.status, status, route);
+    assert.match(response.headers.get('content-type'), /^text\/html/);
+    assert.match(response.headers.get('x-robots-tag'), /noindex/);
+    const html = await response.text();
+    assert.ok(html.includes(heading), route);
+    assert.match(html, /cinewall-error-frog\.png/);
+    assert.match(html, /href="\/">Go home<\/a>/);
+  }
+  const missingHead = await fetch(base + '/this-page-does-not-exist', { method: 'HEAD', headers: browserHeaders });
+  assert.equal(missingHead.status, 404);
+  assert.match(missingHead.headers.get('content-type'), /^text\/html/);
+  assert.equal((await missingHead.arrayBuffer()).byteLength, 0);
+  const missingJson = await fetch(base + '/this-page-does-not-exist');
+  assert.deepEqual(await missingJson.json(), { error: 'Not found' });
+  const adsApiError = await fetch(base + '/advt/api/settings', { headers: browserHeaders });
+  assert.equal(adsApiError.status, 401);
+  assert.match(adsApiError.headers.get('content-type'), /^application\/json/);
+  const frog = await fetch(base + '/assets/cinewall-error-frog.png?v=1', { method: 'HEAD' });
+  assert.equal(frog.status, 200);
+  assert.equal(frog.headers.get('content-type'), 'image/png');
   for(const [route,type] of [['/','text/html'],['/robots.txt','text/plain'],['/sitemap.xml','application/xml'],['/manifest.json','application/manifest+json'],['/assets/robots-laptops-hero.mp4','video/mp4']]) {
     const head=await fetch(base+route,{method:'HEAD'});
     assert.equal(head.status,200,route);assert.ok(head.headers.get('content-type').startsWith(type),route);

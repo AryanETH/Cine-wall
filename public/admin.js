@@ -263,7 +263,7 @@ async function command(payload) {
   const coalesce = payload.type === 'seek' ? 'seek' : payload.type === 'screen-audio' && 'volume' in payload && !muteToggle ? `volume-${payload.screen}` : '';
   if (coalesce) queuedRevisions.set(coalesce, sequence);
   if (muteToggle) queuedRevisions.set(`volume-${payload.screen}`, sequence);
-  if (['play', 'pause', 'seek', 'restart'].includes(payload.type)) {
+  if (!state.adBreak && ['play', 'pause', 'seek', 'restart'].includes(payload.type)) {
     const position = payload.type === 'restart' ? 0 : Number.isFinite(payload.position) ? payload.position : positionNow();
     const patch = { position, anchorTime: now, notBefore: 0, playing: payload.type === 'play' ? true : payload.type === 'pause' || payload.type === 'restart' ? false : state.playing };
     pendingControls.set(key, { sequence, patch, assetVersion: state.asset?.version, sessionMode: state.sessionMode });
@@ -705,6 +705,18 @@ function renderPlayer() {
     loopEnabled = Boolean(state.loop);
     $('#loopButton').classList.toggle('active', loopEnabled);
     timeline.disabled = !hasAsset || uploadBusy || isPreparing();
+    if (state.adBreak) {
+      const paused = state.adBreak.startedAt === null;
+      $('#playerState').hidden = false;
+      $('#playerState').textContent = 'Ad ' + state.adBreak.number + ' of ' + state.adBreak.total + (paused ? ' · paused' : '');
+      $('#play').hidden = !paused;
+      $('#play').disabled = !paused;
+      $('#play').title = 'Resume ad';
+      $('#play').setAttribute('aria-label', 'Resume ad');
+      $('#pause').hidden = paused;
+      for (const selector of ['#restart', '#back', '#forward']) $(selector).disabled = true;
+      timeline.disabled = true;
+    }
     timeline.max = duration || 100;
     $('#duration').textContent = duration ? formatTime(duration) : isYouTube && hasAsset ? 'Loading...' : '--:--';
     syncPreview();
@@ -801,7 +813,7 @@ function showGestureFeedback(direction) {
 }
 
 function seekRelative(seconds) {
-  if (!status.state.asset || status.state.sessionMode === 'presentation') return;
+  if (!status.state.asset || status.state.adBreak || status.state.sessionMode === 'presentation') return;
   const next = Math.max(0, Math.min(duration || Infinity, positionNow() + seconds));
   showGestureFeedback(seconds);
   command({ type: 'seek', position: next });
@@ -822,6 +834,7 @@ function openDisplayOne() {
 }
 
 function playOnAdminDisplay() {
+  if (status.state.adBreak?.startedAt === null) { void command({ type: 'play' }); return; }
   if (!playbackReady()) return;
   // An already-ready display may have been opened using its copied link.
   // Do not navigate/reload it just as the synchronized play command arrives.

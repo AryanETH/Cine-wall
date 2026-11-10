@@ -1,0 +1,32 @@
+* { box-sizing: border-box; }
+html { color-scheme: dark; background: #0e1118; color: #f5f6fa; font: 16px/1.5 system-ui, sans-serif; }
+body { margin: 0; }
+main { max-width: 67rem; margin: 3rem auto; padding: 0 1.25rem; }
+main.unlock { max-width: 27rem; margin-top: 12vh; }
+header { display: flex; justify-content: space-between; align-items: center; }
+.brand { color: #ccfb57; text-decoration: none; font-weight: 750; }
+h1 { margin: .5rem 0; font-size: clamp(2rem, 6vw, 3.2rem); line-height: 1.1; }
+h2 { margin: 0 0 .5rem; font-size: 1.25rem; }
+section { padding: 1.25rem; background: #171d27; border: 1px solid #343d49; border-radius: 1rem; }
+.ads-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1.25rem; }
+@media (max-width: 46rem) { .ads-grid { grid-template-columns: 1fr; } }
+form { display: grid; gap: .5rem; }
+form label:not(.check) { margin-top: .5rem; font-weight: 600; }
+input, select, button { border-radius: .55rem; font: inherit; min-height: 2.65rem; }
+input:not([type=checkbox]), select { width: 100%; min-width: 0; padding: .5rem .65rem; border: 1px solid #4e5a68; background: #10151e; color: inherit; }
+input[type=checkbox] { min-height: 0; accent-color: #ccfb57; }
+button { width: fit-content; border: 0; padding: .45rem .95rem; background: #ccfb57; color: #152201; font-weight: 700; cursor: pointer; }
+button.quiet { background: #2b3442; color: #fff; }
+button:disabled { opacity: .55; cursor: wait; }
+:focus-visible { outline: 2px solid #bdf269; outline-offset: 3px; }
+.hint { margin: .15rem 0 .6rem; color: #bac5d0; font-size: .9rem; }
+.status { min-height: 1.5em; overflow-wrap: anywhere; }
+.status[data-error] { color: #ffb0ac; }
+.check { display: flex; align-items: center; gap: .5rem; }
+#adSlots { display: grid; gap: .55rem; margin: .5rem 0; }
+#adSlots fieldset { min-width: 0; display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.15fr); gap: .55rem; border: 1px solid #3b4657; border-radius: .55rem; }
+#adSlots legend { padding-inline: .35rem; }
+#adLibrary { display: grid; gap: .5rem; padding: 0; list-style: none; }
+#adLibrary li { display: flex; flex-wrap: wrap; gap: .6rem; align-items: center; border-top: 1px solid #343d49; padding-top: .5rem; overflow-wrap: anywhere; }
+#adLibrary a { color: #ccfb57; }
+

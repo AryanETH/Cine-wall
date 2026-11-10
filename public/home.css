@@ -99,6 +99,11 @@ html:not([data-theme="light"]) .home-preview-video:not([data-theme-ready]) { vis
 .home-faq-list p { margin: 0; padding: 0 18px 22px 0; color: var(--muted); font-size: .94rem; line-height: 1.7; }
 .home-nav a:focus-visible, .home-hero-actions a:focus-visible, .home-section a:focus-visible, .home-preview button:focus-visible, .home-faq-list summary:focus-visible { outline: 3px solid var(--accent); outline-offset: 4px; }
 .mode-footer a { color: var(--accent); }
+.mode-footer .home-advertise-link { color: #ff8181; animation: home-advertise-fade 2.5s ease-in-out infinite alternate; }
+[data-theme="light"] .mode-footer .home-advertise-link { color: #a4141b; }
+.mode-footer .home-advertise-link:is(:hover, :focus-visible) { animation: none; }
+@keyframes home-advertise-fade { from { opacity: .72; } to { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) { .mode-footer .home-advertise-link { animation: none; } }
 .mode-footer { font-size: .85rem; flex-wrap: wrap; gap: 20px; }
 .home-footer-links { display: flex; align-items: center; flex-wrap: wrap; gap: 24px; }
 .mode-footer .home-visit-count { display: grid; gap: 4px; }

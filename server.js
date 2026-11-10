@@ -6,6 +6,7 @@ const path = require('node:path');
 const os = require('node:os');
 const zlib = require('node:zlib');
 const { execFile } = require('node:child_process');
+const { randomUUID } = require('node:crypto');
 const downloads = require('./youtube-downloads');
 const { extractYouTubeId } = require('./youtube-url');
 const cacheBudget = require('./cache-budget');
@@ -15,15 +16,18 @@ const createMicRoom = require('./mic-room');
 const fileResponse = require('./file-response');
 const serveAsset = require('./static-assets');
 const textResponse = require('./text-response');
+const { sendPageError } = require('./page-errors');
 const firebaseConfig = require('./firebase-config');
 const { createAccountAuth, protectedPage } = require('./account-auth');
 const { createVerificationSender } = require('./verification-email');
+const { createAdvertising } = require('./advertising');
 const sendVerification = createVerificationSender({ projectId: firebaseConfig().config?.projectId });
 const accountAuth = createAccountAuth({ sendVerification });
 const atomicJson = require('./atomic-json');
 const { getDemoVisitSnapshot } = require('./public/home-footer');
-const SERVER_ID = require('node:crypto').randomUUID();
+const SERVER_ID = randomUUID();
 const PLAYBACK_START_LEAD_MS = 700;
+const AD_START_LEAD_MS = 1400;
 
 const PREFERRED_PORT = Number(process.env.PORT || 4173);
 const MAX_PORT_ATTEMPTS = 20;
@@ -78,6 +82,8 @@ let preparation = null;
 let preparationController = null;
 let sourceOwner = null;
 const relayRequests = new Map();
+let adRun = null;
+let adTimer;
 
 function defaultAudioSettings(all = false) {
   return Object.fromEntries(Array.from({ length: 5 }, (_, index) => [String(index + 1), { volume: 1, muted: !all && index > 0 }]));
@@ -125,7 +131,7 @@ try {
 } catch {}
 
 function saveSession() {
-  try { atomicJson(SESSION_FILE, { state: snapshot(), assetFile, sourceOwner }); }
+  try { atomicJson(SESSION_FILE, { state, assetFile, sourceOwner }); }
   catch(error){console.warn(`[CineWall] Session save failed (${error.code||'WRITE_ERROR'}); previous saved state retained.`);}
 }
 
@@ -169,7 +175,62 @@ function currentPosition(at = Date.now()) {
 }
 
 function snapshot() {
-  return { ...state, seekPending: Boolean(pendingSeek), seekResume: Boolean(pendingSeek?.resume), ownerId: record?.admin.id || sourceOwner?.id || '', roomId: room || 'hotspot', allReady: allDisplaysReady(), preparation, serverId: SERVER_ID, serverTime: Date.now() };
+  return { ...state, ...(activeAd() ? { adBreak: publicAd() } : {}), seekPending: Boolean(pendingSeek), seekResume: Boolean(pendingSeek?.resume), ownerId: record?.admin.id || sourceOwner?.id || '', roomId: room || 'hotspot', allReady: allDisplaysReady(), preparation, serverId: SERVER_ID, serverTime: Date.now() };
+}
+
+function activeAd() {
+  return adRun && adRun.version === state.asset?.version && state.sessionMode === 'video' ? adRun : null;
+}
+
+function publicAd() {
+  const { slots, index, id, startedAt, position } = adRun;
+  const { title, duration, skipAfter } = slots[index];
+  return { id, title, duration, skipAfter, startedAt, position, number: index + 1, total: slots.length };
+}
+
+function adPosition() {
+  return adRun.position + (adRun.startedAt === null ? 0 : Math.max(0, Date.now() - adRun.startedAt) / 1000);
+}
+
+function cancelAdBreak() {
+  clearTimeout(adTimer);
+  adRun = null;
+}
+
+function startAdClock(lead) {
+  clearTimeout(adTimer);
+  const current = adRun;
+  current.startedAt = Date.now() + lead;
+  const remaining = (current.slots[current.index].duration - current.position) * 1000;
+  adTimer = setTimeout(() => {
+    if (activeAd() === current) advanceAd();
+  }, Math.max(0, remaining) + lead);
+  adTimer.unref();
+}
+
+function startAdSlot() {
+  adRun.id = randomUUID();
+  adRun.position = 0;
+  startAdClock(AD_START_LEAD_MS);
+}
+
+function advanceAd() {
+  const now = Date.now();
+  let executeAt = now;
+  let type = 'ad-break';
+  adRun.index++;
+  if (adRun.index < adRun.slots.length) startAdSlot();
+  else {
+    const version = adRun.version;
+    cancelAdBreak();
+    const playing = allDisplaysReady();
+    if (playing) { type = 'play'; executeAt += PLAYBACK_START_LEAD_MS; }
+    state = { ...state, playing, anchorTime: executeAt, adCompletedFor: version };
+  }
+  state = { ...state, notBefore: executeAt, commandId: ++commandSequence };
+  if (!adRun) saveSession();
+  broadcast('command', { type, executeAt, ...snapshot() });
+  broadcast('state', snapshot());
 }
 
 function identity(req) {
@@ -290,6 +351,7 @@ function audioSettingsForMode(sessionMode) {
 }
 
 function removeCurrentAsset() {
+  cancelAdBreak();
   pendingSeek = null;
   for (const request of relayRequests.values()) request.reject(new Error('The selected file changed.'));
   const oldPath = assetFile?.path;
@@ -304,8 +366,8 @@ function applyCommand(input) {
   const now = Date.now();
   // Give every ready browser time to receive the same start, rather than
   // starting the source first. Mixer changes remain immediate.
-  const executeAt = now + (input.type === 'play' ? PLAYBACK_START_LEAD_MS : 0);
-  const type = String(input.type || '');
+  let executeAt = now + (input.type === 'play' ? PLAYBACK_START_LEAD_MS : 0);
+  let type = String(input.type || '');
   let position = currentPosition(executeAt);
 
   if (type === 'session-mode') {
@@ -365,13 +427,31 @@ function applyCommand(input) {
       screen.playbackTime = 0;
       screen.error = '';
     }
+  } else if (activeAd() && ['play', 'pause', 'seek', 'restart'].includes(type)) {
+    if (type === 'seek' || type === 'restart') throw Object.assign(new Error('Seeking is available after the ad break.'), { status: 409 });
+    if (type === 'pause' && adRun.startedAt !== null) {
+      adRun.position = adPosition();
+      adRun.startedAt = null;
+      clearTimeout(adTimer);
+    } else if (type === 'play' && adRun.startedAt === null) startAdClock(PLAYBACK_START_LEAD_MS);
+    type = 'ad-break';
+    executeAt = now;
   } else if (type === 'play') {
     if (pendingSeek) { const error = new Error('Wait until the screens finish seeking.'); error.status = 409; throw error; }
     if (!state.asset || !['video', 'audio', 'youtube'].includes(state.sessionMode)) throw new Error('Choose a video, audio file, or YouTube link first');
     if (!allDisplaysReady()) { const error = new Error('Wait until every display is ready.'); error.status = 409; throw error; }
     if (input.position !== undefined && !Number.isFinite(input.position)) throw new Error('Invalid playback position');
     if (Number.isFinite(input.position)) position = Math.max(0, Number(input.position));
-    state = { ...state, playing: true, position, anchorTime: executeAt };
+    const slots = state.sessionMode === 'video' && state.asset.kind === 'video'
+      && state.adCompletedFor !== state.asset.version ? advertising.campaign() : [];
+    if (slots.length) {
+      cancelAdBreak();
+      adRun = { version: state.asset.version, slots, index: 0 };
+      startAdSlot();
+      type = 'ad-break';
+      executeAt = now;
+    }
+    state = { ...state, playing: !slots.length, position, anchorTime: executeAt };
   } else if (type === 'pause') {
     pendingSeek = null;
     state = { ...state, playing: false, position, anchorTime: executeAt };
@@ -927,6 +1007,33 @@ async function handle(req, res, url) {
     }
     if (await screenSharing.handle(req, res, url)) return;
     if (await micRoom.handle(req, res, url)) return;
+    if (url.pathname.startsWith('/api/ad-break/')) {
+      const run = activeAd();
+      const id = url.searchParams.get('ad');
+      if (!run || run.id !== id) { json(res, 404, { error: 'That ad is no longer playing.' }); return; }
+      const slot = run.slots[run.index];
+      if (url.pathname === '/api/ad-break/media' && ['GET', 'HEAD'].includes(req.method)) {
+        advertising.serve(req, res, slot.id);
+        return;
+      }
+      if (url.pathname === '/api/ad-break/skip' && req.method === 'POST') {
+        if (slot.skipAfter === null || run.startedAt === null || adPosition() < slot.skipAfter) {
+          json(res, 409, { error: 'This ad cannot be skipped yet.' }); return;
+        }
+        advanceAd();
+        json(res, 200, { state: snapshot() });
+        return;
+      }
+      if (url.pathname === '/api/ad-break/unavailable' && req.method === 'POST') {
+        if (record) roomRegistry.requireAdmin(record, req);
+        else checkOwner(req);
+        advanceAd();
+        json(res, 200, { state: snapshot() });
+        return;
+      }
+      json(res, 405, { error: 'Method not allowed' });
+      return;
+    }
     if (req.method === 'GET' && url.pathname === '/api/time') {
       json(res, 200, { serverTime: Date.now() });
       return;
@@ -1181,6 +1288,7 @@ return {
     if (record?.mode === 'share' && member.screen) screenSharing.ensureCount(member.screen);
   },
   recover(device) {
+    cancelAdBreak();
     pendingSeek = null;
     preparationController?.abort();
     const position = currentPosition();
@@ -1194,7 +1302,7 @@ return {
   pulse() { finishSeekIfReady(); broadcast('pulse', snapshot()); activeScreens(); screenSharing.pulse(); micRoom.pulse(); },
   lastUsed: Date.now(),
   idle() { return !viewers.size && !uploadInProgress && screenSharing.idle() && micRoom.idle(); },
-  close() { preparationController?.abort(); for (const viewer of viewers) viewer.end(); viewers.clear(); screenSharing.close(); micRoom.close(); },
+  close() { cancelAdBreak(); preparationController?.abort(); for (const viewer of viewers) viewer.end(); viewers.clear(); screenSharing.close(); micRoom.close(); },
 };
 }
 
@@ -1211,23 +1319,30 @@ const tlsEnabled = Boolean(process.env.CINEWALL_TLS_CERT && process.env.CINEWALL
 if (Boolean(process.env.CINEWALL_TLS_CERT) !== Boolean(process.env.CINEWALL_TLS_KEY)) throw new Error('Set both CINEWALL_TLS_CERT and CINEWALL_TLS_KEY for HTTPS.');
 const protocol = tlsEnabled ? 'https' : 'http';
 function respondJson(res, status, data) { const body = JSON.stringify(data); res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' }); res.end(body); }
+function respondError(req, res, status, message) {
+  if (!sendPageError(req, res, status)) respondJson(res, status, { error: message });
+}
 async function bodyJson(req) { let size = 0; const chunks = []; for await (const chunk of req) { size += chunk.length; if (size > MAX_JSON_BODY) throw Object.assign(new Error('Request is too large'), { status: 413 }); chunks.push(chunk); } try { return JSON.parse(Buffer.concat(chunks).toString() || '{}'); } catch { throw new Error('Invalid JSON'); } }
 function serveStatic(req, res, pathname) {
   const route = pathname === '/' ? '/index.html' : pathname === '/favicon.ico' ? '/favicon.svg' : pathname;
   const firebasePage = route === '/index.html' || route === '/auth.html' || protectedPage(route);
-  const decoded = decodeURIComponent(route);
+  let decoded;
+  try { decoded = decodeURIComponent(route); }
+  catch { respondError(req, res, 400, 'Invalid request URL'); return; }
   const resolved = path.resolve(PUBLIC_DIR, `.${decoded}`);
   if (!resolved.startsWith(`${PUBLIC_DIR}${path.sep}`)) {
-    respondJson(res, 403, { error: 'Forbidden' });
+    respondError(req, res, 403, 'Forbidden');
     return;
   }
   if (route.startsWith('/assets/') || route.startsWith('/fonts/')) {
-    serveAsset(req, res, resolved, contentTypes[path.extname(resolved).toLowerCase()] || 'application/octet-stream', new URL(req.url, 'http://localhost').searchParams.has('v'));
+    serveAsset(req, res, resolved, contentTypes[path.extname(resolved).toLowerCase()] || 'application/octet-stream',
+      new URL(req.url, 'http://localhost').searchParams.has('v'), { onMissing: () => sendPageError(req, res, 404) });
     return;
   }
   fs.readFile(resolved, async (error, data) => {
     if (error) {
-      respondJson(res, error.code === 'ENOENT' ? 404 : 500, { error: 'Not found' });
+      const status = ['ENOENT', 'ENOTDIR', 'EISDIR'].includes(error.code) ? 404 : 500;
+      respondError(req, res, status, status === 404 ? 'Not found' : 'Could not load this page');
       return;
     }
     const type = route === '/manifest.json' ? 'application/manifest+json; charset=utf-8' : contentTypes[path.extname(resolved).toLowerCase()] || 'application/octet-stream';
@@ -1266,6 +1381,7 @@ if (ROOM_STORE_ROOT !== CACHE_ROOT) {
   }
 }
 const roomRegistry = createRooms(ROOM_STORE_ROOT);
+const advertising = createAdvertising({ root: path.resolve(process.env.CINEWALL_ADS_STORE_DIR || ROOM_STORE_ROOT) });
 function getSession(record) {
   if (!sessions.has(record.id)) sessions.set(record.id, createSession(record.id, record));
   return sessions.get(record.id);
@@ -1274,7 +1390,7 @@ const requestHandler = async (req, res) => {
  try {
   let url;
   try { url = new URL(req.url, 'http://localhost'); }
-  catch { respondJson(res, 400, { error: 'Invalid request URL' }); return; }
+  catch { respondError(req, res, 400, 'Invalid request URL'); return; }
   if (req.method === 'GET' && url.pathname === '/api/auth/config') { respondJson(res, 200, { ...firebaseConfig(), brandedVerification: Boolean(sendVerification) }); return; }
   // Public demo counter: shared across rooms, instances and server restarts.
   if (req.method === 'GET' && url.pathname === '/api/demo-visits') {
@@ -1290,12 +1406,30 @@ const requestHandler = async (req, res) => {
     return;
   }
   if (req.method === 'GET' && url.pathname === '/api/health') { respondJson(res, 200, { ok: true, roomLinksExpire: false, roomStorage: process.env.RAILWAY_VOLUME_MOUNT_PATH ? 'persistent-volume' : 'filesystem' }); return; }
+  if (await advertising.handle(req, res, url, {
+    json: respondJson, bodyJson,
+    page(name) {
+      const html = fs.readFileSync(path.join(__dirname, 'advt', name));
+      res.writeHead(200, {
+        'Content-Type': 'text/html; charset=utf-8',
+        'Cache-Control': 'no-store',
+        'Referrer-Policy': 'no-referrer',
+        'X-Content-Type-Options': 'nosniff',
+        'Content-Security-Policy': "default-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'",
+      });
+      res.end(req.method === 'HEAD' ? undefined : html);
+    },
+  })) return;
   if (await accountAuth.handle(req, res, url, bodyJson)) return;
   const room = url.searchParams.get('room') || '';
   if (room || /^\/(?:api\/|events$|share-events$|mic-events$|__cinewall_peer__\/|(?:admin|screen|share|mic)\.html$)/.test(url.pathname)) res.setHeader('X-Robots-Tag', 'noindex, nofollow');
-  if (room && !/^[a-f0-9-]{36}$/.test(room)) { respondJson(res, 400, { error: 'Invalid room link.' }); return; }
+  if (room && !/^[a-f0-9-]{36}$/.test(room)) { respondError(req, res, 400, 'Invalid room link.'); return; }
   const dynamic = url.pathname.startsWith('/api/') || ['/events', '/share-events', '/mic-events'].includes(url.pathname);
-  if (!dynamic) { if (['GET','HEAD'].includes(req.method)) serveStatic(req, res, url.pathname); else respondJson(res, 405, { error: 'Method not allowed' }); return; }
+  if (!dynamic) {
+    if (['GET','HEAD'].includes(req.method)) serveStatic(req, res, url.pathname);
+    else { res.setHeader('Allow', 'GET, HEAD'); respondError(req, res, 405, 'Method not allowed'); }
+    return;
+  }
   if (req.method === 'POST' && req.headers.origin) {
     const allowed = String(req.headers['x-forwarded-host'] || req.headers.host || '').split(',')[0].trim();
     if (new URL(req.headers.origin).host !== allowed) { respondJson(res, 403, { error: 'Open CineWall directly to use this room.' }); return; }
@@ -1318,7 +1452,12 @@ const requestHandler = async (req, res) => {
   roomRegistry.authorize(req, url, record);
   const session = getSession(record); session.lastUsed = Date.now();
   await session.handle(req, res, url);
- } catch (error) { if (!res.headersSent) respondJson(res, error.status || 400, { error: error.message || 'Request failed' }); else res.destroy(); }
+ } catch (error) {
+   if (res.headersSent) res.destroy();
+   else if (!sendPageError(req, res, error.status || 500)) {
+     respondJson(res, error.status || 400, { error: error.message || 'Request failed' });
+   }
+ }
 };
 const server = tlsEnabled ? require('node:https').createServer({ cert: fs.readFileSync(process.env.CINEWALL_TLS_CERT), key: fs.readFileSync(process.env.CINEWALL_TLS_KEY) }, requestHandler) : http.createServer(requestHandler);
 server.requestTimeout = 2 * 60 * 60 * 1000;

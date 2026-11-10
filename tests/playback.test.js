@@ -540,12 +540,14 @@ test('clear-asset resets and broadcasts playback without removing joined Devices
   const deleted = [];
   const events = [];
   let persisted = false;
+  let cancelledAdBreaks = 0;
   const context = vm.createContext({ Date, String, Number, Object, Error,
     fs: { unlink(file) { deleted.push(file); } }, SERVER_ID: 'test-server',
     assetFile: { path: 'session-wall-copy.mp4' }, uploadInProgress: false, commandSequence: 0, relayRequests: new Map(), sourceOwner: null,
     state: { sessionMode: 'video', asset: { version: 'loaded-1' }, playing: true, position: 50, page: 2, screenCount: 3, audioSettings: { 1: { muted: false } } },
     screens: new Map([[1, { ready: true, mediaReady: true, paused: false, playbackTime: 50, fileName: 'movie.mp4' }]]),
     currentPosition: () => 50, broadcast: (event, payload) => events.push({ event, payload }),
+    cancelAdBreak() { cancelledAdBreaks++; },
     snapshot: () => context.state, saveSession() { persisted = true; },
   });
   vm.runInContext(slice, context);
@@ -564,6 +566,7 @@ test('clear-asset resets and broadcasts playback without removing joined Devices
   assert.equal(context.screens.get(1).mediaReady, false);
   assert.equal(context.screens.get(1).fileName, '');
   assert.deepEqual(deleted, ['session-wall-copy.mp4']);
+  assert.equal(cancelledAdBreaks, 1);
   assert.deepEqual(events.map((event) => event.event), ['command', 'state']);
   assert.equal(persisted, true);
 });

@@ -12,6 +12,14 @@ Redeploy the changed files, then reload the dashboard. This source change does n
 
 On the public website, numbered links use the page's public origin. Choosing a mode opens its workspace automatically. Copy its device links and open a different numbered link on each laptop. Local installations use the server's LAN address for remote links. The source laptop owns the session before selecting a file. Guests can control their own sound but cannot replace sources or manage other devices. Reopen the dashboard URL in the same browser to resume saved access. Room records persist inside the configured cache; see ROOMS.md for authentication, expiry and quotas.
 
+## Advertising setup
+
+Set `CINEWALL_ADS_PASSWORD` as a private service variable and open `/advt`. The dashboard stays locked if the variable is missing. The login is separate from CineWall accounts and rate limited. Set `CINEWALL_ADS_STORE_DIR` to a persistent writable volume if the room store is ephemeral. The server keeps uploaded ad videos and settings in its `advertising` subdirectory. FFprobe must be installed, as it is in the Docker image.
+
+Upload an H.264 MP4 with AAC audio or no audio, choose up to three pre-roll slots, and enable the campaign. Every slot has its own format. A skippable clip must be longer than five seconds and at most 60 seconds. A standard non-skippable clip can be up to 15 seconds, and a bumper can be up to six. Slots run once per loaded video. The ad is sliced across the selected displays, and Screen 1 carries its audio.
+
+The homepage footer links directly to the published CineWall Google Form. The separate `/advertise` address can be configured in the ads dashboard or with `CINEWALL_ADS_FORM_URL`.
+
 ## Local video/audio sharing
 
 Before sharing a video, the dashboard checks its container and tracks, then tests whether the current browser decodes a frame. Metadata reads are bounded: MP4 data boxes are skipped even when metadata sits after 12 GB of movie data. Accepted video uses MP4/M4V with H.264, VP9 or AV1 video and AAC audio, WebM with VP8/VP9 and Opus/Vorbis, or MKV with H.264 and AAC (including HE-AAC and multiple language tracks). Metadata validation allows common 8-bit profiles; browser decoding still determines whether each device can play the file. HEVC/Dolby MKV and unsupported tracks remain rejected. CineWall does not convert or remux uploaded movies.

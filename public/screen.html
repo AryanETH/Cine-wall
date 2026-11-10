@@ -17,6 +17,7 @@
   <script src="session.js?v=20261104-room-auth-1"></script>
   <script src="media-peer.js?v=20261027-entry-2"></script>
   <link rel="stylesheet" href="styles.css?v=20261105-assets-1">
+  <link rel="stylesheet" href="wall-ads.css">
   <link rel="stylesheet" href="hand-controls.css?v=20261029-player-5">
   <link rel="stylesheet" href="device-support.css?v=20261025-mobile-42">
   <link rel="stylesheet" href="/rooms.css?v=20261027-links-3">
@@ -46,6 +47,19 @@
     <div id="screenGestureFeedback" class="gesture-feedback" aria-live="polite"></div>
   </div>
 
+  <section id="wallAd" class="wall-ad" aria-label="Advertisement" hidden>
+    <div id="wallAdStage" class="wall-stage">
+      <video id="wallAdVideo" playsinline preload="auto" aria-label="Advertisement video"></video>
+    </div>
+    <div class="wall-ad-panel">
+      <div class="wall-ad-meta"><strong id="wallAdBadge"></strong><span id="wallAdTitle"></span><span id="wallAdCountdown"></span></div>
+      <div class="wall-ad-actions">
+        <button id="wallAdMute" type="button" hidden>Mute ad</button>
+        <button id="wallAdPause" type="button" hidden>Pause ad</button>
+        <button id="wallAdSkip" type="button" hidden>Skip ad</button>
+      </div>
+    </div>
+  </section>
   <header id="screenHud" class="screen-hud" hidden aria-hidden="true">
     <div class="screen-brand"><span id="screenBrandIcon" class="fi">&#xE714;</span><strong>CINEWALL</strong></div>
     <div class="screen-status-group">
@@ -161,7 +175,8 @@
   <script src="hand-gestures.js?v=20261029-poses-2"></script>
   <script src="hand-tabs.js?v=20261029-handoff-2"></script>
   <script src="hand-controls.js?v=20261029-practice-6"></script>
-  <script src="desktop-entry.js?v=20261025-mobile-42" data-src="screen.js?v=20261105-sync-1"></script>
+  <script src="wall-ads.js"></script>
+  <script src="desktop-entry.js?v=20261025-mobile-42" data-src="screen.js?v=20261110-ad-break"></script>
   <script src="/rooms-ui.js?v=20261104-room-auth-1"></script>
 </body>
 </html>

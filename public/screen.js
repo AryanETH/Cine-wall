@@ -39,6 +39,16 @@ let clockSamples = [];
 let clockSyncInFlight = false;
 let lastExecutedCommand = '';
 let currentState = null;
+const adController = window.CineWallAds?.create({
+  now: serverNow,
+  link: path => window.CineWallSession?.link(path) || path,
+  request: async path => {
+    const response = await fetch(path, { method: 'POST' });
+    if (!response.ok) throw new Error('Ad request failed.');
+    applyWhenReady((await response.json()).state);
+  },
+  togglePlayback,
+});
 let handControls = null;
 let currentAssetVersion = '';
 let endedAssetVersion = '';
@@ -291,6 +301,7 @@ function applyAudioSettings() {
   $('#screenMute').setAttribute('aria-label', actuallyMuted ? 'Unmute this Device' : 'Mute this Device');
   $('#screenMute').setAttribute('aria-pressed', String(actuallyMuted));
   const shownVolume = actuallyMuted ? 0 : setting.volume;
+  adController?.audio(Number(setting.volume) || 0, actuallyMuted);
   slider.value = shownVolume; slider.dataset.muted = String(actuallyMuted);
   $('#screenVolumeValue').textContent = `${Math.round(shownVolume * 100)}%`;
 }
@@ -586,6 +597,7 @@ async function initYouTubePlayer(videoId, force = false) {
 function applyStateAppearance(nextState) {
   if (currentState && nextState.serverId === currentState.serverId && nextState.commandId < currentState.commandId) return;
   const previousAudioMode = currentState?.audioMode;
+  if (nextState.adBreak) localPlaybackIntent = null;
   if (localPlaybackIntent) {
     if (localPlaybackIntent.assetVersion === nextState.asset?.version && localPlaybackIntent.serverId === nextState.serverId) nextState = { ...nextState, ...localPlaybackIntent.patch };
     else localPlaybackIntent = null;
@@ -595,6 +607,14 @@ function applyStateAppearance(nextState) {
   sessionMode = nextState.sessionMode || 'video';
   setLayout(nextState.screenCount);
   setWallMode(nextState.mode || 'crop');
+  if (nextState.adBreak) video.pause();
+  const adAudio = audioSetting();
+  adController?.update(nextState.adBreak, {
+    ready: ready && screenNumber > 0 && sessionMode === 'video',
+    screen: screenNumber, total: wallScreens, volume: Number(adAudio.volume) || 0, muted: Boolean(adAudio.muted),
+    fit: nextState.mode || 'fit',
+    controller: screenNumber === 1 && window.CineWallSession?.membership?.admin === true,
+  });
   applyAudioSettings();
   if (previousAudioMode !== nextState.audioMode && nextState.playing && ready) resumeRoutedAudio();
 
@@ -708,7 +728,8 @@ function seekTo(position) {
 
 async function command(payload) {
   if (removedScreenNumber || !screenNumber || !ready) return;
-  if (payload.type === 'play' && currentState?.allReady !== true) return;
+  if (payload.type === 'play' && !currentState?.adBreak && currentState?.allReady !== true) return;
+  if (currentState?.adBreak && ['seek', 'restart'].includes(payload.type)) return;
   const muteToggle = payload.type === 'screen-audio' && 'muted' in payload && !('volume' in payload);
   if (muteToggle) {
     if (localVolumeTimer) payload = { ...payload, volume: audioSetting().volume };
@@ -718,7 +739,7 @@ async function command(payload) {
   if (['play', 'seek', 'restart'].includes(payload.type)) endedAssetVersion = '';
   const sequence = ++localControlSequence;
   const volumeRevision = payload.type === 'screen-audio' && 'volume' in payload && !muteToggle ? ++localVolumeRevision : 0;
-  if (currentState && ['play', 'pause', 'seek', 'restart'].includes(payload.type)) {
+  if (currentState && !currentState.adBreak && ['play', 'pause', 'seek', 'restart'].includes(payload.type)) {
     const position = payload.type === 'restart' ? 0 : Number.isFinite(payload.position) ? payload.position : targetPosition(currentState);
     const patch = { position, anchorTime: serverNow(), notBefore: Infinity, playing: payload.type === 'play' ? true : ['pause', 'restart'].includes(payload.type) ? false : currentState.playing };
     localPlaybackIntent = { sequence, patch, assetVersion: currentState.asset?.version, serverId: currentState.serverId };
@@ -866,7 +887,7 @@ function schedule(commandState) {
   if (currentState && (commandState.serverId !== currentState.serverId || commandState.commandId < currentState.commandId)) return;
   if (lastExecutedCommand === `${commandState.serverId}/${commandState.commandId}`) return;
   const delay = Math.max(0, commandState.executeAt - serverNow());
-  if (commandState.type === 'play' && delay > 40) applyStateAppearance(commandState);
+  if (commandState.type === 'play' && delay > 40 && !currentState?.adBreak) applyStateAppearance(commandState);
   // Seek and decode while every device is waiting for the common start time.
   // Seeking at the deadline makes each laptop start after its own decoder delay.
   if (commandState.type === 'play' && delay > 40 && ready && !localPlaybackIntent
@@ -903,6 +924,7 @@ function correctDrift(playbackState, updateAppearance = true) {
   if (updateAppearance) applyStateAppearance(playbackState);
   playbackState = currentState;
   if (Number(playbackState?.notBefore) > serverNow()) return;
+  if (playbackState?.adBreak) return;
   if (!ready || sessionMode === 'presentation') return;
 
   const isYouTube = sessionMode === 'youtube';
@@ -1006,6 +1028,7 @@ function videoFinished() {
 
 function togglePlayback() {
   if (!currentState?.asset || sessionMode === 'presentation') return;
+  if (currentState.adBreak) { void command({ type: currentState.adBreak.startedAt === null ? 'play' : 'pause' }); return; }
   const currentPosition = sessionMode === 'youtube' && youtubeReady ? youtubePlayer.getCurrentTime() : video.currentTime;
   command(currentState.playing || currentState.seekResume ? { type: 'pause' } : { type: 'play', position: videoFinished() ? 0 : currentPosition || targetPosition(currentState) });
 }

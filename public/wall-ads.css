@@ -1,0 +1,13 @@
+
+.wall-ad { position: fixed; inset: 0; z-index: 14; overflow: hidden; background: #000; color: #fff; }
+.wall-ad[hidden], .wall-ad [hidden] { display: none !important; }
+.wall-ad .wall-stage { pointer-events: none; }
+.wall-ad-panel { position: absolute; inset: auto 1.15rem 1.15rem; display: flex; flex-wrap: wrap; align-items: end; justify-content: space-between; gap: .6rem; }
+.wall-ad-meta, .wall-ad-actions { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem; }
+.wall-ad-meta { min-width: 0; max-width: 100%; background: #111d; border-radius: .55rem; padding: .5rem .7rem; font-size: .84rem; }
+.wall-ad-meta strong { background: #e6f981; color: #132009; border-radius: .25rem; padding: .12rem .35rem; white-space: nowrap; }
+.wall-ad-meta span { overflow-wrap: anywhere; }
+.wall-ad button { min-height: 2.5rem; border-radius: 999px; border: 1px solid #fff7; background: #171717ee; color: #fff; padding: .38rem .8rem; font: inherit; cursor: pointer; }
+.wall-ad #wallAdSkip { background: #fff; color: #111; font-weight: 700; }
+.wall-ad button:focus-visible { outline: 3px solid #d3f65f; outline-offset: 2px; }
+

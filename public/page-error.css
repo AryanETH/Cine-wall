@@ -1,0 +1,47 @@
+:root {
+  color-scheme: light;
+  --background: #edf2fb;
+  --panel: #fff;
+  --ink: #0c1728;
+  --muted: #45546b;
+  --border: #d2deef;
+  --accent: #1459db;
+  --action: #155bd8;
+  --action-ink: #fff;
+  --glow: #dceaff;
+}
+[data-theme="dark"] {
+  color-scheme: dark;
+  --background: #0c0f16;
+  --panel: #15191f;
+  --ink: #f7f9f6;
+  --muted: #b0bbcc;
+  --border: #333d49;
+  --accent: #bcf35e;
+  --action: linear-gradient(115deg, #e9fb55, #8beb44);
+  --action-ink: #172405;
+  --glow: #29371c;
+}
+* { box-sizing: border-box; }
+.error-body { margin: 0; min-height: 100vh; display: grid; place-items: center; padding: clamp(1rem, 4vw, 3rem); background: var(--background); color: var(--ink); font: 1rem/1.55 system-ui, sans-serif; }
+.error-card { width: min(100%, 58rem); padding: clamp(1.4rem, 5vw, 3.5rem); border: 1px solid var(--border); border-radius: 2rem; background: var(--panel); box-shadow: 0 1.5rem 4rem #08132915; }
+.error-brand { color: var(--ink); text-decoration: none; font-size: 1.1rem; font-weight: 850; letter-spacing: -.045em; }
+.error-content { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr); align-items: center; gap: clamp(.75rem, 4vw, 2.5rem); }
+.error-content section { padding-block: 2rem; }
+.error-status { margin: 0 0 .65rem; color: var(--accent); font-size: .8rem; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; }
+.error-content h1 { margin: 0; font-size: clamp(2.05rem, 5.4vw, 3.75rem); letter-spacing: -.062em; line-height: 1.04; }
+.error-copy { max-width: 35ch; margin: 1rem 0 1.5rem; color: var(--muted); }
+.error-actions { display: flex; align-items: center; flex-wrap: wrap; gap: .75rem 1rem; }
+.error-primary, .error-home { padding: .68rem 1rem; border: 1px solid transparent; border-radius: 999px; font-weight: 750; text-decoration: none; }
+.error-primary { background: var(--action); color: var(--action-ink); }
+.error-primary:hover { filter: brightness(.92); }
+.error-home { border-color: var(--border); color: var(--accent); }
+.error-home:hover { background: var(--glow); }
+.error-card a:focus-visible { outline: 3px solid var(--accent); outline-offset: 4px; }
+.error-frog { display: block; width: 100%; max-width: 20rem; height: auto; justify-self: center; border-radius: 50%; background: radial-gradient(ellipse at center, var(--glow), transparent 72%); }
+@media (max-width: 36rem) {
+  .error-content { grid-template-columns: 1fr; }
+  .error-content section { padding-block: 1.5rem 0; }
+  .error-frog { max-width: 13rem; }
+}
+
