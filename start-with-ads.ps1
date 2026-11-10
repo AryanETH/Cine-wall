@@ -1,6 +1,6 @@
 # Start CineWall with advertising enabled
 # Set your advertising dashboard password here
-$env:CINEWALL_ADS_PASSWORD = "admin123"
+$env:CINEWALL_ADS_PASSWORD = "9669"
 
 # Optional: Set custom advertiser form URL
 # $env:CINEWALL_ADS_FORM_URL = "https://forms.gle/your-form-id"

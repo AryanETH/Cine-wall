@@ -5,7 +5,7 @@
   "description": "Free mini theatre at home: laptop video walls, 3D music playlists, screen sharing and a phone microphone.",
   "scripts": {
     "start": "node server.js",
-    "start:ads": "node server.js",
+    "start:ads": "powershell -NoProfile -ExecutionPolicy Bypass -File start-with-ads.ps1",
     "test": "node --test tests/*.test.js",
     "test:preparation": "node tests/preparation-integration.js",
     "check": "node scripts/check-syntax.cjs",

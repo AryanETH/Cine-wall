@@ -8,26 +8,31 @@ The advertising dashboard is password-protected and requires configuration befor
 
 1. **Set the password** using one of these methods:
 
-   **Method A: PowerShell (One-time)**
+   **Method A: Use npm script (Easiest)**
+   ```bash
+   npm run start:ads
+   ```
+   This automatically starts with password: **9669**
+
+   **Method B: PowerShell (One-time)**
    ```powershell
-   $env:CINEWALL_ADS_PASSWORD="your-password"
+   $env:CINEWALL_ADS_PASSWORD="9669"
    npm start
    ```
 
-   **Method B: Use the startup script**
+   **Method C: Use the startup script**
    ```powershell
-   # Edit start-with-ads.ps1 and set your password
    .\start-with-ads.ps1
    ```
 
-   **Method C: System Environment Variable (Persistent)**
+   **Method D: System Environment Variable (Persistent)**
    - Open System Properties → Environment Variables
-   - Add new variable: `CINEWALL_ADS_PASSWORD` with your password value
+   - Add new variable: `CINEWALL_ADS_PASSWORD` with value `9669`
    - Restart your terminal and run `npm start`
 
 2. **Access the dashboard**
    - Navigate to: `http://localhost:4173/advt`
-   - Login with your password
+   - Login with password: **9669** (or your custom password)
 
 ## Environment Variables
 
