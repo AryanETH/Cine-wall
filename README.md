@@ -58,6 +58,7 @@ Open [localhost:4173](http://localhost:4173) on the host laptop. For other devic
 | Device setup, formats, or troubleshooting | [User guide](docs/user-guide.md) |
 | Hosting or account setup | [Hosting guide](HOSTING.md) · [Firebase setup](FIREBASE.md) |
 | Room links and switching modes | [Rooms](ROOMS.md) · [Mode switching](MODE_SWITCHING.md) |
+| Advertising system setup | [Advertising guide](ADVERTISING.md) |
 | Sharing CineWall with a community | [Demo and outreach guide](docs/share-cinewall.md) |
 
 ## Contribute
