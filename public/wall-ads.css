@@ -11,3 +11,7 @@
 .wall-ad #wallAdSkip { background: #fff; color: #111; font-weight: 700; }
 .wall-ad button:focus-visible { outline: 3px solid #d3f65f; outline-offset: 2px; }
 
+
+/* Yellow progress bar */
+.wall-ad-progress { position: absolute; bottom: 0; left: 0; right: 0; height: 4px; background: rgba(255,255,255,0.3); z-index: 15; }
+.wall-ad-progress-fill { height: 100%; background: #f4e14c; transition: width .1s linear; box-shadow: 0 0 8px rgba(244, 225, 76, 0.6); }

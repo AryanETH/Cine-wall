@@ -236,7 +236,10 @@
         <div id="mediaControls">
           <div class="timeline-row">
             <span id="currentTime">0:00</span>
-            <input id="timeline" type="range" min="0" max="100" value="0" step="0.1" aria-label="Playback position" disabled>
+            <div class="timeline-wrapper">
+              <div id="timelineMarkers" class="timeline-markers"></div>
+              <input id="timeline" type="range" min="0" max="100" value="0" step="0.1" aria-label="Playback position" disabled>
+            </div>
             <span id="duration">--:--</span>
           </div>
           <div class="playback-bottom-row">

@@ -12,9 +12,11 @@ window.CineWallAds = {
     const skip = document.querySelector('#wallAdSkip');
     const mute = document.querySelector('#wallAdMute');
     const pause = document.querySelector('#wallAdPause');
+    const progressFill = document.querySelector('#wallAdProgressFill');
     let slot = null, display, timer, playingRequest, skipRequest, localMuted = false, autoplayMuted = false, failed = false;
 
     const position = () => slot.position + (slot.startedAt === null ? 0 : Math.max(0, now() - slot.startedAt) / 1000);
+    
     function refreshAudio() {
       if (!slot) return;
       video.volume = display.volume;
@@ -44,6 +46,11 @@ window.CineWallAds = {
       const remaining = Math.max(0, Math.ceil(slot.duration - elapsed));
       const untilSkip = slot.skipAfter === null ? null : Math.max(0, Math.ceil(slot.skipAfter - elapsed));
       const canSkip = untilSkip === 0 && !waiting && !paused;
+      
+      // Update progress bar
+      const progress = Math.min(100, Math.max(0, (elapsed / slot.duration) * 100));
+      progressFill.style.width = progress + '%';
+      
       skip.hidden = !canSkip;
       skip.disabled = skipRequest === slot.id;
       pause.hidden = !display.controller;
@@ -70,6 +77,7 @@ window.CineWallAds = {
           video.removeAttribute('src');
           video.load();
           overlay.hidden = true;
+          progressFill.style.width = '0%';
           localMuted = autoplayMuted = false;
         }
         return;
@@ -85,6 +93,7 @@ window.CineWallAds = {
         video.load();
         badge.textContent = 'Ad ' + slot.number + ' of ' + slot.total;
         title.textContent = slot.title;
+        progressFill.style.width = '0%';
         overlay.hidden = false;
         clearInterval(timer);
         timer = setInterval(tick, 150);

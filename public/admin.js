@@ -720,6 +720,7 @@ function renderPlayer() {
     timeline.max = duration || 100;
     $('#duration').textContent = duration ? formatTime(duration) : isYouTube && hasAsset ? 'Loading...' : '--:--';
     syncPreview();
+    renderTimelineMarkers();
   }
   applyPreviewVolume();
   renderSourcePoster();
@@ -727,6 +728,26 @@ function renderPlayer() {
     timeline.value = Math.min(duration || Infinity, positionNow());
     $('#currentTime').textContent = formatTime(Number(timeline.value));
   }
+}
+
+function renderTimelineMarkers() {
+  const container = $('#timelineMarkers');
+  if (!container) return;
+  container.innerHTML = '';
+  const state = status.state;
+  
+  if (!state.adBreaks || !state.adBreaks.length || !duration || state.sessionMode === 'presentation') return;
+  
+  // Render yellow dots for each ad break
+  state.adBreaks.forEach(adBreak => {
+    const percent = (adBreak.position / duration) * 100;
+    const marker = document.createElement('div');
+    marker.className = 'timeline-marker';
+    marker.style.left = percent + '%';
+    marker.setAttribute('data-position', adBreak.position);
+    if (adBreak.shown) marker.style.opacity = '0.4';
+    container.appendChild(marker);
+  });
 }
 
 function renderSourcePoster() {

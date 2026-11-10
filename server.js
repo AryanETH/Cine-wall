@@ -98,6 +98,8 @@ let state = {
   mode: 'stretch',
   screenCount: record ? 1 : 2,
   audioMode: 'personal',
+  adBreaks: [],
+  adBreaksShown: [],
   videoView: 'normal',
   videoDepth: 50,
   stereoSource: '2d',
@@ -178,6 +180,33 @@ function snapshot() {
   return { ...state, ...(activeAd() ? { adBreak: publicAd() } : {}), seekPending: Boolean(pendingSeek), seekResume: Boolean(pendingSeek?.resume), ownerId: record?.admin.id || sourceOwner?.id || '', roomId: room || 'hotspot', allReady: allDisplaysReady(), preparation, serverId: SERVER_ID, serverTime: Date.now() };
 }
 
+function calculateAdBreaks(duration, slots) {
+  if (!duration || duration < 60 || !slots.length) return [];
+  
+  const minutes = duration / 60;
+  let adCount;
+  
+  // Apply smart ad placement rules
+  if (minutes < 1) adCount = 0;
+  else if (minutes <= 10) adCount = 1;
+  else if (minutes <= 50) adCount = 2;
+  else adCount = 3;
+  
+  if (adCount === 0) return [];
+  
+  const breaks = [];
+  const slotCount = slots.length;
+  
+  // Distribute ads evenly, including one at the start
+  for (let i = 0; i < adCount; i++) {
+    const position = i === 0 ? 0 : (duration / adCount) * i;
+    const slotIndex = i % slotCount; // Reuse slots if needed
+    breaks.push({ position: Math.floor(position), slotIndex, shown: false });
+  }
+  
+  return breaks;
+}
+
 function activeAd() {
   return adRun && adRun.version === state.asset?.version && state.sessionMode === 'video' ? adRun : null;
 }
@@ -185,7 +214,9 @@ function activeAd() {
 function publicAd() {
   const { slots, index, id, startedAt, position } = adRun;
   const { title, duration, skipAfter } = slots[index];
-  return { id, title, duration, skipAfter, startedAt, position, number: index + 1, total: slots.length };
+  const currentPosition = position + (startedAt === null ? 0 : Math.max(0, Date.now() - startedAt) / 1000);
+  const progress = Math.min(100, (currentPosition / duration) * 100);
+  return { id, title, duration, skipAfter, startedAt, position, number: index + 1, total: slots.length, progress, currentPosition };
 }
 
 function adPosition() {
@@ -222,7 +253,14 @@ function advanceAd() {
   if (adRun.index < adRun.slots.length) startAdSlot();
   else {
     const version = adRun.version;
+    const breakIndex = adRun.breakIndex;
     cancelAdBreak();
+    
+    // Mark this break as shown
+    if (breakIndex !== undefined && state.adBreaks[breakIndex]) {
+      state.adBreaks[breakIndex].shown = true;
+    }
+    
     const playing = allDisplaysReady();
     if (playing) { type = 'play'; executeAt += PLAYBACK_START_LEAD_MS; }
     state = { ...state, playing, anchorTime: executeAt, adCompletedFor: version };
@@ -322,6 +360,31 @@ function holdForBuffering(screen) {
   const command = applyCommand({ type: 'seek', position: currentPosition(), assetVersion: state.asset.version });
   broadcast('command', command);
   broadcast('state', snapshot());
+}
+
+function checkMidRollAds() {
+  if (!state.playing || activeAd() || pendingSeek || state.sessionMode !== 'video' || !state.asset || state.asset.kind !== 'video') return;
+  if (!state.adBreaks || !state.adBreaks.length) return;
+  
+  const currentPos = currentPosition();
+  const slots = advertising.campaign();
+  if (!slots.length) return;
+  
+  // Find next unshown ad break that we've passed
+  const nextBreak = state.adBreaks.find(b => !b.shown && currentPos >= b.position && currentPos < b.position + 2);
+  
+  if (nextBreak && allDisplaysReady()) {
+    cancelAdBreak();
+    adRun = { version: state.asset.version, slots: [slots[nextBreak.slotIndex]], index: 0, breakIndex: state.adBreaks.indexOf(nextBreak) };
+    nextBreak.shown = true;
+    startAdSlot();
+    
+    const now = Date.now();
+    state = { ...state, playing: false, position: nextBreak.position, anchorTime: now, notBefore: now, commandId: ++commandSequence };
+    broadcast('command', { type: 'ad-break', executeAt: now, ...snapshot() });
+    broadcast('state', snapshot());
+    saveSession();
+  }
 }
 
 function sendEvent(res, event, payload) {
@@ -442,16 +505,27 @@ function applyCommand(input) {
     if (!allDisplaysReady()) { const error = new Error('Wait until every display is ready.'); error.status = 409; throw error; }
     if (input.position !== undefined && !Number.isFinite(input.position)) throw new Error('Invalid playback position');
     if (Number.isFinite(input.position)) position = Math.max(0, Number(input.position));
+    
     const slots = state.sessionMode === 'video' && state.asset.kind === 'video'
       && state.adCompletedFor !== state.asset.version ? advertising.campaign() : [];
-    if (slots.length) {
+    
+    // Calculate ad breaks based on video duration
+    const duration = activeScreens().find(screen => screen.assetVersion === state.asset?.version && screen.duration > 0)?.duration || 0;
+    const adBreaks = calculateAdBreaks(duration, slots);
+    
+    // Check if we should show pre-roll ad
+    const nextBreak = adBreaks.find(b => !b.shown && position >= b.position - 1);
+    
+    if (nextBreak && slots.length) {
       cancelAdBreak();
-      adRun = { version: state.asset.version, slots, index: 0 };
+      adRun = { version: state.asset.version, slots: [slots[nextBreak.slotIndex]], index: 0, breakIndex: adBreaks.indexOf(nextBreak) };
       startAdSlot();
       type = 'ad-break';
       executeAt = now;
+      state = { ...state, playing: false, position, anchorTime: executeAt, adBreaks, adBreaksShown: [...state.adBreaksShown, nextBreak.position] };
+    } else {
+      state = { ...state, playing: true, position, anchorTime: executeAt, adBreaks: adBreaks.length ? adBreaks : state.adBreaks };
     }
-    state = { ...state, playing: !slots.length, position, anchorTime: executeAt };
   } else if (type === 'pause') {
     pendingSeek = null;
     state = { ...state, playing: false, position, anchorTime: executeAt };
@@ -1252,6 +1326,7 @@ async function handle(req, res, url) {
         lastSeen: Date.now(),
       });
       holdForBuffering(screens.get(id));
+      checkMidRollAds();
       finishSeekIfReady();
       json(res, 200, { ok: true, state: snapshot() });
       broadcast('screens', { screens: activeScreens(), serverTime: Date.now() });
