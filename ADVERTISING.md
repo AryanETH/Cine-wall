@@ -45,25 +45,36 @@ The advertising dashboard is password-protected and requires configuration befor
 
 ### Dashboard (`/advt`)
 - Upload ad videos (MP4, H.264, AAC audio)
+- Trim clips using 6s, 15s, 30s, and 60s presets or an adjustable start and length. The original upload is retained for future edits.
+- Upload a PNG, JPEG, or WebP logo up to 2 MiB. It appears in the top-right corner while an ad plays.
 - Configure ad slots with formats:
   - **Skippable**: Up to 60s, skip button after 5s
   - **Standard**: Up to 15s, non-skippable
   - **Bumper**: Up to 6s, non-skippable
 - Enable/disable advertising
+- Choose the slots and click **Push ad**. **Ads live** shows the published videos and push time. Pause ads to stop upcoming breaks. Edits to the clips, logo, or advertiser links take effect on the next push.
+- Add an advertiser website to each video to show a **Visit advertiser** link during playback.
 - Set advertiser contact form URL
+
+### Analytics
+
+The dashboard reports impressions, advertiser clicks, CTR, playback milestones, skips, and failures by video. One synchronized ad break counts once across the wall. Impressions and playback milestones come from visible players, so a scheduled ad can be served without receiving an impression. Reports use UTC and retain up to 90 days of aggregate counts in the advertising storage directory.
 
 ### Video Requirements
 - Format: MP4 (H.264 video + AAC audio or no audio)
-- Duration: 0.5 to 60 seconds
+- Source duration: 0.5 to 300 seconds; trim to the slot's limit before assigning it
 - Size: Maximum 25 MiB
 - Color space: YUV420p or YUVJ420p
 
 ### Wall Display Integration
-- Ad breaks play before video content starts
-- Synchronized across all screens
-- Displays skip button when available
-- Shows progress: "Ad 1 of 2"
-- Branded with CineWall logo
+| Movie duration | Ads | Positions |
+| --- | --- | --- |
+| Under 1 minute | 0 | — |
+| 1 minute to under 10 minutes | 1 | Halfway |
+| 10 minutes to under 50 minutes | 2 | One-third and two-thirds |
+| 50 minutes or longer | 3 | One-quarter, halfway, and three-quarters |
+
+Yellow dots mark the breaks on the movie timeline. During each break, a yellow line tracks the ad's progress across the selected screens. Skippable ads can be skipped after five seconds. CineWall cycles through the saved slots, so one configured ad can play at all three breaks.
 
 ### Advertiser Portal (`/advertise`)
 - Redirects to configured Google Forms URL
@@ -78,7 +89,9 @@ All API endpoints require authentication (login first):
 - `POST /advt/api/logout` - Logout current session
 - `GET /advt/api/settings` - Get current configuration
 - `POST /advt/api/settings` - Update slots and enabled status
-- `POST /advt/api/creative?title=Ad+Name` - Upload video (multipart/form-data)
+- `POST /advt/api/creative?title=Ad+Name` - Upload raw MP4 bytes
+- `POST /advt/api/creative/{id}/trim` - Save the selected start time and duration
+- `POST /advt/api/logo` / `DELETE /advt/api/logo` - Upload or remove the company logo
 - `DELETE /advt/api/creative/{id}` - Delete video
 - `GET /advt/api/media/{id}` - Stream video file
 
@@ -97,7 +110,7 @@ All API endpoints require authentication (login first):
 ### "Advertising administration is disabled on this server"
 **Cause**: `CINEWALL_ADS_PASSWORD` environment variable is not set.
 
-**Solution**: Set the password using one of the methods above.
+**Solution**: Locally, set the password using one of the methods above. For the live site, set the private variable in the hosting service's environment and deploy. The Windows startup script only sets it for your local process.
 
 ### "Video validation is unavailable on this server"
 **Cause**: `ffprobe` is not installed or not in PATH.

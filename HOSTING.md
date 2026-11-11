@@ -14,9 +14,9 @@ On the public website, numbered links use the page's public origin. Choosing a m
 
 ## Advertising setup
 
-Set `CINEWALL_ADS_PASSWORD` as a private service variable and open `/advt`. The dashboard stays locked if the variable is missing. The login is separate from CineWall accounts and rate limited. Set `CINEWALL_ADS_STORE_DIR` to a persistent writable volume if the room store is ephemeral. The server keeps uploaded ad videos and settings in its `advertising` subdirectory. FFprobe must be installed, as it is in the Docker image.
+Set `CINEWALL_ADS_PASSWORD` as a private variable on the web service that serves `watch.aitoyz.in`. On Render, open the service's **Environment** page, add the variable, and save and deploy. Then open `/advt`. If the login says advertising administration is disabled, the running service has no password set. The local startup script does not configure the hosted service. Set `CINEWALL_ADS_STORE_DIR` to a persistent writable volume if the room store is ephemeral. The Docker image includes FFmpeg and FFprobe.
 
-Upload an H.264 MP4 with AAC audio or no audio, choose up to three pre-roll slots, and enable the campaign. Every slot has its own format. A skippable clip must be longer than five seconds and at most 60 seconds. A standard non-skippable clip can be up to 15 seconds, and a bumper can be up to six. Slots run once per loaded video. The ad is sliced across the selected displays, and Screen 1 carries its audio.
+Upload an H.264 MP4, use Trim to select a clip, and enable up to three slots. CineWall schedules evenly spaced breaks based on the movie length and reuses slots if needed. The ad is sliced across the selected displays, and Screen 1 carries its audio. See the [advertising guide](ADVERTISING.md) for timing, formats, and logos.
 
 The homepage footer links directly to the published CineWall Google Form. The separate `/advertise` address can be configured in the ads dashboard or with `CINEWALL_ADS_FORM_URL`.
 

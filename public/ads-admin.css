@@ -37,6 +37,28 @@ button:disabled { opacity: .55; cursor: wait; }
 .ad-info strong { display: block; margin-bottom: .25rem; }
 .ad-info span:not(.ad-meta) { font-size: .9rem; color: #bac5d0; }
 .ad-meta { font-size: .85rem; color: #8b95a3; }
-.ad-actions { display: flex; gap: .5rem; flex-shrink: 0; }
+.ad-actions { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem; }
 .ad-actions a { color: #ccfb57; white-space: nowrap; }
+.media-actions { display: flex; flex-wrap: wrap; gap: .5rem; }
+#logoPreview { max-width: min(200px, 100%); max-height: 100px; margin-top: 1rem; object-fit: contain; }
+dialog { width: min(32rem, calc(100% - 2rem)); max-height: calc(100% - 2rem); padding: 1.25rem; background: #171d27; color: inherit; border: 1px solid #3b4657; border-radius: 1rem; }
+dialog::backdrop { background: #000a; }
+#trimPreview { display: block; width: 100%; max-height: 30vh; background: #000; margin-bottom: .75rem; }
+.trim-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .75rem; }
+.trim-fields input { display: block; margin-top: .3rem; }
+#trimStatus, #adLinkStatus { margin: 0; }
+.campaign-status { padding: .75rem; border: 1px solid #3b4657; border-radius: .55rem; margin: .75rem 0; }
+.campaign-status strong[data-live] { color: #ccfb57; }
+.campaign-status p { margin-bottom: 0; }
+.ads-analytics { margin-top: 1.25rem; }
+.analytics-header { display: flex; align-items: baseline; justify-content: space-between; flex-wrap: wrap; gap: .6rem; margin-bottom: .5rem; }
+.analytics-header select { width: auto; }
+.analytics-summary { display: grid; grid-template-columns: repeat(auto-fit, minmax(8rem, 1fr)); gap: .6rem; margin-bottom: 0; }
+.analytics-summary div { padding: .7rem; border: 1px solid #3b4657; border-radius: .55rem; }
+.analytics-summary dt { color: #bac5d0; font-size: .85rem; }
+.analytics-summary dd { margin: 0; font-size: 1.3rem; font-weight: 700; font-variant-numeric: tabular-nums; }
+.analytics-table { overflow-x: auto; }
+.analytics-table table { width: 100%; border-collapse: collapse; font-size: .875rem; white-space: nowrap; }
+.analytics-table th, .analytics-table td { padding: .55rem; border-bottom: 1px solid #343d49; text-align: right; }
+.analytics-table th:first-child { text-align: left; }
 

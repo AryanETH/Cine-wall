@@ -1,7 +1,7 @@
 <!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex, nofollow"><title>Advertising dashboard | CineWall</title>
-<link rel="stylesheet" href="/ads-admin.css"><script src="/ads-admin.js" defer></script></head>
+<link rel="stylesheet" href="/ads-admin.css?v=3"><script src="/ads-admin.js?v=3" defer></script></head>
 <body><main id="adsDashboard">
 <header><a class="brand" href="/">CineWall</a><button id="adsLogout" class="quiet" type="button">Log out</button></header>
 <h1>Advertising</h1><p id="adsStatus" class="status" role="status">Loading settings…</p>
@@ -11,33 +11,101 @@
 <form id="uploadAd">
 <label for="adTitle">Ad name</label><input id="adTitle" maxlength="80" required>
 <label for="adDescription">Description (optional)</label><textarea id="adDescription" maxlength="200" rows="2"></textarea>
+<label for="adClickUrl">Advertiser website (optional)</label><input id="adClickUrl" type="url" maxlength="2048" placeholder="https://example.com">
 <label for="adFile">Ad video</label><input id="adFile" type="file" accept="video/mp4,.mp4" required>
-<p class="hint">H.264 MP4, with AAC audio or no audio. Up to 60 seconds and 25 MiB.</p>
+<p class="hint">H.264 MP4, with AAC audio or no audio. Sources up to 5 minutes and 25 MiB. Trim ads to 60 seconds or less before scheduling them.</p>
 <button type="submit">Upload video</button>
 </form>
 <ul id="adLibrary"></ul>
-<h3 style="margin-top: 2rem;">Company Logo</h3>
+<h3>Company logo</h3>
 <form id="uploadLogo">
 <label for="logoFile">Logo image (optional)</label>
 <input id="logoFile" type="file" accept="image/png,image/jpeg,image/webp,.png,.jpg,.jpeg,.webp">
 <p class="hint">PNG, JPG, or WebP. Max 2 MiB. Shows in corner during ad playback.</p>
-<div style="display: flex; gap: .5rem;">
+<div class="media-actions">
 <button type="submit">Upload logo</button>
 <button id="removeLogo" type="button" class="quiet" hidden>Remove logo</button>
 </div>
 </form>
-<img id="logoPreview" style="max-width: 200px; margin-top: 1rem; border-radius: .5rem;" hidden>
+<img id="logoPreview" alt="Current ad logo" hidden>
 </section>
 <section>
-<h2>Video wall pre-roll</h2><p class="hint">Set up to three slots. You can reuse any video.</p>
+<h2>Video wall ads</h2>
+<div class="campaign-status" aria-live="polite">
+  <strong id="campaignStatus">Checking campaign…</strong>
+  <p id="campaignDetails" class="hint"></p>
+</div>
+<p class="hint">Choose up to three slots. Push ad publishes the selected clips, logo, and advertiser links for upcoming breaks.</p>
 <form id="adSettings">
-<label class="check"><input id="adsEnabled" type="checkbox"> Play ads before each new movie</label>
 <div id="adSlots"></div>
 <label for="adFormUrl">Advertiser contact link</label>
 <input id="adFormUrl" type="url" placeholder="https://example.com/contact">
-<button type="submit">Save settings</button>
+<div class="media-actions">
+  <button id="pushAds" type="submit" disabled>Push ad</button>
+  <button id="pauseAds" class="quiet" type="button" hidden>Pause ads</button>
+  <button id="saveAdForm" class="quiet" type="button">Save contact link</button>
+</div>
 </form>
 </section>
 </div>
+<section class="ads-analytics" aria-labelledby="analyticsHeading">
+  <div class="analytics-header">
+    <h2 id="analyticsHeading">Ad analytics</h2>
+    <div class="media-actions">
+      <select id="analyticsDays" aria-label="Analytics date range">
+        <option value="7">Last 7 days</option>
+        <option value="30" selected>Last 30 days</option>
+        <option value="90">Last 90 days</option>
+      </select>
+      <button id="refreshAnalytics" type="button" class="quiet">Refresh</button>
+    </div>
+  </div>
+  <p class="hint">Impressions count once per ad break when playback is reported by a visible wall player. Clicks count once per break. Date ranges use UTC.</p>
+  <dl id="analyticsSummary" class="analytics-summary"></dl>
+  <p id="analyticsStatus" class="status" role="status">Loading analytics…</p>
+  <div id="analyticsTable" class="analytics-table" hidden tabindex="0" role="region" aria-label="Ad performance by video">
+    <table>
+      <thead><tr><th scope="col">Ad</th><th scope="col">Served</th><th scope="col">Impressions</th><th scope="col">Clicks</th><th scope="col">CTR</th><th scope="col">25%</th><th scope="col">50%</th><th scope="col">75%</th><th scope="col">Completed</th><th scope="col">Skipped</th><th scope="col">Failed</th></tr></thead>
+      <tbody id="analyticsRows"></tbody>
+    </table>
+  </div>
+</section>
+<dialog id="adLinkDialog" aria-labelledby="adLinkHeading">
+  <h2 id="adLinkHeading">Advertiser website</h2>
+  <form id="adLinkForm">
+    <label for="adLinkValue">Website URL (optional)</label>
+    <input id="adLinkValue" type="url" maxlength="2048" placeholder="https://example.com">
+    <p class="hint">Appears as Visit advertiser on the video wall after you push this ad.</p>
+    <p id="adLinkStatus" class="status" role="status"></p>
+    <div class="media-actions">
+      <button id="adLinkCancel" class="quiet" type="button">Cancel</button>
+      <button type="submit">Save link</button>
+    </div>
+  </form>
+</dialog>
+<dialog id="trimDialog" aria-labelledby="trimHeading">
+<h2 id="trimHeading">Trim ad</h2>
+<p id="trimSource" class="hint"></p>
+<video id="trimPreview" controls playsinline preload="metadata"></video>
+<form id="trimForm">
+<div id="trimPresets" class="media-actions" aria-label="Trim duration presets">
+<button type="button" class="quiet" data-duration="6">6s</button>
+<button type="button" class="quiet" data-duration="15">15s</button>
+<button type="button" class="quiet" data-duration="30">30s</button>
+<button type="button" class="quiet" data-duration="60">60s</button>
+</div>
+<div class="trim-fields">
+<label>Start (seconds)<input id="trimStart" type="number" min="0" step=".001" required></label>
+<label>Length (seconds)<input id="trimLength" type="number" min=".5" step=".001" required></label>
+</div>
+<p id="trimRange" class="hint"></p>
+<p id="trimStatus" class="status" role="status"></p>
+<div class="media-actions">
+<button id="trimCancel" type="button" class="quiet">Cancel</button>
+<button id="trimRestore" type="button" class="quiet">Restore original</button>
+<button type="submit">Apply trim</button>
+</div>
+</form>
+</dialog>
 </main></body></html>
 

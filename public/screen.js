@@ -42,6 +42,10 @@ let currentState = null;
 const adController = window.CineWallAds?.create({
   now: serverNow,
   link: path => window.CineWallSession?.link(path) || path,
+  report: async path => {
+    const response = await fetch(path, { method: 'POST', keepalive: true });
+    if (!response.ok) throw new Error('Ad event could not be recorded.');
+  },
   request: async path => {
     const response = await fetch(path, { method: 'POST' });
     if (!response.ok) throw new Error('Ad request failed.');

@@ -83,7 +83,9 @@ let preparationController = null;
 let sourceOwner = null;
 const relayRequests = new Map();
 let adRun = null;
+let lastAd = null;
 let adTimer;
+let adCheckTimer;
 
 function defaultAudioSettings(all = false) {
   return Object.fromEntries(Array.from({ length: 5 }, (_, index) => [String(index + 1), { volume: 1, muted: !all && index > 0 }]));
@@ -99,7 +101,7 @@ let state = {
   screenCount: record ? 1 : 2,
   audioMode: 'personal',
   adBreaks: [],
-  adBreaksShown: [],
+  adScheduleVersion: '',
   videoView: 'normal',
   videoDepth: 50,
   stereoSource: '2d',
@@ -177,34 +179,28 @@ function currentPosition(at = Date.now()) {
 }
 
 function snapshot() {
+  syncAdSchedule();
   return { ...state, ...(activeAd() ? { adBreak: publicAd() } : {}), seekPending: Boolean(pendingSeek), seekResume: Boolean(pendingSeek?.resume), ownerId: record?.admin.id || sourceOwner?.id || '', roomId: room || 'hotspot', allReady: allDisplaysReady(), preparation, serverId: SERVER_ID, serverTime: Date.now() };
 }
 
-function calculateAdBreaks(duration, slots) {
-  if (!duration || duration < 60 || !slots.length) return [];
-  
-  const minutes = duration / 60;
-  let adCount;
-  
-  // Apply smart ad placement rules
-  if (minutes < 1) adCount = 0;
-  else if (minutes <= 10) adCount = 1;
-  else if (minutes <= 50) adCount = 2;
-  else adCount = 3;
-  
-  if (adCount === 0) return [];
-  
-  const breaks = [];
-  const slotCount = slots.length;
-  
-  // Distribute ads evenly, including one at the start
-  for (let i = 0; i < adCount; i++) {
-    const position = i === 0 ? 0 : (duration / adCount) * i;
-    const slotIndex = i % slotCount; // Reuse slots if needed
-    breaks.push({ position: Math.floor(position), slotIndex, shown: false });
-  }
-  
-  return breaks;
+function syncAdSchedule() {
+  const asset = state.sessionMode === 'video' && state.asset?.kind === 'video' ? state.asset : null;
+  const version = asset?.version || '';
+  const reported = asset && activeScreens().find(screen => screen.mediaReady && !screen.error
+    && screen.assetVersion === version && Number.isFinite(screen.duration) && screen.duration > 0)?.duration;
+  const duration = reported || (asset && Number.isFinite(asset.duration) && asset.duration > 0 ? asset.duration : 0)
+    || (state.adScheduleVersion === version ? state.adScheduleDuration : 0) || 0;
+  const enabled = Boolean(asset && advertising.enabled());
+  if (activeAd()) return;
+  if (state.adScheduleVersion === version && state.adScheduleDuration === duration && state.adScheduleEnabled === enabled) return;
+  const previous = state.adScheduleVersion === version ? state.adBreaks : [];
+  const count = !asset || duration < 60 ? 0 : duration < 600 ? 1 : duration < 3000 ? 2 : 3;
+  state.adScheduleVersion = version;
+  state.adScheduleDuration = duration;
+  state.adScheduleEnabled = enabled;
+  state.adBreaks = Array.from({ length: count }, (_, i) => ({
+    position: duration * (i + 1) / (count + 1), shown: Boolean(previous[i]?.shown),
+  }));
 }
 
 function activeAd() {
@@ -212,19 +208,19 @@ function activeAd() {
 }
 
 function publicAd() {
-  const { slots, index, id, startedAt, position } = adRun;
-  const { title, duration, skipAfter } = slots[index];
-  const currentPosition = position + (startedAt === null ? 0 : Math.max(0, Date.now() - startedAt) / 1000);
-  const progress = Math.min(100, (currentPosition / duration) * 100);
-  return { id, title, duration, skipAfter, startedAt, position, number: index + 1, total: slots.length, progress, currentPosition };
+  const { slot, breakIndex, id, startedAt, position } = adRun;
+  const { title, duration, skipAfter } = slot;
+  return { id, title, duration, skipAfter, startedAt, position, number: breakIndex + 1,
+    total: state.adBreaks.length, logo: slot.logo ? '/api/ad-break/logo?ad=' + id : null, clickUrl: slot.clickUrl || '' };
 }
 
-function adPosition() {
-  return adRun.position + (adRun.startedAt === null ? 0 : Math.max(0, Date.now() - adRun.startedAt) / 1000);
+function adPosition(run = adRun) {
+  return run.position + (run.startedAt === null ? 0 : Math.max(0, Date.now() - run.startedAt) / 1000);
 }
 
 function cancelAdBreak() {
   clearTimeout(adTimer);
+  clearTimeout(adCheckTimer);
   adRun = null;
 }
 
@@ -232,7 +228,7 @@ function startAdClock(lead) {
   clearTimeout(adTimer);
   const current = adRun;
   current.startedAt = Date.now() + lead;
-  const remaining = (current.slots[current.index].duration - current.position) * 1000;
+  const remaining = (current.slot.duration - current.position) * 1000;
   adTimer = setTimeout(() => {
     if (activeAd() === current) advanceAd();
   }, Math.max(0, remaining) + lead);
@@ -243,32 +239,50 @@ function startAdSlot() {
   adRun.id = randomUUID();
   adRun.position = 0;
   startAdClock(AD_START_LEAD_MS);
+  advertising.analytics.record(adRun, 'served');
 }
 
-function advanceAd() {
-  const now = Date.now();
-  let executeAt = now;
-  let type = 'ad-break';
-  adRun.index++;
-  if (adRun.index < adRun.slots.length) startAdSlot();
-  else {
-    const version = adRun.version;
-    const breakIndex = adRun.breakIndex;
-    cancelAdBreak();
-    
-    // Mark this break as shown
-    if (breakIndex !== undefined && state.adBreaks[breakIndex]) {
-      state.adBreaks[breakIndex].shown = true;
-    }
-    
-    const playing = allDisplaysReady();
-    if (playing) { type = 'play'; executeAt += PLAYBACK_START_LEAD_MS; }
-    state = { ...state, playing, anchorTime: executeAt, adCompletedFor: version };
-  }
-  state = { ...state, notBefore: executeAt, commandId: ++commandSequence };
-  if (!adRun) saveSession();
+function advanceAd(outcome) {
+  const { breakIndex } = adRun;
+  lastAd = { run: adRun, elapsed: adPosition(), until: Date.now() + 10000 };
+  if (outcome) advertising.analytics.record(adRun, 'served', outcome);
+  cancelAdBreak();
+  state.adBreaks[breakIndex].shown = true;
+  const playing = allDisplaysReady();
+  const executeAt = Date.now() + (playing ? PLAYBACK_START_LEAD_MS : 0);
+  const type = playing ? 'play' : 'pause';
+  state = { ...state, playing, anchorTime: executeAt, notBefore: executeAt, commandId: ++commandSequence };
+  saveSession();
   broadcast('command', { type, executeAt, ...snapshot() });
   broadcast('state', snapshot());
+  scheduleAdCheck();
+}
+
+function trackAd(req, res, url) {
+  const id = url.searchParams.get('ad');
+  const active = activeAd();
+  const recent = lastAd?.run.id === id && lastAd.until >= Date.now() ? lastAd : null;
+  const run = active?.id === id ? active : recent?.run;
+  if (!run) { json(res, 404, { error: 'That ad is no longer playing.' }); return; }
+  const elapsed = run === active ? adPosition(run) : recent.elapsed;
+  const event = url.searchParams.get('event');
+  const milestones = ['q25', 'q50', 'q75', 'completed'];
+  const index = milestones.indexOf(event);
+  const minimum = index < 0 ? .04 : run.slot.duration * (index + 1) / 4;
+  const tolerance = index === 3 ? Math.min(.35, run.slot.duration * .08) : 0;
+  if (elapsed < minimum - tolerance) {
+    json(res, 409, { error: 'This playback event is too early.' }); return;
+  }
+  let metrics;
+  if (event === 'impression') metrics = ['impressions'];
+  else if (event === 'click' && run.slot.clickUrl) metrics = ['impressions', 'clicks'];
+  else if (index >= 0) metrics = ['impressions', ...milestones.slice(0, index + 1)];
+  else { json(res, 400, { error: 'Unknown ad event.' }); return; }
+  if (!advertising.analytics.record(run, 'served', ...metrics)) {
+    json(res, 503, { error: 'Analytics is temporarily unavailable.' }); return;
+  }
+  res.writeHead(204, { 'Cache-Control': 'no-store' });
+  res.end();
 }
 
 function identity(req) {
@@ -348,6 +362,7 @@ function finishSeekIfReady() {
   broadcast('command', { type: resume ? 'play' : 'pause', executeAt, ...snapshot() });
   broadcast('state', snapshot());
   saveSession();
+  scheduleAdCheck();
 }
 
 function holdForBuffering(screen) {
@@ -362,29 +377,42 @@ function holdForBuffering(screen) {
   broadcast('state', snapshot());
 }
 
-function checkMidRollAds() {
-  if (!state.playing || activeAd() || pendingSeek || state.sessionMode !== 'video' || !state.asset || state.asset.kind !== 'video') return;
-  if (!state.adBreaks || !state.adBreaks.length) return;
-  
-  const currentPos = currentPosition();
+function startDueAd(position) {
+  syncAdSchedule();
+  if (!state.adScheduleEnabled) return false;
+  const breakIndex = state.adBreaks.findIndex(item => !item.shown && position >= item.position);
+  if (breakIndex < 0) return false;
   const slots = advertising.campaign();
-  if (!slots.length) return;
-  
-  // Find next unshown ad break that we've passed
-  const nextBreak = state.adBreaks.find(b => !b.shown && currentPos >= b.position && currentPos < b.position + 2);
-  
-  if (nextBreak && allDisplaysReady()) {
-    cancelAdBreak();
-    adRun = { version: state.asset.version, slots: [slots[nextBreak.slotIndex]], index: 0, breakIndex: state.adBreaks.indexOf(nextBreak) };
-    nextBreak.shown = true;
-    startAdSlot();
-    
-    const now = Date.now();
-    state = { ...state, playing: false, position: nextBreak.position, anchorTime: now, notBefore: now, commandId: ++commandSequence };
-    broadcast('command', { type: 'ad-break', executeAt: now, ...snapshot() });
-    broadcast('state', snapshot());
-    saveSession();
-  }
+  if (!slots.length) return false;
+  cancelAdBreak();
+  adRun = { version: state.asset.version, slot: slots[breakIndex % slots.length], breakIndex };
+  startAdSlot();
+  state = { ...state, playing: false, position, anchorTime: Date.now() };
+  return true;
+}
+
+function scheduleAdCheck() {
+  clearTimeout(adCheckTimer);
+  if (!state.playing || activeAd() || pendingSeek || state.sessionMode !== 'video') return;
+  syncAdSchedule();
+  if (!state.adScheduleEnabled) return;
+  const next = state.adBreaks.find(item => !item.shown);
+  if (!next) return;
+  const now = Date.now();
+  const delay = Math.max(0, state.anchorTime - now) + (next.position - currentPosition(now)) * 1000;
+  if (delay <= 0 && !allDisplaysReady()) return;
+  adCheckTimer = setTimeout(checkMidRollAds, Math.min(2147483647, Math.max(0, Math.ceil(delay))));
+  adCheckTimer.unref();
+}
+
+function checkMidRollAds() {
+  if (!state.playing || activeAd() || pendingSeek || Date.now() < state.anchorTime || !allDisplaysReady()) return;
+  if (!startDueAd(currentPosition())) return;
+  const now = Date.now();
+  state = { ...state, notBefore: now, commandId: ++commandSequence };
+  broadcast('command', { type: 'ad-break', executeAt: now, ...snapshot() });
+  broadcast('state', snapshot());
+  saveSession();
 }
 
 function sendEvent(res, event, payload) {
@@ -506,25 +534,11 @@ function applyCommand(input) {
     if (input.position !== undefined && !Number.isFinite(input.position)) throw new Error('Invalid playback position');
     if (Number.isFinite(input.position)) position = Math.max(0, Number(input.position));
     
-    const slots = state.sessionMode === 'video' && state.asset.kind === 'video'
-      && state.adCompletedFor !== state.asset.version ? advertising.campaign() : [];
-    
-    // Calculate ad breaks based on video duration
-    const duration = activeScreens().find(screen => screen.assetVersion === state.asset?.version && screen.duration > 0)?.duration || 0;
-    const adBreaks = calculateAdBreaks(duration, slots);
-    
-    // Check if we should show pre-roll ad
-    const nextBreak = adBreaks.find(b => !b.shown && position >= b.position - 1);
-    
-    if (nextBreak && slots.length) {
-      cancelAdBreak();
-      adRun = { version: state.asset.version, slots: [slots[nextBreak.slotIndex]], index: 0, breakIndex: adBreaks.indexOf(nextBreak) };
-      startAdSlot();
+    if (startDueAd(position)) {
       type = 'ad-break';
       executeAt = now;
-      state = { ...state, playing: false, position, anchorTime: executeAt, adBreaks, adBreaksShown: [...state.adBreaksShown, nextBreak.position] };
     } else {
-      state = { ...state, playing: true, position, anchorTime: executeAt, adBreaks: adBreaks.length ? adBreaks : state.adBreaks };
+      state = { ...state, playing: true, position, anchorTime: executeAt };
     }
   } else if (type === 'pause') {
     pendingSeek = null;
@@ -615,6 +629,7 @@ function applyCommand(input) {
   broadcast('command', command);
   broadcast('state', snapshot());
   saveSession();
+  if (['play', 'pause', 'seek', 'restart'].includes(type)) scheduleAdCheck();
   return command;
 }
 
@@ -1082,26 +1097,34 @@ async function handle(req, res, url) {
     if (await screenSharing.handle(req, res, url)) return;
     if (await micRoom.handle(req, res, url)) return;
     if (url.pathname.startsWith('/api/ad-break/')) {
+      if (url.pathname === '/api/ad-break/event' && req.method === 'POST') {
+        trackAd(req, res, url);
+        return;
+      }
       const run = activeAd();
       const id = url.searchParams.get('ad');
       if (!run || run.id !== id) { json(res, 404, { error: 'That ad is no longer playing.' }); return; }
-      const slot = run.slots[run.index];
+      const { slot } = run;
       if (url.pathname === '/api/ad-break/media' && ['GET', 'HEAD'].includes(req.method)) {
-        advertising.serve(req, res, slot.id);
+        advertising.serve(req, res, slot);
+        return;
+      }
+      if (url.pathname === '/api/ad-break/logo' && ['GET', 'HEAD'].includes(req.method)) {
+        advertising.serveLogo(req, res, slot.logo);
         return;
       }
       if (url.pathname === '/api/ad-break/skip' && req.method === 'POST') {
         if (slot.skipAfter === null || run.startedAt === null || adPosition() < slot.skipAfter) {
           json(res, 409, { error: 'This ad cannot be skipped yet.' }); return;
         }
-        advanceAd();
+        advanceAd('skipped');
         json(res, 200, { state: snapshot() });
         return;
       }
       if (url.pathname === '/api/ad-break/unavailable' && req.method === 'POST') {
         if (record) roomRegistry.requireAdmin(record, req);
         else checkOwner(req);
-        advanceAd();
+        advanceAd('failed');
         json(res, 200, { state: snapshot() });
         return;
       }
@@ -1374,7 +1397,7 @@ return {
     for (const viewer of viewers) viewer.end(); viewers.clear();
     screenSharing.close(); micRoom.close();
   },
-  pulse() { finishSeekIfReady(); broadcast('pulse', snapshot()); activeScreens(); screenSharing.pulse(); micRoom.pulse(); },
+  pulse() { finishSeekIfReady(); checkMidRollAds(); broadcast('pulse', snapshot()); activeScreens(); screenSharing.pulse(); micRoom.pulse(); },
   lastUsed: Date.now(),
   idle() { return !viewers.size && !uploadInProgress && screenSharing.idle() && micRoom.idle(); },
   close() { cancelAdBreak(); preparationController?.abort(); for (const viewer of viewers) viewer.end(); viewers.clear(); screenSharing.close(); micRoom.close(); },

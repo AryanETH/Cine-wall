@@ -736,7 +736,13 @@ function renderTimelineMarkers() {
   container.innerHTML = '';
   const state = status.state;
   
-  if (!state.adBreaks || !state.adBreaks.length || !duration || state.sessionMode === 'presentation') return;
+  if (!state.adScheduleEnabled || !state.adBreaks?.length || !duration || state.sessionMode !== 'video') {
+    timeline.removeAttribute('aria-description');
+    return;
+  }
+  const upcoming = state.adBreaks.filter(item => !item.shown).map(item => formatTime(item.position));
+  if (upcoming.length) timeline.setAttribute('aria-description', 'Upcoming ads at ' + upcoming.join(', '));
+  else timeline.removeAttribute('aria-description');
   
   // Render yellow dots for each ad break
   state.adBreaks.forEach(adBreak => {
@@ -745,7 +751,8 @@ function renderTimelineMarkers() {
     marker.className = 'timeline-marker';
     marker.style.left = percent + '%';
     marker.setAttribute('data-position', adBreak.position);
-    if (adBreak.shown) marker.style.opacity = '0.4';
+    marker.classList.toggle('is-shown', adBreak.shown);
+    marker.setAttribute('aria-hidden', 'true');
     container.appendChild(marker);
   });
 }
@@ -1470,7 +1477,12 @@ events.addEventListener('pulse', (event) => {
   const previous = status.state;
   acceptState(JSON.parse(event.data));
   if (previous.commandId !== status.state.commandId || previous.asset?.version !== status.state.asset?.version || previous.ownerId !== status.state.ownerId || previous.allReady !== status.state.allReady || previous.preparation?.phase !== status.state.preparation?.phase || previous.serverId !== status.state.serverId) render();
-  else { renderPreparation(); syncPreview(); audioQueue.queue.observe(status.state, status.screens); }
+  else {
+    renderPreparation();
+    syncPreview();
+    if (previous.adScheduleEnabled !== status.state.adScheduleEnabled || previous.adScheduleDuration !== status.state.adScheduleDuration) renderTimelineMarkers();
+    audioQueue.queue.observe(status.state, status.screens);
+  }
 });
 
 function tickTimeline() {

@@ -2,7 +2,7 @@
 'use strict';
 
 window.CineWallAds = {
-  create({ now, link, request, togglePlayback }) {
+  create({ now, link, request, report, togglePlayback }) {
     const overlay = document.querySelector('#wallAd');
     const video = document.querySelector('#wallAdVideo');
     const stage = document.querySelector('#wallAdStage');
@@ -14,9 +14,34 @@ window.CineWallAds = {
     const pause = document.querySelector('#wallAdPause');
     const progressFill = document.querySelector('#wallAdProgressFill');
     const logo = document.querySelector('#wallAdLogo');
+    const visit = document.querySelector('#wallAdVisit');
+    let reported = new Set();
     let slot = null, display, timer, playingRequest, skipRequest, localMuted = false, autoplayMuted = false, failed = false;
 
     const position = () => slot.position + (slot.startedAt === null ? 0 : Math.max(0, now() - slot.startedAt) / 1000);
+
+    function reportEvent(event) {
+      if (!report || reported.has(event)) return;
+      const pending = reported;
+      pending.add(event);
+      void report('/api/ad-break/event?ad=' + encodeURIComponent(slot.id) + '&event=' + event)
+        .catch(() => pending.delete(event));
+    }
+
+    function samplePlayback() {
+      if (!slot || failed || overlay.hidden || document.visibilityState === 'hidden' || video.seeking || !video.played?.length) return;
+      const playhead = Math.min(position(), video.currentTime, video.played.end(video.played.length - 1));
+      if (playhead < .04) return;
+      if (visit && slot.clickUrl) visit.hidden = false;
+      const remaining = slot.duration - playhead;
+      if (remaining <= Math.min(.25, slot.duration * .08)) {
+        reportEvent('completed');
+        return;
+      }
+      const fraction = playhead / slot.duration;
+      const milestone = fraction >= .75 ? 'q75' : fraction >= .5 ? 'q50' : fraction >= .25 ? 'q25' : 'impression';
+      reportEvent(milestone);
+    }
     
     function refreshAudio() {
       if (!slot) return;
@@ -41,6 +66,7 @@ window.CineWallAds = {
 
     function tick() {
       if (!slot) return;
+      samplePlayback();
       const elapsed = Math.min(slot.duration, position());
       const waiting = slot.startedAt !== null && now() < slot.startedAt;
       const paused = slot.startedAt === null;
@@ -49,8 +75,8 @@ window.CineWallAds = {
       const canSkip = untilSkip === 0 && !waiting && !paused;
       
       // Update progress bar
-      const progress = Math.min(100, Math.max(0, (elapsed / slot.duration) * 100));
-      progressFill.style.width = progress + '%';
+      const progress = Math.min(1, Math.max(0, elapsed / slot.duration));
+      progressFill.style.transform = 'scaleX(' + progress + ')';
       
       skip.hidden = !canSkip;
       skip.disabled = skipRequest === slot.id;
@@ -62,7 +88,7 @@ window.CineWallAds = {
         : untilSkip > 0 ? 'Skip in ' + untilSkip + 's' : remaining + 's remaining';
 
       if (failed || waiting || paused || elapsed >= slot.duration) video.pause();
-      if (failed || waiting || video.readyState < 1 || elapsed >= slot.duration) return;
+      if (failed || waiting || video.ended || video.readyState < 1 || elapsed >= slot.duration) return;
       const drift = elapsed - video.currentTime;
       if (!video.seeking && Math.abs(drift) > (video.paused ? .15 : .35)) video.currentTime = Math.min(elapsed, Math.max(0, video.duration - .03));
       video.playbackRate = Math.abs(drift) > .08 && Math.abs(drift) < .35 ? (drift > 0 ? 1.03 : .97) : 1;
@@ -72,21 +98,26 @@ window.CineWallAds = {
     function update(next, options) {
       if (!next || !options.ready) {
         if (slot) {
+          samplePlayback();
           slot = null;
           clearInterval(timer);
           video.pause();
           video.removeAttribute('src');
           video.load();
           overlay.hidden = true;
-          progressFill.style.width = '0%';
+          progressFill.style.transform = 'scaleX(0)';
           logo.hidden = true;
+          logo.removeAttribute('src');
+          if (visit) { visit.hidden = true; visit.removeAttribute('href'); }
           localMuted = autoplayMuted = false;
         }
         return;
       }
       display = options;
       if (slot?.id !== next.id) {
+        samplePlayback();
         slot = next;
+        reported = new Set();
         failed = false;
         playingRequest = null;
         skipRequest = null;
@@ -95,7 +126,12 @@ window.CineWallAds = {
         video.load();
         badge.textContent = 'Ad ' + slot.number + ' of ' + slot.total;
         title.textContent = slot.title;
-        progressFill.style.width = '0%';
+        if (visit) {
+          visit.hidden = true;
+          if (slot.clickUrl) visit.href = slot.clickUrl;
+          else visit.removeAttribute('href');
+        }
+        progressFill.style.transform = 'scaleX(0)';
         
         // Show logo if available
         if (slot.logo) {
@@ -103,6 +139,7 @@ window.CineWallAds = {
           logo.hidden = false;
         } else {
           logo.hidden = true;
+          logo.removeAttribute('src');
         }
         
         overlay.hidden = false;
@@ -117,6 +154,10 @@ window.CineWallAds = {
     }
 
     video.addEventListener('canplay', tick);
+    video.addEventListener('timeupdate', samplePlayback);
+    video.addEventListener('ended', samplePlayback);
+    logo.addEventListener('error', () => { logo.hidden = true; });
+    visit?.addEventListener('click', () => { if (slot && !visit.hidden) reportEvent('click'); });
     video.addEventListener('error', () => {
       if (!slot || failed) return;
       failed = true;
