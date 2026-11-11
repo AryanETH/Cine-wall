@@ -602,6 +602,7 @@ async function initYouTubePlayer(videoId, force = false) {
 function applyStateAppearance(nextState) {
   if (currentState && nextState.serverId === currentState.serverId && nextState.commandId < currentState.commandId) return;
   const previousAudioMode = currentState?.audioMode;
+  const adVisibilityChanged = Boolean(currentState?.adBreak) !== Boolean(nextState.adBreak);
   if (nextState.adBreak) localPlaybackIntent = null;
   if (localPlaybackIntent) {
     if (localPlaybackIntent.assetVersion === nextState.asset?.version && localPlaybackIntent.serverId === nextState.serverId) nextState = { ...nextState, ...localPlaybackIntent.patch };
@@ -621,6 +622,7 @@ function applyStateAppearance(nextState) {
     fit: nextState.mode || 'fit',
     controller: screenNumber === 1 && window.CineWallSession?.membership?.admin === true,
   });
+  if (adVisibilityChanged) syncPlayerHandControls();
   applyAudioSettings();
   if (previousAudioMode !== nextState.audioMode && nextState.playing && ready) resumeRoutedAudio();
 
@@ -1486,6 +1488,7 @@ document.addEventListener('click', showControls);
 $('#playerHandSettings')?.addEventListener('keydown', showControls);
 $('#playerHandSettings')?.addEventListener('focusin', showControls);
 document.addEventListener('keydown', (event) => {
+  if (adController?.handleKey(event)) return;
   if (event.target.isContentEditable || event.target.matches('input, textarea, select, [contenteditable="true"]')) return;
   const focusedAction = event.target.closest?.('button, a');
   if (focusedAction && !['screenPlay', 'screenBack', 'screenForward', 'screenPreviousPage', 'screenNextPage'].includes(focusedAction.id)) return;
@@ -1531,7 +1534,7 @@ setInterval(() => {
   if (currentState?.playing && ready && ['video', 'audio'].includes(sessionMode) && !video.seeking && !video.error) correctDrift(currentState, false);
 }, 250);
 function playerHandAvailable() {
-  return sessionMode === 'video' && screenNumber === 1 && ready && !removedScreenNumber
+  return sessionMode === 'video' && screenNumber === 1 && ready && !removedScreenNumber && !currentState?.adBreak
     && window.CineWallSession?.membership?.admin === true
     && (!currentState?.ownerId || currentState.ownerId === window.CineWallSession.deviceId);
 }

@@ -56,10 +56,10 @@ test('ad player renders distinct slices and uses the shared five-second skip clo
   const code = fs.readFileSync(path.join(__dirname,'../public/wall-ads.js'), 'utf8');
   for (const screen of [1,2]) {
     const elements = new Map(), requests = [], reports = [];
-    let tick;
+    let tick, toggles = 0;
     const get = selector => {
       if (!elements.has(selector)) elements.set(selector, { hidden: true, paused: true, currentTime: 0, duration: 12, readyState: 3,
-        events: {}, style: new Map(), classList: { toggle() {} }, addEventListener(name, fn) { this.events[name] = fn; },
+        events: {}, style: new Map(), classList: { toggle() {} }, addEventListener(name, fn) { this.events[name] = fn; }, setAttribute() {},
         pause() { this.paused = true; }, play: async () => {}, loads: 0, load() { this.loads++; }, removeAttribute(attr) { delete this[attr]; } });
       const node = elements.get(selector); node.style.setProperty = (key, value) => node.style.set(key, value); return node;
     };
@@ -69,8 +69,8 @@ test('ad player renders distinct slices and uses the shared five-second skip clo
     vm.runInNewContext(code,{window,document,setInterval(fn){tick=fn;return 1;},clearInterval(){},
       setTimeout(fn){retry=fn;return 1;},clearTimeout(){retry=null;}});
     const controller = window.CineWallAds.create({now:()=>now,link:value=>value,request:async value=>requests.push(value),
-      report:async value=>reports.push(value),togglePlayback(){}});
-    const display = {screen,total:2,ready:true,fit:'stretch',volume:1,muted:false};
+      report:async value=>reports.push(value),togglePlayback(){toggles++;}});
+    const display = {screen,total:2,ready:true,fit:'stretch',volume:1,muted:false,controller:screen===1};
     now=0;
     const video = get('#wallAdVideo');
     controller.update(null,{...display,preload:ad});
@@ -83,12 +83,16 @@ test('ad player renders distinct slices and uses the shared five-second skip clo
     assert.equal(video.loads,2);
     controller.update({...ad,loading:true,startedAt:null},display);
     assert.deepEqual(requests,['/api/ad-break/ready?ad=sponsor&screen='+screen]);
+    const key = (key, code, extra={}) => controller.handleKey({key,code,preventDefault(){},...extra});
+    key(' ','Space');
+    assert.equal(toggles,0,'Space does not start an ad before both displays are ready');
     controller.update(ad,display);
     assert.equal(video.loads,2,'the same buffered video is used for the break');
     assert.equal(get('#wallAdStage').style.get('--screen-index'),screen-1);
     assert.equal(get('#wallAdStage').style.get('--wall-screens'),2);
     assert.equal(get('#wallAdVideo').muted, screen!==1);
     assert.equal(get('#wallAdSkip').hidden,true);
+    assert.equal(get('#wallAdCountdown').textContent,'5s');
     assert.equal(get('#wallAdLogo').src, ad.logo);
     assert.equal(get('#wallAdProgressFill').style.transform, 'scaleX(0)');
     video.events.playing();
@@ -109,11 +113,23 @@ test('ad player renders distinct slices and uses the shared five-second skip clo
     now=6400; tick();
     assert.equal(get('#wallAdVideo').currentTime,5);
     assert.equal(get('#wallAdSkip').hidden,false);
+    assert.equal(get('#wallAdCountdown').hidden,true);
+    assert.equal(key('m','KeyM'),screen===1);
+    assert.equal(video.muted,true);
+    key('m','KeyM',{repeat:true});
+    assert.equal(video.muted,true);
+    key('m','KeyM');
+    assert.equal(video.muted,screen!==1);
+    assert.equal(key(' ','Space',{target:get('#wallAdSkip')}),false);
+    assert.equal(key(' ','Space'),screen===1);
+    assert.equal(toggles,screen===1 ? 1 : 0);
     assert.equal(get('#wallAdProgressFill').style.transform, 'scaleX(' + 5/12 + ')');
     void get('#wallAdSkip').events.click();
     assert.deepEqual(requests,['/api/ad-break/ready?ad=sponsor&screen='+screen,'/api/ad-break/skip?ad=sponsor']);
     controller.update({...ad,id:'bumper',skipAfter:null,logo:null},display);
     assert.equal(get('#wallAdSkip').hidden,true);
+    assert.equal(get('#wallAdCountdown').hidden,false);
+    assert.equal(get('#wallAdCountdown').textContent,'7s');
     assert.equal(get('#wallAdLogo').hidden,true);
     assert.equal(visit.hidden,true);
     controller.update(null,display);

@@ -222,6 +222,13 @@ test('Display 1 gestures use the player transport and never enable on guest scre
   assert.deepEqual(commands.map(item => item.type), ['pause'], 'practice pauses through the synchronized player command');
   for (const action of ['play', 'pause', 'forward', 'back', 'volume-up', 'volume-down']) assert.equal(config.onAction(action), true);
   assert.deepEqual(commands.map(item => item.type), ['pause', 'play', 'pause', 'screen-audio', 'screen-audio']); assert.deepEqual(seeks, [10, -10]);
+  context.currentState.adBreak = { id: 'sponsor' };
+  vm.runInNewContext('syncPlayerHandControls()', context);
+  assert.equal(nodes.get('#playerHandSettings').hidden, true);
+  assert.equal(config.onAction('pause'), 'Video controls unavailable');
+  delete context.currentState.adBreak;
+  vm.runInNewContext('syncPlayerHandControls()', context);
+  assert.equal(nodes.get('#playerHandSettings').hidden, false);
   context.screenNumber = 2; assert.equal(config.available(), false); assert.notEqual(config.onAction('play'), true);
   config.onPracticeStart(); assert.equal(commands.length, 5, 'other displays cannot pause from practice');
   context.screenNumber = 1; context.window.CineWallSession.membership.admin = false; assert.equal(config.available(), false);

@@ -17,7 +17,7 @@
   <script src="session.js?v=20261104-room-auth-1"></script>
   <script src="media-peer.js?v=20261027-entry-2"></script>
   <link rel="stylesheet" href="styles.css?v=20261111-ad-timeline">
-  <link rel="stylesheet" href="wall-ads.css?v=2">
+  <link rel="stylesheet" href="wall-ads.css?v=3">
   <link rel="stylesheet" href="hand-controls.css?v=20261029-player-5">
   <link rel="stylesheet" href="device-support.css?v=20261025-mobile-42">
   <link rel="stylesheet" href="/rooms.css?v=20261027-links-3">
@@ -51,16 +51,17 @@
     <div id="wallAdStage" class="wall-stage">
       <video id="wallAdVideo" playsinline preload="auto" aria-label="Advertisement video"></video>
     </div>
-    <img id="wallAdLogo" class="wall-ad-logo" alt="Advertiser logo" hidden>
     <div class="wall-ad-panel">
-      <div class="wall-ad-meta"><strong id="wallAdBadge"></strong><span id="wallAdTitle"></span><span id="wallAdCountdown"></span></div>
+      <div class="wall-ad-brand">
+        <img id="wallAdLogo" class="wall-ad-logo" alt="Advertiser logo" hidden>
+        <a id="wallAdVisit" target="_blank" rel="noopener noreferrer" hidden>Visit us</a>
+      </div>
       <div class="wall-ad-actions">
-        <a id="wallAdVisit" target="_blank" rel="noopener noreferrer" hidden>Visit advertiser</a>
-        <button id="wallAdMute" type="button" hidden>Mute ad</button>
-        <button id="wallAdPause" type="button" hidden>Pause ad</button>
+        <span id="wallAdCountdown" class="wall-ad-countdown" role="timer"></span>
         <button id="wallAdSkip" type="button" hidden>Skip ad</button>
       </div>
     </div>
+    <span id="wallAdStatus" class="wall-ad-status" role="status"></span>
     <div class="wall-ad-progress" aria-hidden="true"><div id="wallAdProgressFill" class="wall-ad-progress-fill"></div></div>
   </section>
   <header id="screenHud" class="screen-hud" hidden aria-hidden="true">
@@ -181,9 +182,9 @@
   <script src="hand-gestures.js?v=20261029-poses-2"></script>
   <script src="hand-tabs.js?v=20261029-handoff-2"></script>
   <script src="hand-controls.js?v=20261029-practice-6"></script>
-  <script src="wall-ads.js?v=3"></script>
+  <script src="wall-ads.js?v=4"></script>
   <script src="ad-timeline.js?v=1"></script>
-  <script src="desktop-entry.js?v=20261025-mobile-42" data-src="screen.js?v=20261111-ad-preload"></script>
+  <script src="desktop-entry.js?v=20261025-mobile-42" data-src="screen.js?v=20261111-ad-controls"></script>
   <script src="/rooms-ui.js?v=20261104-room-auth-1"></script>
 </body>
 </html>

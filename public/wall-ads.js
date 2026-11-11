@@ -6,20 +6,18 @@ window.CineWallAds = {
     const overlay = document.querySelector('#wallAd');
     const video = document.querySelector('#wallAdVideo');
     const stage = document.querySelector('#wallAdStage');
-    const badge = document.querySelector('#wallAdBadge');
-    const title = document.querySelector('#wallAdTitle');
     const countdown = document.querySelector('#wallAdCountdown');
     const skip = document.querySelector('#wallAdSkip');
-    const mute = document.querySelector('#wallAdMute');
-    const pause = document.querySelector('#wallAdPause');
+    const status = document.querySelector('#wallAdStatus');
     const progressFill = document.querySelector('#wallAdProgressFill');
     const logo = document.querySelector('#wallAdLogo');
     const visit = document.querySelector('#wallAdVisit');
     let reported = new Set();
-    let slot = null, display, timer, playingRequest, skipRequest, localMuted = false, autoplayMuted = false, failed = false;
+    let slot = null, display, timer, playingRequest, skipRequest, localMuted = null, autoplayMuted = false, failed = false;
     let preparedMedia = '', preparedLogo = '', logoFailed = false, reloadTimer, retried = false;
     let readyReported = '', readyRetryAt = 0;
     let playedThisRun = false;
+    let skipFailed = false;
 
     const position = () => slot.position + (slot.startedAt === null ? 0 : Math.max(0, now() - slot.startedAt) / 1000);
 
@@ -80,9 +78,23 @@ window.CineWallAds = {
     function refreshAudio() {
       if (!slot) return;
       video.volume = display.volume;
-      video.muted = display.screen !== 1 || display.muted || localMuted || autoplayMuted;
-      mute.hidden = display.screen !== 1 || display.muted;
-      mute.textContent = video.muted ? 'Enable ad sound' : 'Mute ad';
+      video.muted = display.screen !== 1 || autoplayMuted || (localMuted ?? display.muted);
+    }
+
+    function handleKey(event) {
+      if (!slot || event.defaultPrevented || event.altKey || event.ctrlKey || event.metaKey) return false;
+      const muteKey = event.key.toLowerCase() === 'm' && display.screen === 1;
+      const spaceKey = event.code === 'Space' && display.controller && event.target !== skip;
+      if (!muteKey && !spaceKey) return false;
+      event.preventDefault();
+      if (event.repeat) return true;
+      if (muteKey) {
+        localMuted = !video.muted;
+        autoplayMuted = false;
+        refreshAudio();
+        tick();
+      } else if (!slot.loading) togglePlayback();
+      return true;
     }
 
     function tryPlay() {
@@ -107,7 +119,7 @@ window.CineWallAds = {
       const paused = slot.startedAt === null;
       const remaining = Math.max(0, Math.ceil(slot.duration - elapsed));
       const untilSkip = slot.skipAfter === null ? null : Math.max(0, Math.ceil(slot.skipAfter - elapsed));
-      const canSkip = untilSkip === 0 && !waiting && !paused;
+      const canSkip = untilSkip === 0 && !waiting && !paused && !failed && remaining > 0;
       
       // Update progress bar
       const progress = Math.min(1, Math.max(0, elapsed / slot.duration));
@@ -115,13 +127,18 @@ window.CineWallAds = {
       
       skip.hidden = !canSkip;
       skip.disabled = skipRequest === slot.id;
-      pause.hidden = !display.controller || slot.loading === true;
-      pause.textContent = paused ? 'Resume ad' : 'Pause ad';
-      countdown.textContent = failed ? 'Ad unavailable. Waiting for the room…'
-        : slot.loading ? 'Loading ad…'
-        : paused ? 'Ad paused'
-        : waiting ? 'Ad starting…'
-        : untilSkip > 0 ? 'Skip in ' + untilSkip + 's' : remaining + 's remaining';
+      countdown.hidden = canSkip;
+      const seconds = untilSkip > 0 ? untilSkip : remaining;
+      const label = seconds + 's';
+      if (countdown.textContent !== label) {
+        countdown.textContent = label;
+        countdown.setAttribute('aria-label', seconds + (untilSkip > 0 ? ' seconds until skip' : ' seconds left in ad'));
+      }
+      const notice = failed ? 'Ad unavailable. Waiting for the room.'
+        : slot.loading ? 'Loading ad.'
+        : paused ? 'Ad paused.'
+        : skipFailed ? 'Could not skip. Please try again.' : '';
+      if (status.textContent !== notice) status.textContent = notice;
 
       if (failed || waiting || paused || elapsed >= slot.duration) video.pause();
       if (failed || waiting || video.ended || video.readyState < 1 || elapsed >= slot.duration) return;
@@ -143,7 +160,8 @@ window.CineWallAds = {
           progressFill.style.transform = 'scaleX(0)';
           logo.hidden = true;
           if (visit) { visit.hidden = true; visit.removeAttribute('href'); }
-          localMuted = autoplayMuted = false;
+          localMuted = null;
+          autoplayMuted = false;
         }
         const preload = options.ready ? options.preload : null;
         prepare(preload?.media, preload?.logo);
@@ -157,6 +175,7 @@ window.CineWallAds = {
         failed = false;
         playingRequest = null;
         skipRequest = null;
+        skipFailed = false;
         readyReported = '';
         readyRetryAt = 0;
         playedThisRun = false;
@@ -171,8 +190,6 @@ window.CineWallAds = {
           clearTimeout(reloadTimer);
           video.load();
         }
-        badge.textContent = 'Ad ' + slot.number + ' of ' + slot.total;
-        title.textContent = slot.title;
         if (visit) {
           visit.hidden = true;
           if (slot.clickUrl) visit.href = slot.clickUrl;
@@ -216,26 +233,18 @@ window.CineWallAds = {
     skip.addEventListener('click', async () => {
       if (!slot || skip.hidden || skipRequest === slot.id) return;
       const id = slot.id;
+      skipFailed = false;
       skipRequest = id;
       tick();
       try { await request('/api/ad-break/skip?ad=' + encodeURIComponent(id)); }
       catch {
-        if (slot?.id === id) countdown.textContent = 'Could not skip. Please try again.';
+        if (slot?.id === id) skipFailed = true;
       } finally {
         if (skipRequest === id) skipRequest = null;
-        if (slot?.id === id) skip.disabled = false;
+        if (slot?.id === id) tick();
       }
     });
-    mute.addEventListener('click', () => {
-      if (!slot) return;
-      if (video.muted) localMuted = autoplayMuted = false;
-      else localMuted = true;
-      refreshAudio();
-      if (!video.muted && !video.paused) return;
-      tick();
-    });
-    pause.addEventListener('click', togglePlayback);
-    return { update, audio(volume, muted) {
+    return { update, handleKey, audio(volume, muted) {
       if (!display) return;
       Object.assign(display, { volume, muted });
       refreshAudio();

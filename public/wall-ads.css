@@ -2,21 +2,18 @@
 .wall-ad { position: fixed; inset: 0; z-index: 14; overflow: hidden; background: #000; color: #fff; }
 .wall-ad[hidden], .wall-ad [hidden] { display: none !important; }
 .wall-ad .wall-stage { pointer-events: none; }
-.wall-ad-panel { position: absolute; inset: auto 1.15rem 1.15rem; display: flex; flex-wrap: wrap; align-items: end; justify-content: space-between; gap: .6rem; }
-.wall-ad-meta, .wall-ad-actions { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem; }
-.wall-ad-meta { min-width: 0; max-width: 100%; background: #111d; border-radius: .55rem; padding: .5rem .7rem; font-size: .84rem; }
-.wall-ad-meta strong { background: #e6f981; color: #132009; border-radius: .25rem; padding: .12rem .35rem; white-space: nowrap; }
-.wall-ad-meta span { overflow-wrap: anywhere; }
-.wall-ad button { min-height: 2.5rem; border-radius: 999px; border: 1px solid #fff7; background: #171717ee; color: #fff; padding: .38rem .8rem; font: inherit; cursor: pointer; }
-.wall-ad #wallAdVisit { min-height: 2.5rem; display: inline-flex; align-items: center; border-radius: 999px; padding: .38rem .8rem; background: #f4e14c; color: #171717; font-weight: 700; text-decoration: none; }
-.wall-ad #wallAdSkip { background: #fff; color: #111; font-weight: 700; }
-.wall-ad button:focus-visible { outline: 3px solid #d3f65f; outline-offset: 2px; }
-
+.wall-ad-panel { position: absolute; inset: auto 1.15rem 1.15rem; display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: end; gap: .75rem; pointer-events: none; }
+.wall-ad-brand { display: grid; justify-items: start; gap: .5rem; }
+.wall-ad-logo { display: block; width: auto; height: auto; max-width: min(150px, 36vw); max-height: 72px; object-fit: contain; }
+.wall-ad #wallAdVisit, .wall-ad #wallAdSkip, .wall-ad-countdown { min-height: 2.5rem; display: inline-grid; place-items: center; border-radius: 999px; padding: .38rem .8rem; font: inherit; font-weight: 700; }
+.wall-ad #wallAdVisit, .wall-ad #wallAdSkip { pointer-events: auto; cursor: pointer; }
+.wall-ad #wallAdVisit { background: #f4e14c; color: #171717; text-decoration: none; }
+.wall-ad #wallAdSkip { border: 1px solid #fff7; background: #fff; color: #111; }
+.wall-ad-countdown { min-width: 3rem; background: #171717ee; color: #fff; font-variant-numeric: tabular-nums; }
+.wall-ad :is(button, a):focus-visible { outline: 3px solid #d3f65f; outline-offset: 2px; }
+.wall-ad-status { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 
 /* Yellow progress bar */
 .wall-ad-progress { position: absolute; bottom: 0; left: 0; right: 0; height: 4px; background: rgba(255,255,255,0.3); z-index: 15; }
 .wall-ad-progress-fill { height: 100%; background: #f4e14c; transform: scaleX(0); transform-origin: left; transition: transform .15s linear; }
 @media (prefers-reduced-motion: reduce) { .wall-ad-progress-fill { transition: none; } }
-
-/* Logo overlay */
-.wall-ad-logo { position: absolute; top: 1.5rem; right: 1.5rem; max-width: 150px; max-height: 80px; z-index: 16; opacity: 0.9; object-fit: contain; }
