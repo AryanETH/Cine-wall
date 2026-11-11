@@ -192,7 +192,7 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .timeline-row { display: grid; grid-template-columns: 54px 1fr 54px; gap: 13px; align-items: center; margin-top: 33px; color: var(--muted-dark); font-size: .68rem; font-variant-numeric: tabular-nums; }
 .timeline-row span:last-child { text-align: right; }
 .timeline-wrapper { position: relative; }
-.timeline-markers { position: absolute; top: 50%; left: 0; right: 0; height: 5px; transform: translateY(-50%); pointer-events: none; }
+.timeline-markers { position: absolute; z-index: 2; top: 50%; left: 0; right: 0; height: 5px; transform: translateY(-50%); pointer-events: none; }
 .timeline-marker { position: absolute; width: 8px; height: 8px; background: #f4e14c; border-radius: 50%; transform: translate(-50%, -50%); top: 50%; box-shadow: 0 0 4px rgba(244, 225, 76, 0.8); z-index: 2; }
 .timeline-marker.is-shown { opacity: .4; }
 input[type="range"] { width: 100%; height: 5px; accent-color: var(--accent); cursor: pointer; position: relative; z-index: 1; }
@@ -428,6 +428,8 @@ body[data-session-mode="audio"] .top-settings { grid-template-columns: 1fr; }
 .screen-controls.available.visible { opacity: 1; transform: translate(-50%, 0); pointer-events: auto; }
 .screen-control-track { display: grid; grid-template-columns: 48px 1fr 48px; gap: 10px; align-items: center; color: #9ba3b3; font-size: .62rem; font-variant-numeric: tabular-nums; }
 .screen-control-track span:last-child { text-align: right; }
+.screen-control-track .timeline-wrapper { min-width: 0; }
+.screen-control-track input[type="range"] { display: block; margin: 0; }
 .screen-transport { display: flex; justify-content: center; align-items: center; gap: 8px; margin-top: 9px; }
 .screen-control-button, .screen-play-button { display: grid; place-items: center; width: 36px; height: 36px; padding: 0; border: 1px solid rgba(255,255,255,.12); border-radius: 50%; background: #151a27; color: #f8faf6; text-decoration: none; }
 .screen-play-button { width: 44px; height: 44px; border-color: var(--accent); background: var(--accent-gradient); color: var(--accent-ink); }

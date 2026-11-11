@@ -20,6 +20,34 @@ test('advertising accepts HTTP links without credentials', () => {
   for (const url of ['javascript:alert(1)', 'https://user:pass@forms.gle/example']) assert.throws(() => formLink(url), { status: 400 });
 });
 
+test('both movie timelines display scheduled breaks and clear them when the campaign is paused', () => {
+  for (const [page, id] of [['admin.html', 'timelineMarkers'], ['screen.html', 'screenTimelineMarkers']]) {
+    const html = fs.readFileSync(path.join(__dirname, '../public', page), 'utf8');
+    assert.match(html, new RegExp('id="' + id + '"'));
+    assert.match(html, /src="ad-timeline\.js\?v=1"/);
+  }
+  const window = {};
+  const document = { createElement: () => ({
+    style: {},
+    classList: { toggle(_class, shown) { this.shown = shown; } },
+  }) };
+  vm.runInNewContext(fs.readFileSync(path.join(__dirname, '../public/ad-timeline.js'), 'utf8'), { window, document });
+  const attrs = new Map();
+  const input = { setAttribute: (...args) => attrs.set(...args), removeAttribute: name => attrs.delete(name) };
+  const overlay = { replaceChildren(...markers) { this.markers = markers; } };
+  const render = window.CineWallAdTimeline(input, overlay, position => position + 's');
+  const state = { sessionMode: 'video', adScheduleEnabled: true, adBreaks: [
+    { position: 25, shown: true }, { position: 50, shown: false }, { position: 75, shown: false },
+  ] };
+  render(state, 100);
+  assert.deepEqual(overlay.markers.map(marker => marker.style.left), ['25%', '50%', '75%']);
+  assert.equal(overlay.markers[0].classList.shown, true);
+  assert.equal(attrs.get('aria-description'), 'Upcoming ads at 50s, 75s');
+  render({ ...state, adScheduleEnabled: false }, 100);
+  assert.equal(overlay.markers.length, 0);
+  assert.equal(attrs.has('aria-description'), false);
+});
+
 test('ad player renders distinct slices and uses the shared five-second skip clock', () => {
   let now = 0;
   const ad = { id: 'sponsor', title: 'Sponsor', startedAt: 1400, position: 0, duration: 12, skipAfter: 5,

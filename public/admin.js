@@ -4,6 +4,7 @@ const $ = (selector) => document.querySelector(selector);
 const media = $('#mediaPreview');
 const video3d = window.CineWallVideo3D?.create(media, $('#previewAnaglyph'), { onError: text => { $('#videoViewHint').textContent = text; } });
 const timeline = $('#timeline');
+const renderAdTimeline = window.CineWallAdTimeline?.(timeline, $('#timelineMarkers'), formatTime);
 const screenLinks = $('#screenLinks');
 const warning = $('#fileWarning');
 const requestedMode = new URLSearchParams(location.search).get('mode');
@@ -731,30 +732,7 @@ function renderPlayer() {
 }
 
 function renderTimelineMarkers() {
-  const container = $('#timelineMarkers');
-  if (!container) return;
-  container.innerHTML = '';
-  const state = status.state;
-  
-  if (!state.adScheduleEnabled || !state.adBreaks?.length || !duration || state.sessionMode !== 'video') {
-    timeline.removeAttribute('aria-description');
-    return;
-  }
-  const upcoming = state.adBreaks.filter(item => !item.shown).map(item => formatTime(item.position));
-  if (upcoming.length) timeline.setAttribute('aria-description', 'Upcoming ads at ' + upcoming.join(', '));
-  else timeline.removeAttribute('aria-description');
-  
-  // Render yellow dots for each ad break
-  state.adBreaks.forEach(adBreak => {
-    const percent = (adBreak.position / duration) * 100;
-    const marker = document.createElement('div');
-    marker.className = 'timeline-marker';
-    marker.style.left = percent + '%';
-    marker.setAttribute('data-position', adBreak.position);
-    marker.classList.toggle('is-shown', adBreak.shown);
-    marker.setAttribute('aria-hidden', 'true');
-    container.appendChild(marker);
-  });
+  renderAdTimeline?.(status.state, duration);
 }
 
 function renderSourcePoster() {

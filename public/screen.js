@@ -21,6 +21,7 @@ const picker = $('#screenPicker');
 const readyButton = $('#readyButton');
 const screenControls = $('#screenControls');
 const screenTimeline = $('#screenTimeline');
+const renderAdTimeline = window.CineWallAdTimeline?.(screenTimeline, $('#screenTimelineMarkers'), formatTime);
 const waitingAsset = $('#waitingAsset');
 const networkLabel = $('#networkLabel');
 const connectionLost = $('#connectionLost');
@@ -1008,9 +1009,11 @@ function updateController() {
     duration = Number.isFinite(video.duration) ? video.duration : 0;
     position = Number.isFinite(video.currentTime) ? video.currentTime : targetPosition(currentState);
   }
+  if (!duration && sessionMode === 'video') duration = currentState?.adScheduleDuration || 0;
 
   if (!scrubbing) screenTimeline.value = position;
   screenTimeline.max = duration || 100;
+  renderAdTimeline?.(currentState, duration);
   if (!scrubbing) $('#screenCurrentTime').textContent = formatTime(position);
   $('#screenDuration').textContent = duration ? formatTime(duration) : '--:--';
   const replay = videoFinished();
