@@ -76,6 +76,8 @@ The dashboard reports impressions, advertiser clicks, CTR, playback milestones, 
 
 Yellow dots mark the breaks on the movie timeline. During each break, a yellow line tracks the ad's progress across the selected screens. Skippable ads can be skipped after five seconds. CineWall cycles through the saved slots, so one configured ad can play at all three breaks.
 
+Enable **Play the first ad before the video starts** and push the campaign to move its first break to the start of eligible videos. The total number of breaks stays the same. CineWall loads the next clip and logo in the background and waits for the displays to buffer the clip before starting it. If the ad cannot load, the movie resumes. A break that already finished or was skipped stays marked as played when viewers rewind the same loaded video.
+
 ### Advertiser Portal (`/advertise`)
 - Redirects to configured Google Forms URL
 - Default contact form provided

@@ -256,7 +256,7 @@ function createAdvertising({ root, password = process.env.CINEWALL_ADS_PASSWORD,
     if (body.enabled && !slots.length) throw fail(400, 'Add at least one slot before enabling ads.');
     const previous = data.published;
     const published = body.enabled
-      ? { id: randomUUID(), at: now(), slots: captureSlots(slots), logo: data.logo }
+      ? { id: randomUUID(), at: now(), slots: captureSlots(slots), logo: data.logo, preRoll: body.preRoll === true }
       : null;
     if (published?.slots.some(creative => !fs.existsSync(playbackFile(creative)))) {
       throw fail(409, 'One of the selected video files is missing. Upload it again before pushing.');
@@ -271,16 +271,18 @@ function createAdvertising({ root, password = process.env.CINEWALL_ADS_PASSWORD,
     }
   }
 
-  function serve(req, res, creative, original = false) {
+  function serve(req, res, creative, original = false, cache = false) {
     if (!creative) throw fail(404, 'Ad video not found.');
-    serveAsset(req, res, original ? fileFor(creative.id) : playbackFile(creative), 'video/mp4', false, { cacheControl: 'private, no-store' });
+    serveAsset(req, res, original ? fileFor(creative.id) : playbackFile(creative), 'video/mp4', false, {
+      cacheControl: cache ? 'private, max-age=300' : 'private, no-store',
+    });
   }
 
-  function serveLogo(req, res, logo) {
+  function serveLogo(req, res, logo, cache = false) {
     if (!logo) throw fail(404, 'No logo uploaded.');
     const ext = logo.split('.').pop();
     const contentType = ext === 'png' ? 'image/png' : ext === 'webp' ? 'image/webp' : 'image/jpeg';
-    serveAsset(req, res, logoFileFor(logo), contentType, false, { cacheControl: 'private, no-store' });
+    serveAsset(req, res, logoFileFor(logo), contentType, false, { cacheControl: cache ? 'private, max-age=300' : 'private, no-store' });
   }
 
   async function handle(req, res, url, { json, bodyJson, page }) {
@@ -423,7 +425,9 @@ function createAdvertising({ root, password = process.env.CINEWALL_ADS_PASSWORD,
       return fs.existsSync(playbackFile(creative)) ? [{ ...creative, logo: data.published.logo }] : [];
     });
   }
-  return { handle, campaign, serve, serveLogo, analytics, enabled: () => data.enabled && Boolean(data.published?.slots.length) };
+  return { handle, campaign, serve, serveLogo, analytics,
+    enabled: () => data.enabled && Boolean(data.published?.slots.length),
+    preRoll: () => data.published?.preRoll === true };
 }
 module.exports = { createAdvertising, FORMATS, formLink };
 

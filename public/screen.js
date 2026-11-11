@@ -615,7 +615,8 @@ function applyStateAppearance(nextState) {
   if (nextState.adBreak) video.pause();
   const adAudio = audioSetting();
   adController?.update(nextState.adBreak, {
-    ready: ready && screenNumber > 0 && sessionMode === 'video',
+    ready: ready && screenNumber > 0 && screenNumber <= wallScreens && sessionMode === 'video',
+    preload: nextState.adPreload,
     screen: screenNumber, total: wallScreens, volume: Number(adAudio.volume) || 0, muted: Boolean(adAudio.muted),
     fit: nextState.mode || 'fit',
     controller: screenNumber === 1 && window.CineWallSession?.membership?.admin === true,

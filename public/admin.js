@@ -264,7 +264,9 @@ async function command(payload) {
   const coalesce = payload.type === 'seek' ? 'seek' : payload.type === 'screen-audio' && 'volume' in payload && !muteToggle ? `volume-${payload.screen}` : '';
   if (coalesce) queuedRevisions.set(coalesce, sequence);
   if (muteToggle) queuedRevisions.set(`volume-${payload.screen}`, sequence);
-  if (!state.adBreak && ['play', 'pause', 'seek', 'restart'].includes(payload.type)) {
+  const adDueOnPlay = payload.type === 'play' && state.adPreload && state.adBreaks?.some(item =>
+    !item.shown && item.position <= (Number.isFinite(payload.position) ? payload.position : positionNow()));
+  if (!state.adBreak && !adDueOnPlay && ['play', 'pause', 'seek', 'restart'].includes(payload.type)) {
     const position = payload.type === 'restart' ? 0 : Number.isFinite(payload.position) ? payload.position : positionNow();
     const patch = { position, anchorTime: now, notBefore: 0, playing: payload.type === 'play' ? true : payload.type === 'pause' || payload.type === 'restart' ? false : state.playing };
     pendingControls.set(key, { sequence, patch, assetVersion: state.asset?.version, sessionMode: state.sessionMode });
@@ -707,14 +709,15 @@ function renderPlayer() {
     $('#loopButton').classList.toggle('active', loopEnabled);
     timeline.disabled = !hasAsset || uploadBusy || isPreparing();
     if (state.adBreak) {
-      const paused = state.adBreak.startedAt === null;
+      const paused = state.adBreak.startedAt === null && !state.adBreak.loading;
       $('#playerState').hidden = false;
-      $('#playerState').textContent = 'Ad ' + state.adBreak.number + ' of ' + state.adBreak.total + (paused ? ' · paused' : '');
+      $('#playerState').textContent = state.adBreak.loading ? 'Loading ad on displays…'
+        : 'Ad ' + state.adBreak.number + ' of ' + state.adBreak.total + (paused ? ' · paused' : '');
       $('#play').hidden = !paused;
       $('#play').disabled = !paused;
       $('#play').title = 'Resume ad';
       $('#play').setAttribute('aria-label', 'Resume ad');
-      $('#pause').hidden = paused;
+      $('#pause').hidden = paused || state.adBreak.loading;
       for (const selector of ['#restart', '#back', '#forward']) $(selector).disabled = true;
       timeline.disabled = true;
     }

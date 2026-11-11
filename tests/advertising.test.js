@@ -51,7 +51,8 @@ test('both movie timelines display scheduled breaks and clear them when the camp
 test('ad player renders distinct slices and uses the shared five-second skip clock', () => {
   let now = 0;
   const ad = { id: 'sponsor', title: 'Sponsor', startedAt: 1400, position: 0, duration: 12, skipAfter: 5,
-    number: 1, total: 1, logo: '/api/ad-break/logo?ad=sponsor' };
+    number: 1, total: 1, media: '/api/ad-break/media?clip=sponsor', logo: '/api/ad-break/logo?image=sponsor',
+    clickUrl: 'https://example.com/sponsor' };
   const code = fs.readFileSync(path.join(__dirname,'../public/wall-ads.js'), 'utf8');
   for (const screen of [1,2]) {
     const elements = new Map(), requests = [], reports = [];
@@ -59,23 +60,38 @@ test('ad player renders distinct slices and uses the shared five-second skip clo
     const get = selector => {
       if (!elements.has(selector)) elements.set(selector, { hidden: true, paused: true, currentTime: 0, duration: 12, readyState: 3,
         events: {}, style: new Map(), classList: { toggle() {} }, addEventListener(name, fn) { this.events[name] = fn; },
-        pause() { this.paused = true; }, play: async () => {}, load() {}, removeAttribute(attr) { delete this[attr]; } });
+        pause() { this.paused = true; }, play: async () => {}, loads: 0, load() { this.loads++; }, removeAttribute(attr) { delete this[attr]; } });
       const node = elements.get(selector); node.style.setProperty = (key, value) => node.style.set(key, value); return node;
     };
     const window = {};
     const document = { querySelector:get, visibilityState:'hidden' };
-    vm.runInNewContext(code,{window,document,setInterval(fn){tick=fn;return 1;},clearInterval(){}});
+    let retry;
+    vm.runInNewContext(code,{window,document,setInterval(fn){tick=fn;return 1;},clearInterval(){},
+      setTimeout(fn){retry=fn;return 1;},clearTimeout(){retry=null;}});
     const controller = window.CineWallAds.create({now:()=>now,link:value=>value,request:async value=>requests.push(value),
       report:async value=>reports.push(value),togglePlayback(){}});
     const display = {screen,total:2,ready:true,fit:'stretch',volume:1,muted:false};
-    now=0; controller.update({...ad,clickUrl:'https://example.com/sponsor'},display);
+    now=0;
+    const video = get('#wallAdVideo');
+    controller.update(null,{...display,preload:ad});
+    assert.equal(video.src,ad.media);
+    assert.equal(get('#wallAdLogo').src,ad.logo);
+    assert.equal(get('#wallAd').hidden,true);
+    video.events.error();
+    assert.equal(video.loads,1);
+    retry();
+    assert.equal(video.loads,2);
+    controller.update({...ad,loading:true,startedAt:null},display);
+    assert.deepEqual(requests,['/api/ad-break/ready?ad=sponsor&screen='+screen]);
+    controller.update(ad,display);
+    assert.equal(video.loads,2,'the same buffered video is used for the break');
     assert.equal(get('#wallAdStage').style.get('--screen-index'),screen-1);
     assert.equal(get('#wallAdStage').style.get('--wall-screens'),2);
     assert.equal(get('#wallAdVideo').muted, screen!==1);
     assert.equal(get('#wallAdSkip').hidden,true);
     assert.equal(get('#wallAdLogo').src, ad.logo);
     assert.equal(get('#wallAdProgressFill').style.transform, 'scaleX(0)');
-    const video = get('#wallAdVideo');
+    video.events.playing();
     video.currentTime = 1;
     video.played = {length:1,end:()=>video.currentTime};
     now=2400;
@@ -95,7 +111,7 @@ test('ad player renders distinct slices and uses the shared five-second skip clo
     assert.equal(get('#wallAdSkip').hidden,false);
     assert.equal(get('#wallAdProgressFill').style.transform, 'scaleX(' + 5/12 + ')');
     void get('#wallAdSkip').events.click();
-    assert.deepEqual(requests,['/api/ad-break/skip?ad=sponsor']);
+    assert.deepEqual(requests,['/api/ad-break/ready?ad=sponsor&screen='+screen,'/api/ad-break/skip?ad=sponsor']);
     controller.update({...ad,id:'bumper',skipAfter:null,logo:null},display);
     assert.equal(get('#wallAdSkip').hidden,true);
     assert.equal(get('#wallAdLogo').hidden,true);
@@ -106,7 +122,7 @@ test('ad player renders distinct slices and uses the shared five-second skip clo
   }
 });
 
-test('ads unlock, publish clips and links, and count shared breaks across two screens', {timeout:45000}, async t => {
+test('published ads warm up and run once per break across a two-screen room', {timeout:55000}, async t => {
   try { execFileSync('ffmpeg',['-version'],{stdio:'ignore',windowsHide:true}); }
   catch { t.skip('FFmpeg is required for a real MP4 upload'); return; }
   const root = path.resolve(__dirname,'..');
@@ -189,7 +205,7 @@ test('ads unlock, publish clips and links, and count shared breaks across two sc
   assert.deepEqual(Buffer.from(await (await plain('/advt/api/logo',{headers:staff})).arrayBuffer()),png);
   assert.equal((await plain('/advt/api/logo')).status,401);
   const form='https://forms.gle/AdRequests';
-  const save=slots=>post('/advt/api/publish',{formUrl:form,slots},staff);
+  const save=(slots,preRoll=false)=>post('/advt/api/publish',{formUrl:form,slots,preRoll},staff);
   assert.equal((await save([])).status,400);
   assert.equal((await save([bumper,bumper,bumper,bumper])).status,400);
   assert.equal((await save([{creativeId:long.id,format:'bumper'}])).status,400);
@@ -224,21 +240,28 @@ test('ads unlock, publish clips and links, and count shared breaks across two sc
     const readyToPlay=await publish(duration);
     assert.deepEqual(readyToPlay.adBreaks.map(item=>item.position),positions);
   }
-  const {asset:{version},adBreaks}=await publish(10800);
+  const {asset:{version},adBreaks,adPreload}=await publish(10800);
   assert.deepEqual(adBreaks.map(item=>item.position),[2700,5400,8100]);
+  const mediaRequest=(url,who=guest,headers={})=>signed(url+'&room='+room,{headers:{...who,...headers}});
+  assert.equal((await mediaRequest(adPreload.media,outsider)).status,403);
+  const warmed=await mediaRequest(adPreload.media,guest,{Range:'bytes=0-23'});
+  assert.equal(warmed.status,206);
+  assert.equal(warmed.headers.get('cache-control'),'private, max-age=300');
+  assert.deepEqual(Buffer.from(await warmed.arrayBuffer()),pushedMedia.subarray(0,24));
+  assert.deepEqual(Buffer.from(await (await mediaRequest(adPreload.logo)).arrayBuffer()),png);
   const clientIds=[randomUUID(),randomUUID()];
-  async function ready(){
+  async function ready(assetVersion=version,duration=10800,extra={}){
     await Promise.all([admin,guest].map(async(who,index)=>{
-      const res=await send(roomPath('/api/status'),{clientId:clientIds[index],screen:index+1,ready:true,mediaReady:true,duration:10800,assetVersion:version},who);
+      const res=await send(roomPath('/api/status'),{clientId:clientIds[index],screen:index+1,ready:true,mediaReady:true,duration,assetVersion,...extra},who);
       assert.equal(res.status,200);
     }));
   }
   const command=(type,extra={})=>send(roomPath('/api/command'),{type,assetVersion:version,...extra});
-  const until=async check=>{
+  const until=async (check,heartbeat=ready)=>{
     for(let i=0;i<240;i++){
       const next=await state();
       if(check(next)) return next;
-      if(i%15===0) await ready();
+      if(i%15===0) await heartbeat();
       await delay(55);
     }
     assert.fail('Room did not reach the expected ad state');
@@ -249,11 +272,16 @@ test('ads unlock, publish clips and links, and count shared breaks across two sc
   const firstState=await until(s=>s.adBreak?.number===1);
   const first=firstState.adBreak;
   assert.deepEqual([first.number,first.total,firstState.playing],[1,3,false]);
+  assert.equal(first.loading,true);
+  assert.equal(first.startedAt,null);
+  assert.equal(first.media,adPreload.media);
+  assert.equal(first.logo,adPreload.logo);
   assert.equal(first.clickUrl,clickUrl);
   assert.equal(first.duration,7.5);
   assert.ok(firstState.position>=2700 && firstState.position<2701);
   assert.equal((await state()).adBreak.id,first.id);
   const adPath=(route,id)=>roomPath('/api/ad-break/'+route,'&ad='+id);
+  const adReady=(ad,screen,who)=>send(adPath('ready',ad.id)+'&screen='+screen,{},who);
   const track=(ad,event,who=guest)=>send(adPath('event',ad.id)+'&event='+event,{},who);
   assert.equal((await track(first,'impression',outsider)).status,403);
   assert.equal((await track(first,'q75')).status,409);
@@ -262,13 +290,18 @@ test('ads unlock, publish clips and links, and count shared breaks across two sc
   assert.equal(range.status,206);
   assert.deepEqual(Buffer.from(await range.arrayBuffer()),pushedMedia.subarray(0,24));
   assert.equal((await signed(adPath('logo',first.id),{headers:outsider})).status,403);
-  assert.equal(first.logo,'/api/ad-break/logo?ad='+first.id);
   const wallLogo=await signed(adPath('logo',first.id),{headers:guest});
   assert.equal(wallLogo.status,200);
   assert.deepEqual(Buffer.from(await wallLogo.arrayBuffer()),png);
   assert.equal((await send(adPath('skip',first.id),{},guest)).status,409);
   assert.equal((await send(adPath('unavailable',first.id),{},guest)).status,403);
   assert.equal((await command('seek',{position:80})).status,409);
+  assert.equal((await adReady(first,1,guest)).status,403);
+  assert.equal((await adReady(first,1,admin)).status,200);
+  assert.equal((await state()).adBreak.startedAt,null);
+  const buffered=await (await adReady(first,2,guest)).json();
+  assert.equal(buffered.state.adBreak.loading,false);
+  assert.ok(buffered.state.adBreak.startedAt>buffered.state.serverTime);
   assert.equal((await command('pause')).status,200);
   assert.equal((await state()).adBreak.startedAt,null);
   assert.equal((await command('play')).status,200);
@@ -290,6 +323,9 @@ test('ads unlock, publish clips and links, and count shared breaks across two sc
     if (number === 3) {
       // Exercise the admin fallback for a display that cannot decode an ad.
       assert.equal((await send(adPath('unavailable',ad.id))).status,200);
+    } else {
+      assert.equal((await adReady(ad,1,admin)).status,200);
+      assert.equal((await adReady(ad,2,guest)).status,200);
     }
     const resumed=await until(s=>!s.adBreak && s.playing);
     if (number === 2) assert.equal((await track(ad,'completed')).status,204);
@@ -297,13 +333,32 @@ test('ads unlock, publish clips and links, and count shared breaks across two sc
     assert.equal(resumed.position,position);
     assert.equal(resumed.adBreaks.filter(item=>item.shown).length,number);
   }
-  await command('pause');
-  assert.equal((await (await command('play')).json()).command.adBreak,undefined);
+  const rewound=await (await command('seek',{position:2699.8})).json();
+  assert.equal(rewound.command.seekPending,true);
+  await ready(version,10800,{playbackTime:2699.8,paused:true,seekId:rewound.command.seekId});
+  const replaying=await until(s=>s.playing && !s.seekPending);
+  await delay(Math.max(0,replaying.anchorTime-Date.now())+450);
+  assert.equal((await state()).adBreak,undefined);
   const analytics = await (await plain('/advt/api/analytics?days=7',{headers:staff})).json();
   assert.equal(analytics.days,7);
   assert.deepEqual(analytics.totals,{served:3,impressions:2,clicks:1,q25:2,q50:2,q75:1,completed:1,skipped:1,failed:1});
   assert.equal(analytics.creatives[0].id,long.id);
   assert.deepEqual(createAdAnalytics(path.join(temporary,'advertising')).report(7),analytics);
+  const preRoll=await (await save([bumper],true)).json();
+  assert.equal(preRoll.published.preRoll,true);
+  assert.deepEqual((await publish(59)).adBreaks,[]);
+  assert.deepEqual((await publish(600)).adBreaks.map(item=>item.position),[0,300]);
+  const preRollMovie=await publish(120);
+  assert.deepEqual(preRollMovie.adBreaks.map(item=>item.position),[0]);
+  await ready(preRollMovie.asset.version,120);
+  const startPreRoll=await (await command('play',{position:0,assetVersion:preRollMovie.asset.version})).json();
+  assert.equal(startPreRoll.command.playing,false);
+  assert.equal(startPreRoll.command.adBreak.loading,true);
+  assert.equal(startPreRoll.command.adBreak.media,preRollMovie.adPreload.media);
+  // With a display that never confirms buffering, the movie resumes after the loading deadline.
+  assert.equal((await adReady(startPreRoll.command.adBreak,1,admin)).status,200);
+  const resumedMovie=await until(s=>!s.adBreak && s.playing,()=>ready(preRollMovie.asset.version,120));
+  assert.equal(resumedMovie.position,0);
   const paused=await post('/advt/api/pause',{},staff);
   assert.equal((await paused.json()).enabled,false);
   assert.equal((await post('/advt/api/logout',{},staff)).status,200);

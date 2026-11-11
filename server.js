@@ -27,7 +27,8 @@ const atomicJson = require('./atomic-json');
 const { getDemoVisitSnapshot } = require('./public/home-footer');
 const SERVER_ID = randomUUID();
 const PLAYBACK_START_LEAD_MS = 700;
-const AD_START_LEAD_MS = 1400;
+const AD_START_LEAD_MS = 700;
+const AD_LOAD_TIMEOUT_MS = 8000;
 
 const PREFERRED_PORT = Number(process.env.PORT || 4173);
 const MAX_PORT_ATTEMPTS = 20;
@@ -180,7 +181,9 @@ function currentPosition(at = Date.now()) {
 
 function snapshot() {
   syncAdSchedule();
-  return { ...state, ...(activeAd() ? { adBreak: publicAd() } : {}), seekPending: Boolean(pendingSeek), seekResume: Boolean(pendingSeek?.resume), ownerId: record?.admin.id || sourceOwner?.id || '', roomId: room || 'hotspot', allReady: allDisplaysReady(), preparation, serverId: SERVER_ID, serverTime: Date.now() };
+  const active = activeAd();
+  const upcoming = active ? null : adSlotAt(nextAdIndex());
+  return { ...state, ...(active ? { adBreak: publicAd() } : {}), adPreload: upcoming ? adMedia(upcoming) : null, seekPending: Boolean(pendingSeek), seekResume: Boolean(pendingSeek?.resume), ownerId: record?.admin.id || sourceOwner?.id || '', roomId: room || 'hotspot', allReady: allDisplaysReady(), preparation, serverId: SERVER_ID, serverTime: Date.now() };
 }
 
 function syncAdSchedule() {
@@ -192,15 +195,38 @@ function syncAdSchedule() {
     || (state.adScheduleVersion === version ? state.adScheduleDuration : 0) || 0;
   const enabled = Boolean(asset && advertising.enabled());
   if (activeAd()) return;
-  if (state.adScheduleVersion === version && state.adScheduleDuration === duration && state.adScheduleEnabled === enabled) return;
-  const previous = state.adScheduleVersion === version ? state.adBreaks : [];
+  const sameAsset = state.adScheduleVersion === version;
+  const started = sameAsset && (state.adScheduleStarted ?? (state.playing || state.position > 0 || state.adBreaks.some(item => item.shown)));
+  const preRoll = Boolean(started ? state.adSchedulePreRoll : asset && advertising.preRoll());
+  if (sameAsset && state.adScheduleDuration === duration && state.adScheduleEnabled === enabled && state.adSchedulePreRoll === preRoll) return;
+  const previous = sameAsset ? state.adBreaks : [];
   const count = !asset || duration < 60 ? 0 : duration < 600 ? 1 : duration < 3000 ? 2 : 3;
   state.adScheduleVersion = version;
   state.adScheduleDuration = duration;
   state.adScheduleEnabled = enabled;
+  state.adScheduleStarted = started;
+  state.adSchedulePreRoll = preRoll;
   state.adBreaks = Array.from({ length: count }, (_, i) => ({
-    position: duration * (i + 1) / (count + 1), shown: Boolean(previous[i]?.shown),
+    position: preRoll ? duration * i / count : duration * (i + 1) / (count + 1),
+    shown: Boolean(previous[i]?.shown),
   }));
+}
+
+function nextAdIndex(position = Infinity) {
+  return state.adScheduleEnabled ? state.adBreaks.findIndex(item => !item.shown && position >= item.position) : -1;
+}
+
+function adSlotAt(index) {
+  if (index < 0) return null;
+  const slots = advertising.campaign();
+  return slots.length ? slots[index % slots.length] : null;
+}
+
+function adMedia(slot) {
+  return {
+    media: '/api/ad-break/media?clip=' + encodeURIComponent(slot.trimFile || slot.id),
+    logo: slot.logo ? '/api/ad-break/logo?image=' + encodeURIComponent(slot.logo) : null,
+  };
 }
 
 function activeAd() {
@@ -208,10 +234,10 @@ function activeAd() {
 }
 
 function publicAd() {
-  const { slot, breakIndex, id, startedAt, position } = adRun;
+  const { slot, breakIndex, id, startedAt, position, loading } = adRun;
   const { title, duration, skipAfter } = slot;
-  return { id, title, duration, skipAfter, startedAt, position, number: breakIndex + 1,
-    total: state.adBreaks.length, logo: slot.logo ? '/api/ad-break/logo?ad=' + id : null, clickUrl: slot.clickUrl || '' };
+  return { id, title, duration, skipAfter, startedAt, position, loading, number: breakIndex + 1,
+    total: state.adBreaks.length, ...adMedia(slot), clickUrl: slot.clickUrl || '' };
 }
 
 function adPosition(run = adRun) {
@@ -236,10 +262,27 @@ function startAdClock(lead) {
 }
 
 function startAdSlot() {
-  adRun.id = randomUUID();
-  adRun.position = 0;
+  const run = adRun;
+  Object.assign(run, { id: randomUUID(), position: 0, startedAt: null, loading: true, readyScreens: new Set() });
+  adTimer = setTimeout(() => {
+    if (activeAd() === run && run.loading) advanceAd('failed');
+  }, AD_LOAD_TIMEOUT_MS);
+  adTimer.unref();
+  advertising.analytics.record(run, 'served');
+}
+
+function markAdReady(run, screen) {
+  if (!run.loading) return;
+  run.readyScreens.add(screen);
+  for (let number = 1; number <= state.screenCount; number++) {
+    if (!run.readyScreens.has(number)) return;
+  }
+  run.loading = false;
   startAdClock(AD_START_LEAD_MS);
-  advertising.analytics.record(adRun, 'served');
+  const executeAt = Date.now();
+  state = { ...state, notBefore: executeAt, commandId: ++commandSequence };
+  broadcast('command', { type: 'ad-break', executeAt, ...snapshot() });
+  broadcast('state', snapshot());
 }
 
 function advanceAd(outcome) {
@@ -379,13 +422,11 @@ function holdForBuffering(screen) {
 
 function startDueAd(position) {
   syncAdSchedule();
-  if (!state.adScheduleEnabled) return false;
-  const breakIndex = state.adBreaks.findIndex(item => !item.shown && position >= item.position);
-  if (breakIndex < 0) return false;
-  const slots = advertising.campaign();
-  if (!slots.length) return false;
+  const breakIndex = nextAdIndex(position);
+  const slot = adSlotAt(breakIndex);
+  if (!slot) return false;
   cancelAdBreak();
-  adRun = { version: state.asset.version, slot: slots[breakIndex % slots.length], breakIndex };
+  adRun = { version: state.asset.version, slot, breakIndex };
   startAdSlot();
   state = { ...state, playing: false, position, anchorTime: Date.now() };
   return true;
@@ -524,7 +565,7 @@ function applyCommand(input) {
       adRun.position = adPosition();
       adRun.startedAt = null;
       clearTimeout(adTimer);
-    } else if (type === 'play' && adRun.startedAt === null) startAdClock(PLAYBACK_START_LEAD_MS);
+    } else if (type === 'play' && adRun.startedAt === null && !adRun.loading) startAdClock(PLAYBACK_START_LEAD_MS);
     type = 'ad-break';
     executeAt = now;
   } else if (type === 'play') {
@@ -534,7 +575,9 @@ function applyCommand(input) {
     if (input.position !== undefined && !Number.isFinite(input.position)) throw new Error('Invalid playback position');
     if (Number.isFinite(input.position)) position = Math.max(0, Number(input.position));
     
-    if (startDueAd(position)) {
+    const hasAd = startDueAd(position);
+    state.adScheduleStarted = true;
+    if (hasAd) {
       type = 'ad-break';
       executeAt = now;
     } else {
@@ -1102,9 +1145,33 @@ async function handle(req, res, url) {
         return;
       }
       const run = activeAd();
+      const clip = url.searchParams.get('clip');
+      const image = url.searchParams.get('image');
+      if ((clip || image) && ['GET', 'HEAD'].includes(req.method)) {
+        syncAdSchedule();
+        const candidate = run?.slot || adSlotAt(nextAdIndex());
+        if (candidate && url.pathname === '/api/ad-break/media' && clip === (candidate.trimFile || candidate.id)) {
+          advertising.serve(req, res, candidate, false, true);
+        } else if (candidate && url.pathname === '/api/ad-break/logo' && image && image === candidate.logo) {
+          advertising.serveLogo(req, res, image, true);
+        } else json(res, 404, { error: 'This ad is no longer scheduled.' });
+        return;
+      }
       const id = url.searchParams.get('ad');
       if (!run || run.id !== id) { json(res, 404, { error: 'That ad is no longer playing.' }); return; }
       const { slot } = run;
+      if (url.pathname === '/api/ad-break/ready' && req.method === 'POST') {
+        const screen = Number(url.searchParams.get('screen'));
+        const device = identity(req);
+        if (!Number.isInteger(screen) || screen < 1 || screen > state.screenCount
+            || (record ? req.cinewallMember.screen !== screen
+              : !activeScreens().some(item => item.screen === screen && item.deviceId === device.id))) {
+          json(res, 403, { error: 'This display does not belong to the ad break.' }); return;
+        }
+        markAdReady(run, screen);
+        json(res, 200, { state: snapshot() });
+        return;
+      }
       if (url.pathname === '/api/ad-break/media' && ['GET', 'HEAD'].includes(req.method)) {
         advertising.serve(req, res, slot);
         return;

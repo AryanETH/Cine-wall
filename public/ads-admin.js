@@ -68,6 +68,7 @@
   function currentDraft() {
     return {
       formUrl: $('#adFormUrl').value.trim(),
+      preRoll: $('#adPreRoll').checked,
       slots: [...$('#adSlots').querySelectorAll('fieldset')].flatMap(slot => {
         const creativeId = slot.querySelector('[name="creativeId"]')?.value;
         const format = slot.querySelector('[name="format"]')?.value;
@@ -83,11 +84,12 @@
     const campaign = data.published;
     const names = campaign?.slots.map(slot => slot.title).join(' · ');
     const date = campaign?.at ? new Date(campaign.at).toLocaleString() : '';
-    $('#campaignDetails').textContent = [names, date && 'Pushed ' + date].filter(Boolean).join(' | ');
+    $('#campaignDetails').textContent = [names, campaign?.preRoll && 'First ad before the video', date && 'Pushed ' + date].filter(Boolean).join(' | ');
   }
   function render(draft = data) {
     renderCampaign();
     $('#adFormUrl').value = draft.formUrl;
+    $('#adPreRoll').checked = Boolean(draft.preRoll ?? draft.published?.preRoll);
     $('#adSlots').replaceChildren();
     const choices = [['', 'No ad'], ...data.creatives.map(ad => [ad.id, ad.title + ' · ' + ad.duration + 's'])];
     

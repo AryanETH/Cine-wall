@@ -1,7 +1,7 @@
 <!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex, nofollow"><title>Advertising dashboard | CineWall</title>
-<link rel="stylesheet" href="/ads-admin.css?v=3"><script src="/ads-admin.js?v=3" defer></script></head>
+<link rel="stylesheet" href="/ads-admin.css?v=3"><script src="/ads-admin.js?v=4" defer></script></head>
 <body><main id="adsDashboard">
 <header><a class="brand" href="/">CineWall</a><button id="adsLogout" class="quiet" type="button">Log out</button></header>
 <h1>Advertising</h1><p id="adsStatus" class="status" role="status">Loading settings…</p>
@@ -37,6 +37,8 @@
 </div>
 <p class="hint">Choose up to three slots. Push ad publishes the selected clips, logo, and advertiser links for upcoming breaks.</p>
 <form id="adSettings">
+<label class="check"><input id="adPreRoll" type="checkbox"> Play the first ad before the video starts</label>
+<p class="hint">Counts toward the movie’s ad limit. Videos under 1 minute remain ad-free.</p>
 <div id="adSlots"></div>
 <label for="adFormUrl">Advertiser contact link</label>
 <input id="adFormUrl" type="url" placeholder="https://example.com/contact">

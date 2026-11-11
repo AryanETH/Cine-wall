@@ -17,8 +17,42 @@ window.CineWallAds = {
     const visit = document.querySelector('#wallAdVisit');
     let reported = new Set();
     let slot = null, display, timer, playingRequest, skipRequest, localMuted = false, autoplayMuted = false, failed = false;
+    let preparedMedia = '', preparedLogo = '', logoFailed = false, reloadTimer, retried = false;
+    let readyReported = '', readyRetryAt = 0;
+    let playedThisRun = false;
 
     const position = () => slot.position + (slot.startedAt === null ? 0 : Math.max(0, now() - slot.startedAt) / 1000);
+
+    function prepare(media, image) {
+      const videoUrl = media ? link(media) : '';
+      const logoUrl = image ? link(image) : '';
+      if (preparedMedia !== videoUrl) {
+        preparedMedia = videoUrl;
+        clearTimeout(reloadTimer);
+        retried = false;
+        video.pause();
+        if (videoUrl) video.src = videoUrl;
+        else video.removeAttribute('src');
+        video.load();
+      }
+      if (preparedLogo !== logoUrl) {
+        preparedLogo = logoUrl;
+        logoFailed = false;
+        if (logoUrl) logo.src = logoUrl;
+        else logo.removeAttribute('src');
+      }
+    }
+
+    function confirmReady() {
+      if (!slot.loading || failed || video.seeking || video.readyState < 3 || readyReported === slot.id || now() < readyRetryAt) return;
+      const id = slot.id;
+      readyReported = id;
+      void request('/api/ad-break/ready?ad=' + encodeURIComponent(id) + '&screen=' + display.screen).catch(() => {
+        if (slot?.id !== id) return;
+        readyReported = '';
+        readyRetryAt = now() + 800;
+      });
+    }
 
     function reportEvent(event) {
       if (!report || reported.has(event)) return;
@@ -29,7 +63,7 @@ window.CineWallAds = {
     }
 
     function samplePlayback() {
-      if (!slot || failed || overlay.hidden || document.visibilityState === 'hidden' || video.seeking || !video.played?.length) return;
+      if (!slot || !playedThisRun || failed || overlay.hidden || document.visibilityState === 'hidden' || video.seeking || !video.played?.length) return;
       const playhead = Math.min(position(), video.currentTime, video.played.end(video.played.length - 1));
       if (playhead < .04) return;
       if (visit && slot.clickUrl) visit.hidden = false;
@@ -66,6 +100,7 @@ window.CineWallAds = {
 
     function tick() {
       if (!slot) return;
+      confirmReady();
       samplePlayback();
       const elapsed = Math.min(slot.duration, position());
       const waiting = slot.startedAt !== null && now() < slot.startedAt;
@@ -80,9 +115,10 @@ window.CineWallAds = {
       
       skip.hidden = !canSkip;
       skip.disabled = skipRequest === slot.id;
-      pause.hidden = !display.controller;
+      pause.hidden = !display.controller || slot.loading === true;
       pause.textContent = paused ? 'Resume ad' : 'Pause ad';
       countdown.textContent = failed ? 'Ad unavailable. Waiting for the room…'
+        : slot.loading ? 'Loading ad…'
         : paused ? 'Ad paused'
         : waiting ? 'Ad starting…'
         : untilSkip > 0 ? 'Skip in ' + untilSkip + 's' : remaining + 's remaining';
@@ -102,15 +138,15 @@ window.CineWallAds = {
           slot = null;
           clearInterval(timer);
           video.pause();
-          video.removeAttribute('src');
-          video.load();
+          if (video.currentTime > 0) video.currentTime = 0;
           overlay.hidden = true;
           progressFill.style.transform = 'scaleX(0)';
           logo.hidden = true;
-          logo.removeAttribute('src');
           if (visit) { visit.hidden = true; visit.removeAttribute('href'); }
           localMuted = autoplayMuted = false;
         }
+        const preload = options.ready ? options.preload : null;
+        prepare(preload?.media, preload?.logo);
         return;
       }
       display = options;
@@ -121,9 +157,20 @@ window.CineWallAds = {
         failed = false;
         playingRequest = null;
         skipRequest = null;
+        readyReported = '';
+        readyRetryAt = 0;
+        playedThisRun = false;
         video.pause();
-        video.src = link('/api/ad-break/media?ad=' + encodeURIComponent(slot.id));
-        video.load();
+        if (video.currentTime > 0) video.currentTime = 0;
+        const fallback = '/api/ad-break/media?ad=' + encodeURIComponent(slot.id);
+        const media = slot.media || fallback;
+        const alreadyPrepared = preparedMedia === link(media);
+        prepare(media, slot.logo);
+        if (alreadyPrepared && video.error && retried) {
+          retried = false;
+          clearTimeout(reloadTimer);
+          video.load();
+        }
         badge.textContent = 'Ad ' + slot.number + ' of ' + slot.total;
         title.textContent = slot.title;
         if (visit) {
@@ -133,14 +180,7 @@ window.CineWallAds = {
         }
         progressFill.style.transform = 'scaleX(0)';
         
-        // Show logo if available
-        if (slot.logo) {
-          logo.src = link(slot.logo);
-          logo.hidden = false;
-        } else {
-          logo.hidden = true;
-          logo.removeAttribute('src');
-        }
+        logo.hidden = !slot.logo || logoFailed;
         
         overlay.hidden = false;
         clearInterval(timer);
@@ -154,12 +194,19 @@ window.CineWallAds = {
     }
 
     video.addEventListener('canplay', tick);
+    video.addEventListener('playing', () => { if (slot) playedThisRun = true; });
     video.addEventListener('timeupdate', samplePlayback);
     video.addEventListener('ended', samplePlayback);
-    logo.addEventListener('error', () => { logo.hidden = true; });
+    logo.addEventListener('error', () => { logoFailed = true; logo.hidden = true; });
     visit?.addEventListener('click', () => { if (slot && !visit.hidden) reportEvent('click'); });
     video.addEventListener('error', () => {
-      if (!slot || failed) return;
+      if (!preparedMedia || failed) return;
+      if (!retried) {
+        retried = true;
+        reloadTimer = setTimeout(() => video.load(), 450);
+        return;
+      }
+      if (!slot) return;
       failed = true;
       tick();
       if (display.controller) {
