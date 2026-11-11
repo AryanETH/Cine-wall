@@ -52,7 +52,7 @@ test('ad player renders distinct slices and uses the shared five-second skip clo
   let now = 0;
   const ad = { id: 'sponsor', title: 'Sponsor', startedAt: 1400, position: 0, duration: 12, skipAfter: 5,
     number: 1, total: 1, media: '/api/ad-break/media?clip=sponsor', logo: '/api/ad-break/logo?image=sponsor',
-    clickUrl: 'https://example.com/sponsor' };
+    clickUrl: 'https://example.com/sponsor', description: 'A short advertiser description.' };
   const code = fs.readFileSync(path.join(__dirname,'../public/wall-ads.js'), 'utf8');
   for (const screen of [1,2]) {
     const elements = new Map(), requests = [], reports = [];
@@ -88,6 +88,15 @@ test('ad player renders distinct slices and uses the shared five-second skip clo
     assert.equal(toggles,0,'Space does not start an ad before both displays are ready');
     controller.update(ad,display);
     assert.equal(video.loads,2,'the same buffered video is used for the break');
+    const info = get('#wallAdInfo');
+    assert.equal(info.open,false);
+    assert.equal(get('#wallAdInfoTitle').textContent,ad.title);
+    assert.equal(get('#wallAdInfoDescription').textContent,ad.description);
+    info.open = true;
+    let nativeActivationBlocked = false;
+    assert.equal(key(' ','Space',{target:get('#wallAdInfoToggle'),preventDefault(){nativeActivationBlocked=true;}}),true);
+    assert.equal(nativeActivationBlocked,false);
+    assert.equal(toggles,0);
     assert.equal(get('#wallAdStage').style.get('--screen-index'),screen-1);
     assert.equal(get('#wallAdStage').style.get('--wall-screens'),2);
     assert.equal(get('#wallAdVideo').muted, screen!==1);
@@ -126,7 +135,9 @@ test('ad player renders distinct slices and uses the shared five-second skip clo
     assert.equal(get('#wallAdProgressFill').style.transform, 'scaleX(' + 5/12 + ')');
     void get('#wallAdSkip').events.click();
     assert.deepEqual(requests,['/api/ad-break/ready?ad=sponsor&screen='+screen,'/api/ad-break/skip?ad=sponsor']);
-    controller.update({...ad,id:'bumper',skipAfter:null,logo:null},display);
+    controller.update({...ad,id:'bumper',skipAfter:null,logo:null,description:''},display);
+    assert.equal(info.open,false);
+    assert.equal(get('#wallAdInfoDescription').hidden,true);
     assert.equal(get('#wallAdSkip').hidden,true);
     assert.equal(get('#wallAdCountdown').hidden,false);
     assert.equal(get('#wallAdCountdown').textContent,'7s');

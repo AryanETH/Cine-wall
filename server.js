@@ -237,7 +237,7 @@ function publicAd() {
   const { slot, breakIndex, id, startedAt, position, loading } = adRun;
   const { title, duration, skipAfter } = slot;
   return { id, title, duration, skipAfter, startedAt, position, loading, number: breakIndex + 1,
-    total: state.adBreaks.length, ...adMedia(slot), clickUrl: slot.clickUrl || '' };
+    total: state.adBreaks.length, ...adMedia(slot), description: slot.description || '', clickUrl: slot.clickUrl || '' };
 }
 
 function adPosition(run = adRun) {

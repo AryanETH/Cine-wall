@@ -17,7 +17,7 @@
   <script src="session.js?v=20261104-room-auth-1"></script>
   <script src="media-peer.js?v=20261027-entry-2"></script>
   <link rel="stylesheet" href="styles.css?v=20261111-ad-timeline">
-  <link rel="stylesheet" href="wall-ads.css?v=3">
+  <link rel="stylesheet" href="wall-ads.css?v=4">
   <link rel="stylesheet" href="hand-controls.css?v=20261029-player-5">
   <link rel="stylesheet" href="device-support.css?v=20261025-mobile-42">
   <link rel="stylesheet" href="/rooms.css?v=20261027-links-3">
@@ -54,7 +54,16 @@
     <div class="wall-ad-panel">
       <div class="wall-ad-brand">
         <img id="wallAdLogo" class="wall-ad-logo" alt="Advertiser logo" hidden>
-        <a id="wallAdVisit" target="_blank" rel="noopener noreferrer" hidden>Visit us</a>
+        <div class="wall-ad-brand-actions">
+          <a id="wallAdVisit" target="_blank" rel="noopener noreferrer" hidden>Visit us</a>
+          <details id="wallAdInfo" class="wall-ad-info">
+            <summary id="wallAdInfoToggle" aria-label="Ad information"><span aria-hidden="true">i</span></summary>
+            <div class="wall-ad-info-card">
+              <strong id="wallAdInfoTitle"></strong>
+              <p id="wallAdInfoDescription" hidden></p>
+            </div>
+          </details>
+        </div>
       </div>
       <div class="wall-ad-actions">
         <span id="wallAdCountdown" class="wall-ad-countdown" role="timer"></span>
@@ -182,7 +191,7 @@
   <script src="hand-gestures.js?v=20261029-poses-2"></script>
   <script src="hand-tabs.js?v=20261029-handoff-2"></script>
   <script src="hand-controls.js?v=20261029-practice-6"></script>
-  <script src="wall-ads.js?v=4"></script>
+  <script src="wall-ads.js?v=5"></script>
   <script src="ad-timeline.js?v=1"></script>
   <script src="desktop-entry.js?v=20261025-mobile-42" data-src="screen.js?v=20261111-ad-controls"></script>
   <script src="/rooms-ui.js?v=20261104-room-auth-1"></script>

@@ -12,6 +12,10 @@ window.CineWallAds = {
     const progressFill = document.querySelector('#wallAdProgressFill');
     const logo = document.querySelector('#wallAdLogo');
     const visit = document.querySelector('#wallAdVisit');
+    const info = document.querySelector('#wallAdInfo');
+    const infoToggle = document.querySelector('#wallAdInfoToggle');
+    const infoTitle = document.querySelector('#wallAdInfoTitle');
+    const infoDescription = document.querySelector('#wallAdInfoDescription');
     let reported = new Set();
     let slot = null, display, timer, playingRequest, skipRequest, localMuted = null, autoplayMuted = false, failed = false;
     let preparedMedia = '', preparedLogo = '', logoFailed = false, reloadTimer, retried = false;
@@ -83,6 +87,7 @@ window.CineWallAds = {
 
     function handleKey(event) {
       if (!slot || event.defaultPrevented || event.altKey || event.ctrlKey || event.metaKey) return false;
+      if (event.code === 'Space' && event.target === infoToggle) return true;
       const muteKey = event.key.toLowerCase() === 'm' && display.screen === 1;
       const spaceKey = event.code === 'Space' && display.controller && event.target !== skip;
       if (!muteKey && !spaceKey) return false;
@@ -159,6 +164,7 @@ window.CineWallAds = {
           overlay.hidden = true;
           progressFill.style.transform = 'scaleX(0)';
           logo.hidden = true;
+          info.open = false;
           if (visit) { visit.hidden = true; visit.removeAttribute('href'); }
           localMuted = null;
           autoplayMuted = false;
@@ -171,6 +177,10 @@ window.CineWallAds = {
       if (slot?.id !== next.id) {
         samplePlayback();
         slot = next;
+        info.open = false;
+        infoTitle.textContent = slot.title;
+        infoDescription.textContent = slot.description || '';
+        infoDescription.hidden = !slot.description;
         reported = new Set();
         failed = false;
         playingRequest = null;

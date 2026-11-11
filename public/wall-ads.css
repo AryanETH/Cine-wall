@@ -3,14 +3,21 @@
 .wall-ad[hidden], .wall-ad [hidden] { display: none !important; }
 .wall-ad .wall-stage { pointer-events: none; }
 .wall-ad-panel { position: absolute; inset: auto 1.15rem 1.15rem; display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: end; gap: .75rem; pointer-events: none; }
-.wall-ad-brand { display: grid; justify-items: start; gap: .5rem; }
+.wall-ad-brand { position: relative; display: grid; justify-items: start; gap: .5rem; }
+.wall-ad-brand-actions { display: flex; align-items: center; gap: .5rem; }
 .wall-ad-logo { display: block; width: auto; height: auto; max-width: min(150px, 36vw); max-height: 72px; object-fit: contain; }
 .wall-ad #wallAdVisit, .wall-ad #wallAdSkip, .wall-ad-countdown { min-height: 2.5rem; display: inline-grid; place-items: center; border-radius: 999px; padding: .38rem .8rem; font: inherit; font-weight: 700; }
 .wall-ad #wallAdVisit, .wall-ad #wallAdSkip { pointer-events: auto; cursor: pointer; }
 .wall-ad #wallAdVisit { background: #f4e14c; color: #171717; text-decoration: none; }
 .wall-ad #wallAdSkip { border: 1px solid #fff7; background: #fff; color: #111; }
 .wall-ad-countdown { min-width: 3rem; background: #171717ee; color: #fff; font-variant-numeric: tabular-nums; }
-.wall-ad :is(button, a):focus-visible { outline: 3px solid #d3f65f; outline-offset: 2px; }
+.wall-ad :is(button, a, summary):focus-visible { outline: 3px solid #d3f65f; outline-offset: 2px; }
+.wall-ad-info summary { display: grid; place-items: center; width: 2.5rem; height: 2.5rem; border: 1px solid #fff7; border-radius: 50%; background: #171717ee; color: #fff; list-style: none; pointer-events: auto; cursor: pointer; font-weight: 700; }
+.wall-ad-info summary::-webkit-details-marker { display: none; }
+.wall-ad-info[open] summary { background: #fff; color: #171717; }
+.wall-ad-info:not([open]) .wall-ad-info-card { display: none; }
+.wall-ad-info-card { position: absolute; bottom: calc(100% + .5rem); left: 0; width: min(21rem, calc(100vw - 2.3rem)); max-height: 40vh; overflow: auto; padding: .75rem .9rem; border-radius: .7rem; background: #171717f5; color: #fff; overflow-wrap: anywhere; pointer-events: auto; }
+.wall-ad-info-card p { margin: .25rem 0 0; font-size: .9rem; line-height: 1.4; }
 .wall-ad-status { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 
 /* Yellow progress bar */
