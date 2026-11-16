@@ -5,10 +5,10 @@ const fs = require('node:fs');
 const path = require('node:path');
 const vm = require('node:vm');
 const source = name => fs.readFileSync(path.join(__dirname, '../public', name), 'utf8');
-function device({ agent = '', width = 390, height = 844, touch = 5, coarse = true, mobile, pathname = '/' } = {}) {
+function device({ agent = '', platform = '', width = 390, height = 844, touch = 5, coarse = true, mobile, pathname = '/' } = {}) {
   const classes = [], listeners = {};
   const context = vm.createContext({
-    navigator: { userAgent: agent, userAgentData: { mobile }, maxTouchPoints: touch },
+    navigator: { userAgent: agent, platform, userAgentData: { mobile }, maxTouchPoints: touch },
     screen: { width, height }, matchMedia: () => ({ matches: coarse }), location: new URL('https://watch.aitoyz.in' + pathname), URL, window: {},
     document: { documentElement: { classList: { add: name => classes.push(name) } }, addEventListener: (name, fn) => { listeners[name] = fn; } },
   });
@@ -18,11 +18,11 @@ function device({ agent = '', width = 390, height = 844, touch = 5, coarse = tru
 test('phones cannot start restricted modes in portrait or landscape, including direct links', () => {
   for (const agent of ['Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X)', 'Mozilla/5.0 (Linux; Android 14; Pixel) Chrome/130 Mobile Safari/537.36']) {
     for (const [width, height] of [[390, 844], [844, 390]]) {
-      for (const pathname of ['/admin.html', '/screen.html', '/share.html']) {
+      for (const pathname of ['/admin.html', '/screen.html', '/share.html', '/remote.html']) {
         const client = device({ agent, width, height, pathname });
         assert.equal(client.policy.isPhone, true);
         assert.equal(client.policy.restricted, true);
-        assert.deepEqual(client.classes, ['device-restricted']);
+        assert.deepEqual(client.classes, ['device-mobile', 'device-restricted']);
       }
     }
   }
@@ -32,8 +32,23 @@ test('portrait phone microphone and speaker pages remain available', () => {
     const client = device({ mobile: true, pathname });
     assert.equal(client.policy.isPhone, true);
     assert.equal(client.policy.restricted, false);
-    assert.deepEqual(client.classes, []);
+    assert.deepEqual(client.classes, ['device-mobile']);
   }
+});
+test('Remote Control is hidden from mobile visitors and direct links are restricted on tablets', () => {
+  for (const options of [
+    { mobile: true },
+    { agent: 'iPad', width: 768, height: 1024 },
+    { agent: 'Android 14; Tablet', width: 800, height: 1280 },
+    { agent: 'Macintosh', platform: 'MacIntel', width: 820, height: 1180 },
+  ]) {
+    assert.ok(device(options).classes.includes('device-mobile'));
+    assert.equal(device({ ...options, pathname: '/remote.html' }).policy.restricted, true);
+  }
+  assert.equal(device({ touch: 0, coarse: false, pathname: '/remote.html' }).policy.restricted, false);
+  assert.match(source('device-support.css'), /\.device-mobile\s+\.mode-card\[data-bg="remote"\]\s*\{\s*display:\s*none/);
+  const remote = source('remote.html');
+  assert.ok(remote.indexOf('device-support.js') < remote.indexOf('account-guard.js'));
 });
 test('phone entry screens cannot create or join laptop-only modes', () => {
   for (const mode of ['video','audio','share']) assert.equal(device({ mobile:true, pathname:'/connect.html?mode='+mode }).policy.restricted,true);

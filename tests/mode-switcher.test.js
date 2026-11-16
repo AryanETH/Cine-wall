@@ -29,10 +29,13 @@ function switcher({ hostRoom = 'shared-room', isPhone = false, changeMode = asyn
   return { click, changes, errors, location };
 }
 
-test('all four homepage tools opt into switching the shared room', () => {
+test('the four room tools can switch the shared room and Remote Control has its own entry', () => {
   const html = fs.readFileSync(path.join(__dirname, '../public/index.html'), 'utf8');
   const cards = [...html.matchAll(/<a\b[^>]*class="[^"]*\bmode-card\b[^>]*>/g)].map(match => match[0]);
-  assert.equal(cards.length, 4);
+  assert.equal(cards.length, 5);
+  const remote = cards.find(card => card.includes('href="/remote.html"'));
+  assert.ok(remote);
+  assert.doesNotMatch(remote, /data-session-mode/);
   for (const [mode, href] of [['video', '/admin.html?mode=video'], ['audio', '/admin.html?mode=audio'], ['share', '/share.html'], ['mic', '/mic.html']]) {
     const card = cards.find(tag => tag.includes(`href="${href}"`));
     assert.ok(card, `${mode} has a tool card`);

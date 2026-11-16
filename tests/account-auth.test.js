@@ -16,7 +16,7 @@ test('Firebase verification rejects wrong audience/issuer, expired/future tokens
   await assert.rejects(f.verifyToken('eyJhbGciOiJub25lIn0.e30.'));
 });
 test('every workspace, room API and media route requires an account while landing media stays public', () => {
-  for (const route of ['/admin.html','/screen.html','/share.html','/mic.html','/room.html','/connect.html','/profile.html','/%61dmin.html','/screen%2ehtml','/x%2f..%2fadmin.html','//admin.html','/api/rooms/create','/api/command','/api/media/stream','/events','/share-events','/mic-events','/__cinewall_peer__/123']) assert.equal(protectedRequest(route), true, route);
+  for (const route of ['/admin.html','/screen.html','/share.html','/mic.html','/remote.html','/room.html','/connect.html','/profile.html','/%61dmin.html','/screen%2ehtml','/x%2f..%2fadmin.html','//admin.html','/api/rooms/create','/api/command','/api/media/stream','/events','/share-events','/mic-events','/__cinewall_peer__/123']) assert.equal(protectedRequest(route), true, route);
   for (const route of ['/','/auth.html','/assets/cinewall-demo-fast.mp4','/api/auth/config','/api/health','/api/demo-visits']) assert.equal(protectedRequest(route), false, route);
 });
 test('account sessions require signed tokens and same-origin requests, preserve room return links and revoke on logout', async t => {

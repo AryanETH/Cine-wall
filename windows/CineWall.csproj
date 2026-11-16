@@ -1,0 +1,22 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <UseWindowsForms>true</UseWindowsForms>
+    <ApplicationHighDpiMode>PerMonitorV2</ApplicationHighDpiMode>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <AssemblyName>CineWall</AssemblyName>
+    <Product>CineWall</Product>
+    <Version>1.0.0</Version>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Remove="installer/**/*.cs;tests/**/*.cs" />
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+    <EmbeddedResource Include="../public/assets/removed_background (24).png" LogicalName="CineWallLogo" />
+    <EmbeddedResource Include="web/index.html" LogicalName="web.index" />
+    <EmbeddedResource Include="web/controller.js" LogicalName="web.controller" />
+    <EmbeddedResource Include="web/controller.css" LogicalName="web.styles" />
+  </ItemGroup>
+</Project>

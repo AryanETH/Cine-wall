@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>CineWall | Remote Control</title>
+  <link rel="stylesheet" href="/controller.css">
+  <script src="/controller.js" defer></script>
+</head>
+<body>
+  <header><strong>CINEWALL</strong><span>Remote Control</span></header>
+  <main>
+    <form id="pair">
+      <h1>Control Another Computer</h1>
+      <label for="code">Pairing code</label>
+      <div class="actions">
+        <input id="code" type="password" required maxlength="512" autocomplete="off" spellcheck="false" placeholder="Paste the host’s pairing code">
+        <button class="primary" type="submit">Connect</button>
+        <button id="cancel" type="button" hidden>Cancel</button>
+      </div>
+    </form>
+    <p id="status" role="status">Get a pairing code from the Windows computer you want to control.</p>
+    <section id="viewer" hidden aria-label="Remote desktop">
+      <div class="actions toolbar">
+        <label>Monitor <select id="monitor"></select></label>
+        <button type="button" id="fullscreen">Fullscreen</button>
+        <button type="button" id="stop">Stop</button>
+      </div>
+      <div id="stage" tabindex="0" aria-label="Click to focus the remote desktop. Tab or Escape leaves desktop controls.">
+        <img id="desktop" alt="Live remote desktop" draggable="false">
+      </div>
+    </section>
+  </main>
+</body>
+</html>

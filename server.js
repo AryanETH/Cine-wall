@@ -1520,6 +1520,7 @@ function serveStatic(req, res, pathname) {
     res.writeHead(200, {
       'Content-Type': type,
       'Content-Length': encoded.body.length,
+      ...(route === '/downloads/CineWall-Setup.exe' ? { 'Content-Disposition': 'attachment; filename="CineWall-Setup.exe"' } : {}),
       ...encoded.headers,
       ...(publicFile ? { 'ETag': etag } : {}),
       'Cache-Control': protectedPage(route) ? 'no-store' : 'no-cache',
@@ -1587,7 +1588,7 @@ const requestHandler = async (req, res) => {
   })) return;
   if (await accountAuth.handle(req, res, url, bodyJson)) return;
   const room = url.searchParams.get('room') || '';
-  if (room || /^\/(?:api\/|events$|share-events$|mic-events$|__cinewall_peer__\/|(?:admin|screen|share|mic)\.html$)/.test(url.pathname)) res.setHeader('X-Robots-Tag', 'noindex, nofollow');
+  if (room || /^\/(?:api\/|events$|share-events$|mic-events$|__cinewall_peer__\/|(?:admin|screen|share|mic|remote)\.html$)/.test(url.pathname)) res.setHeader('X-Robots-Tag', 'noindex, nofollow');
   if (room && !/^[a-f0-9-]{36}$/.test(room)) { respondError(req, res, 400, 'Invalid room link.'); return; }
   const dynamic = url.pathname.startsWith('/api/') || ['/events', '/share-events', '/mic-events'].includes(url.pathname);
   if (!dynamic) {

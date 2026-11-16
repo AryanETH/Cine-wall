@@ -18,6 +18,7 @@
 | [Audio room](https://watch.aitoyz.in/admin.html?mode=audio) | Queue up to 10 songs. Play full sound on each laptop or spread the stereo channels with 3D Sound. | Up to 5 laptops or PCs |
 | [Screen sharing](https://watch.aitoyz.in/share.html) | Mirror a tab, window, or desktop. Optional room calls support up to 4 devices. | Up to 10 laptop or PC receivers, plus the presenter |
 | [Mic and Speaker](https://watch.aitoyz.in/mic.html) | Send a phone’s mic to laptop speakers. Includes a teleprompter and voice recorder. | 1 phone and up to 3 laptop speakers |
+| [Remote Control](docs/remote-control.md) | See and control a signed-in Windows desktop with local approval. | 2 Windows PCs on the same local network |
 
 <details>
   <summary>See the four modes on the homepage</summary>

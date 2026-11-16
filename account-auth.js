@@ -14,7 +14,7 @@ function canonicalPath(pathname) {
   try { return path.posix.normalize(decodeURIComponent(pathname).replace(/\\/g, '/')); }
   catch { return pathname; }
 }
-const protectedPage = pathname => /^\/(?:admin|screen|share|mic|room|connect|profile)\.html$/i.test(canonicalPath(pathname));
+const protectedPage = pathname => /^\/(?:admin|screen|share|mic|remote|room|connect|profile)\.html$/i.test(canonicalPath(pathname));
 const protectedRequest = pathname => protectedPage(pathname) || pathname.startsWith('/api/') && !['/api/health','/api/demo-visits','/api/auth/config'].includes(pathname) || ['/events','/share-events','/mic-events'].includes(pathname) || pathname.startsWith('/__cinewall_peer__/');
 const verifiedEmail = user => user.email_verified === true && typeof user.email === 'string' && Boolean(user.email.trim());
 function createVerifier({ projectId, fetchCertificates = fetch, keyResolver, now = Date.now } = {}) {

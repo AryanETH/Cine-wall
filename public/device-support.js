@@ -1,16 +1,20 @@
 'use strict';
 (() => {
   const agent = navigator.userAgent || '';
-  const tablet = /iPad|Tablet|Android(?!.*Mobile)/i.test(agent);
+  const tablet = /iPad|Tablet|Android(?!.*Mobile)/i.test(agent)
+    || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
   const smallTouchScreen = Math.min(screen.width, screen.height) <= 600
     && navigator.maxTouchPoints > 0 && matchMedia('(pointer: coarse)').matches;
   // Screen size is orientation-independent; a narrow desktop window is still supported.
   const isPhone = !tablet && (navigator.userAgentData?.mobile === true
     || /iPhone|iPod|Android.*Mobile|Windows Phone/i.test(agent) || smallTouchScreen);
   const entryMode = new URL(location.href).searchParams.get('mode') || 'video';
-  const restricted = isPhone && (/\/(admin|screen|share)\.html$/.test(location.pathname) || location.pathname === '/connect.html' && entryMode !== 'mic');
+  const isMobile = isPhone || tablet;
+  const remoteRestricted = isMobile && location.pathname.toLowerCase() === '/remote.html';
+  const restricted = remoteRestricted || (isPhone && (/\/(admin|screen|share)\.html$/.test(location.pathname) || location.pathname === '/connect.html' && entryMode !== 'mic'));
   window.CineWallDeviceSupport = { isPhone, restricted };
-  if (!isPhone) return;
+  if (isMobile) document.documentElement.classList.add('device-mobile');
+  if (!isPhone && !remoteRestricted) return;
   if (restricted) document.documentElement.classList.add('device-restricted');
 
   document.addEventListener('DOMContentLoaded', () => {
@@ -19,9 +23,9 @@
     dialog.setAttribute('aria-labelledby', 'deviceWarningTitle');
     dialog.setAttribute('aria-describedby', 'deviceWarningCopy');
     dialog.innerHTML = `<span class="device-warning-label">LAPTOP OR PC REQUIRED</span>
-      <h2 id="deviceWarningTitle">A bigger screen for this experience</h2>
-      <p id="deviceWarningCopy">Video streaming, audio streaming and screen sharing are designed for laptops and PCs only.</p>
-      <p>On your phone, use <strong>Mic and Speaker</strong>. It works in portrait mode.</p>
+      <h2 id="deviceWarningTitle">${remoteRestricted ? 'Remote Control needs a Windows PC' : 'A bigger screen for this experience'}</h2>
+      <p id="deviceWarningCopy">${remoteRestricted ? 'Open CineWall on a Windows laptop or desktop to share or control a computer.' : 'Video streaming, audio streaming and screen sharing are designed for laptops and PCs only.'}</p>
+      ${isPhone ? '<p>On your phone, use <strong>Mic and Speaker</strong>. It works in portrait mode.</p>' : ''}
       <div class="device-warning-actions"><a class="button accent" data-device-mic href="/mic.html">Open Mic and Speaker</a>
       ${restricted ? '<a class="button subtle" href="/">Back to home</a>' : '<button class="button subtle" type="button" data-device-close>Back to browsing</button>'}</div>`;
     dialog.querySelector('[data-device-mic]').href = window.CineWallSession?.link('/mic.html') || '/mic.html';

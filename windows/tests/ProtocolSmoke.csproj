@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+    <Compile Include="../Connection.cs" Link="Connection.cs" />
+    <Compile Include="../LanController.cs" Link="LanController.cs" />
+    <Compile Include="../BrowserController.cs" Link="BrowserController.cs" />
+    <EmbeddedResource Include="../web/index.html" LogicalName="web.index" />
+    <EmbeddedResource Include="../web/controller.js" LogicalName="web.controller" />
+    <EmbeddedResource Include="../web/controller.css" LogicalName="web.styles" />
+  </ItemGroup>
+</Project>

@@ -1,0 +1,20 @@
+:root { color-scheme: light; font-family: Inter, "Segoe UI", system-ui, sans-serif; background: #f4f7fb; color: #080b12; --line: #cddaed; --accent: #1769ff; }
+* { box-sizing: border-box; }
+body { margin: 0; }
+header { display: flex; align-items: center; gap: 16px; padding: 18px max(20px, 4vw); border-bottom: 1px solid var(--line); background: #fff; }
+header strong { color: var(--accent); }
+header span, #status { color: #536071; }
+main { width: min(94vw, 1440px); margin: 24px auto; }
+form, .toolbar { padding: 18px; border: 1px solid var(--line); border-radius: 14px; background: #fff; }
+h1 { margin-top: 0; font-size: clamp(1.35rem, 4vw, 2.1rem); }
+.actions { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-top: 10px; }
+input, button, select { min-height: 42px; border: 1px solid var(--line); border-radius: 9px; padding: 8px 13px; font: inherit; background: #edf4ff; }
+input { flex: 1 1 230px; min-width: 0; }
+button { cursor: pointer; background: #fff; }
+.primary { background: var(--accent); color: #fff; font-weight: 650; }
+#stop { color: #ae2034; background: #ffedf0; }
+#stage { display: grid; grid-template: minmax(0, 1fr) / minmax(0, 1fr); place-items: center; margin-top: 12px; height: min(72vh, 900px); overflow: hidden; background: #08090c; touch-action: none; }
+#stage:fullscreen { margin: 0; width: 100%; height: 100%; }
+#desktop { display: block; max-width: 100%; max-height: 100%; width: auto; height: auto; user-select: none; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+[hidden] { display: none !important; }
