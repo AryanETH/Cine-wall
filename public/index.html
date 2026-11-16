@@ -87,7 +87,7 @@
   <link rel="preload" href="/fonts/Anta-Regular.ttf" as="font" type="font/ttf" crossorigin>
   <link rel="preload" as="image" href="/assets/cinewall-demo-poster.jpg?v=20261029-cinema-8" fetchpriority="high">
   <link rel="stylesheet" href="styles.css?v=20261116-remote-1">
-  <link rel="stylesheet" href="home.css?v=cute-fly-shadow">
+  <link rel="stylesheet" href="home.css?v=faq-heading">
   <link rel="stylesheet" href="device-support.css?v=mobile-remote">
   <link rel="stylesheet" href="/rooms.css?v=20261027-links-3">
   <link rel="preload" as="image" href="/assets/demo-background.png">
@@ -253,18 +253,20 @@
     </section>
 
     <section id="faq" class="home-section home-faq" aria-labelledby="faqHeading">
-      <div class="home-section-heading">
-        <h2 id="faqHeading">A few quick answers.</h2>
-        <div class="home-spotify-embed">
-          <iframe data-testid="embed-iframe" style="border-radius:12px" src="https://open.spotify.com/embed/playlist/5NLMFO1YZY4U2EqSvwq8YF?utm_source=generator&theme=0&si=17a22bf2bda54af8" width="70%" height="352" frameBorder="0" allowfullscreen="" allow="autoplay; clipboard-write; encrypted-media; fullscreen; picture-in-picture" loading="lazy"></iframe>
+      <aside class="home-mapplock-ad" aria-label="Mapplock advertisement">
+        <img src="/assets/mapplock-ad-square.webp?v=play-qr" width="1024" height="1024" loading="lazy" decoding="async" alt="Mapplock. Phone Diya Tha, Privacy Nahi. Lock apps, photos, recordings and documents. Scan the QR code to open Google Play.">
+        <p class="home-ad-caption"><span>AD. from Cinewall</span><a href="https://forms.gle/x32An3oiyoXfxjiT7" target="_blank" rel="noopener">advertise with us</a></p>
+        <a class="button accent" href="https://play.google.com/store/apps/details?id=com.aitoyz.mapplock" aria-label="Download Mapplock now on Google Play">Download now <span class="fi" aria-hidden="true">&#xE896;</span></a>
+      </aside>
+      <div>
+        <div class="home-section-heading"><h2 id="faqHeading">A few quick answers.</h2></div>
+        <div class="home-faq-list">
+          <details><summary>Is CineWall free?</summary><p>Yes. The four media tools run in your browser. Remote Control is also free and requires the CineWall Windows app on both PCs.</p></details>
+          <details id="faq-devices"><summary>Which devices work?</summary><p>Use laptops or PCs for video, audio and screen sharing. A phone in portrait can be your microphone. Remote Control works between two Windows PCs.</p></details>
+          <details><summary>How do I connect my laptops?</summary><p>Use the same Wi-Fi or hotspot. For media tools, open each numbered device link and keep the source dashboard open. For Remote Control, use a pairing code and approve the connection on the host PC.</p></details>
+          <details><summary>Which files can I play?</summary><p>MP4 with H.264 video and AAC audio works best. Other formats depend on your browser’s codecs.</p></details>
+          <details><summary>Will the screens be seamless?</summary><p>Laptop edges stay visible. Playback timing depends on your network, browsers and devices.</p></details>
         </div>
-      </div>
-      <div class="home-faq-list">
-        <details><summary>Is CineWall free?</summary><p>Yes. All four tools are free. No app or extension needed.</p></details>
-        <details id="faq-devices"><summary>Which devices work?</summary><p>Use laptops or PCs for video, audio and screen sharing. A portrait phone can be your microphone.</p></details>
-        <details><summary>How do I connect my laptops?</summary><p>Use the same Wi-Fi or hotspot. Open each numbered device link and keep the source dashboard open.</p></details>
-        <details><summary>Which files can I play?</summary><p>MP4 with H.264 video and AAC audio works best. Other formats depend on your browser’s codecs.</p></details>
-        <details><summary>Will the screens be seamless?</summary><p>Laptop edges stay visible. Playback timing depends on your network, browsers and devices.</p></details>
       </div>
     </section>
 

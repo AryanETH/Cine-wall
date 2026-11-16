@@ -124,9 +124,19 @@ html:not([data-theme="light"]) .home-preview-video:not([data-theme-ready]) { vis
 .home-steps li > span { font-family: Anta, sans-serif; font-size: 1.5rem; color: var(--accent); }
 .home-steps h3 { margin: 2px 0 9px; font-size: 1.1rem; letter-spacing: -.025em; }
 .home-steps p { margin: 0; color: var(--muted); font-size: .9rem; line-height: 1.6; }
-.home-faq { display: grid; grid-template-columns: .8fr 1.2fr; gap: 56px; }
-.home-spotify-embed { margin-top: 24px; }
-.home-spotify-embed iframe { display: block; max-width: 400px; }
+.home-faq { display: grid; grid-template-columns: minmax(0, .8fr) minmax(0, 1.2fr); align-items: start; gap: 56px; }
+.home-faq .home-section-heading { margin-bottom: 20px; }
+.home-mapplock-ad { position: relative; display: grid; gap: 12px; width: min(100%, 360px); }
+.home-mapplock-ad img { display: block; width: 100%; height: auto; aspect-ratio: 1; border-radius: 16px; }
+.home-mapplock-ad .button { min-height: 44px; text-decoration: none; }
+[data-theme="dark"] .home-mapplock-ad .button { border-color: var(--line); background: var(--surface); color: var(--ink); }
+[data-theme="dark"] .home-mapplock-ad .button .fi { color: var(--accent); }
+.home-ad-caption {
+  position: absolute; top: 8px; right: 8px; display: grid; gap: 2px; justify-items: end;
+  margin: 0; padding: 5px 8px; border-radius: 8px; background: #07142ce8;
+  color: #fff; font-size: .65rem; line-height: 1.4;
+}
+.home-ad-caption a { color: #d9eaff; text-underline-offset: .16em; }
 .home-faq-list details { border-bottom: 1px solid var(--line); scroll-margin-top: 24px; }
 .home-faq-list details:first-child summary { padding-top: 0; }
 .home-faq-list summary { position: relative; padding: 22px 32px 22px 0; list-style: none; cursor: pointer; font-size: 1rem; line-height: 1.5; font-weight: 650; }
@@ -177,7 +187,6 @@ html:not([data-theme="light"]) .home-preview-video:not([data-theme-ready]) { vis
   .home-tools .mode-card-action { font-size: .76rem; gap: 6px; }
   .home-heading-row { align-items: flex-start; flex-direction: column; gap: 16px; }
   .home-steps, .home-faq { grid-template-columns: 1fr; gap: 16px; }
-  .home-spotify-embed iframe { max-width: 100%; }
   .home-steps { margin-top: 24px; }
   .home-steps li { padding: 20px 0 4px; }
   .home-faq-list { margin-top: 12px; }
