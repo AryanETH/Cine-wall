@@ -88,25 +88,26 @@ internal static class Setup
     private static void Install()
     {
         RequireAppClosed();
-        var programFiles = Environment.GetEnvironmentVariable("ProgramW6432")
-            ?? Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles);
-        var desktopRuntime = Path.Combine(programFiles, "dotnet", "shared", "Microsoft.WindowsDesktop.App");
-        if (!Directory.Exists(desktopRuntime) || Directory.GetDirectories(desktopRuntime, "8.0.*").Length == 0)
-            throw new InvalidOperationException("Install Microsoft .NET Desktop Runtime 8 (x64), then reopen CineWall Setup.");
-        var webRuntime = Path.Combine(programFiles, "dotnet", "shared", "Microsoft.AspNetCore.App");
-        if (!Directory.Exists(webRuntime) || Directory.GetDirectories(webRuntime, "8.0.*").Length == 0)
-            throw new InvalidOperationException("Install Microsoft ASP.NET Core Runtime 8 (x64), then reopen CineWall Setup.");
 
         Directory.CreateDirectory(Root);
         using (var contents = Assembly.GetExecutingAssembly().GetManifestResourceStream("CineWallPayload"))
         using (var archive = new ZipArchive(contents, ZipArchiveMode.Read))
         {
-            foreach (var entry in archive.Entries)
+            var entry = archive.GetEntry("CineWall.exe");
+            if (entry == null || archive.Entries.Count != 1) throw new InvalidDataException("Invalid CineWall installer.");
+            var staged = Path.Combine(Root, Guid.NewGuid().ToString("N") + ".tmp");
+            var destination = Path.Combine(Root, "CineWall.exe");
+            try
             {
-                if (entry.Name != entry.FullName || entry.Name == "." || entry.Name == "..") throw new InvalidDataException("Invalid installer.");
-                entry.ExtractToFile(Path.Combine(Root, entry.Name), true);
+                entry.ExtractToFile(staged);
+                if (File.Exists(destination)) File.Replace(staged, destination, null);
+                else File.Move(staged, destination);
             }
+            finally { File.Delete(staged); }
         }
+        // Remove dependencies left by earlier installers.
+        foreach (var name in new[] { "CineWall.dll", "CineWall.deps.json", "CineWall.runtimeconfig.json" })
+            File.Delete(Path.Combine(Root, name));
         var app = Path.Combine(Root, "CineWall.exe");
         var uninstaller = Path.Combine(Root, "CineWall Setup.exe");
         var source = Assembly.GetExecutingAssembly().Location;

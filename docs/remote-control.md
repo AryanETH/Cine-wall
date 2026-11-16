@@ -1,6 +1,6 @@
 # CineWall Remote Control
 
-Use **Download for Windows** on CineWall’s Remote Control page and run the installer on both PCs. Maintainers can rebuild the x64 download with `./windows/build-installer.ps1`. The unsigned build requires Microsoft .NET Desktop Runtime 8 and ASP.NET Core Runtime 8 (x64). Keep both computers on the same private IPv4 subnet. Pairing will fail on guest Wi-Fi that isolates clients. If Windows Firewall asks about CineWall on the host, allow it on your private home network.
+Use **Download for Windows** on CineWall’s Remote Control page and run the unsigned x64 installer on both PCs. The installer bundles CineWall’s .NET Desktop and ASP.NET Core components. Maintainers can rebuild the download with `./windows/build-installer.ps1`. Keep both computers on the same private IPv4 subnet. Pairing will fail on guest Wi-Fi that isolates clients. If Windows Firewall asks about CineWall on the host, allow it on your private home network.
 
 1. Open **Remote Control** from the CineWall tools. **Share This Computer** opens the CineWall Windows window. **Control Another Computer** opens a CineWall tab in the browser.
 2. On the Infinix, select its Wi-Fi adapter and **Share This Computer**. Copy the two-minute pairing code and pass it privately to the Acer.

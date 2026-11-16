@@ -1499,6 +1499,13 @@ function serveStatic(req, res, pathname) {
     respondError(req, res, 403, 'Forbidden');
     return;
   }
+  if (decoded === '/downloads/CineWall-Setup.exe') {
+    serveAsset(req, res, resolved, 'application/octet-stream', false, {
+      cacheControl: 'no-cache', disposition: 'attachment; filename="CineWall-Setup.exe"',
+      onMissing: () => sendPageError(req, res, 404)
+    });
+    return;
+  }
   if (route.startsWith('/assets/') || route.startsWith('/fonts/')) {
     serveAsset(req, res, resolved, contentTypes[path.extname(resolved).toLowerCase()] || 'application/octet-stream',
       new URL(req.url, 'http://localhost').searchParams.has('v'), { onMissing: () => sendPageError(req, res, 404) });
@@ -1520,7 +1527,6 @@ function serveStatic(req, res, pathname) {
     res.writeHead(200, {
       'Content-Type': type,
       'Content-Length': encoded.body.length,
-      ...(route === '/downloads/CineWall-Setup.exe' ? { 'Content-Disposition': 'attachment; filename="CineWall-Setup.exe"' } : {}),
       ...encoded.headers,
       ...(publicFile ? { 'ETag': etag } : {}),
       'Cache-Control': protectedPage(route) ? 'no-store' : 'no-cache',
