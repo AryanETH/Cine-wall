@@ -4,6 +4,13 @@
 # Node modules
 node_modules/
 *.pem
+*.pfx
+*.p12
+.env
+.env.*
+!.env.example
+*firebase-adminsdk*.json
+*service-account*.json
 tools/
 
 # OS files

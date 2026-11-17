@@ -5,6 +5,8 @@ const fs = require('node:fs');
 const path = require('node:path');
 const os = require('node:os');
 const zlib = require('node:zlib');
+const { Transform } = require('node:stream');
+const { pipeline } = require('node:stream/promises');
 const { execFile } = require('node:child_process');
 const { randomUUID } = require('node:crypto');
 const downloads = require('./youtube-downloads');
@@ -19,6 +21,8 @@ const textResponse = require('./text-response');
 const { sendPageError } = require('./page-errors');
 const firebaseConfig = require('./firebase-config');
 const { createAccountAuth, protectedPage } = require('./account-auth');
+const { isLocalHost, securityHeaders } = require('./request-security');
+const readJson = require('./request-json');
 const { createVerificationSender } = require('./verification-email');
 const { createAdvertising } = require('./advertising');
 const sendVerification = createVerificationSender({ projectId: firebaseConfig().config?.projectId });
@@ -26,7 +30,7 @@ const accountAuth = createAccountAuth({ sendVerification });
 const atomicJson = require('./atomic-json');
 const { getDemoVisitSnapshot } = require('./public/home-footer');
 const SERVER_ID = randomUUID();
-const PLAYBACK_START_LEAD_MS = 700;
+const PLAYBACK_START_LEAD_MS = 250;
 const AD_START_LEAD_MS = 700;
 const AD_LOAD_TIMEOUT_MS = 8000;
 
@@ -36,9 +40,9 @@ const HOST = '0.0.0.0';
 const PUBLIC_DIR = path.join(__dirname, 'public');
 const CACHE_ROOT = path.resolve(process.env.CINEWALL_CACHE_DIR || path.join(__dirname, '.cinema-cache'));
 const OFFICE_CONVERTER = path.join(__dirname, 'convert-office.ps1');
-const MAX_JSON_BODY = 128 * 1024;
 const MAX_ASSET_SIZE = 50 * 1024 * 1024 * 1024;
 let activePort = PREFERRED_PORT;
+let activeUploads = 0;
 
 const contentTypes = {
   '.html': 'text/html; charset=utf-8',
@@ -74,6 +78,7 @@ const validExtensions = {
 const officeExtensions = new Set(['.ppt', '.pptx', '.pps', '.ppsx', '.odp', '.doc', '.docx', '.rtf']);
 const imageExtensions = new Set(['.png', '.jpg', '.jpeg', '.webp', '.gif']);
 const viewers = new Set();
+const roomReads = new Map();
 const screens = new Map();
 let commandSequence = 0;
 let pendingSeek = null;
@@ -148,30 +153,6 @@ function json(res, status, value) {
     'Cache-Control': 'no-store',
   });
   res.end(body);
-}
-
-function readJson(req) {
-  return new Promise((resolve, reject) => {
-    let size = 0;
-    const chunks = [];
-    req.on('data', (chunk) => {
-      size += chunk.length;
-      if (size > MAX_JSON_BODY) {
-        reject(new Error('Request is too large'));
-        req.destroy();
-        return;
-      }
-      chunks.push(chunk);
-    });
-    req.on('end', () => {
-      try {
-        resolve(chunks.length ? JSON.parse(Buffer.concat(chunks).toString('utf8')) : {});
-      } catch {
-        reject(new Error('Invalid JSON'));
-      }
-    });
-    req.on('error', reject);
-  });
 }
 
 function currentPosition(at = Date.now()) {
@@ -362,7 +343,9 @@ const micRoom = createMicRoom({ identity, readJson, json,
 });
 
 function revokeMembers(predicate) {
-  for (const member of roomRegistry.removeMembers(record, predicate)) {
+  const removed = new Set(roomRegistry.removeMembers(record, predicate));
+  for (const [response, member] of roomReads) if (removed.has(member)) response.destroy();
+  for (const member of removed) {
     for (const viewer of [...viewers]) if (viewer.device?.id === member.device.id) { viewers.delete(viewer); viewer.end(); }
     for (const [id, screen] of screens) if (screen.deviceId === member.device.id) screens.delete(id);
     screenSharing.removeDevice(member.device); micRoom.removeDevice(member.device);
@@ -457,6 +440,9 @@ function checkMidRollAds() {
 }
 
 function sendEvent(res, event, payload) {
+  if (res.destroyed || res.writableEnded) return;
+  // A suspended or unread stream must not accumulate data without limit.
+  if (res.writableLength >= 256 * 1024) { res.destroy(); return; }
   res.write(`event: ${event}\ndata: ${JSON.stringify(payload)}\n\n`);
 }
 
@@ -845,6 +831,11 @@ async function receiveAsset(req, res, url) {
     json(res, 409, { error: 'A file is already being prepared. Follow its progress or cancel it first.', preparation });
     return;
   }
+  if (activeUploads >= 4) {
+    res.setHeader('Retry-After', '5');
+    json(res, 503, { error: 'The server is preparing other files. Try again shortly.' });
+    return;
+  }
 
   const kind = String(url.searchParams.get('kind') || 'video');
   if (!['video', 'audio', 'presentation'].includes(kind)) {
@@ -877,30 +868,41 @@ async function receiveAsset(req, res, url) {
   const rawPath = path.join(CACHE_DIR, `asset-${version}${extension}`);
   checkOwner(req, true);
   const releaseBudget = cacheBudget.reserve(temporaryPath, size);
+  activeUploads++;
   uploadInProgress = true;
   preparationController = new AbortController();
-  const signal = preparationController.signal;
+  const controller = preparationController, signal = controller.signal;
+  const disconnected = () => { if (!res.writableEnded) controller.abort(); };
+  res.once('close', disconnected);
   preparation = { version, kind, name, size, phase: 'uploading', progress: 0, error: '', started: Date.now() };
   broadcast('state', snapshot());
   let received = 0;
 
   try {
-    await new Promise((resolve, reject) => {
-      const output = fs.createWriteStream(temporaryPath, { flags: 'wx' });
-      req.on('data', (chunk) => {
+    const idleUpload = setTimeout(() => controller.abort(), 60000);
+    idleUpload.unref();
+    try {
+      const meter = new Transform({ transform(chunk, _, done) {
+        idleUpload.refresh();
         received += chunk.length;
         preparation.progress = Math.min(100, received / size * 100);
-        if (received > MAX_ASSET_SIZE) req.destroy(new Error('File is larger than 50 GB'));
-      });
-      req.on('aborted', () => reject(new Error('File transfer was interrupted')));
-      req.on('error', reject);
-      output.on('error', reject);
-      output.on('finish', resolve);
-      const abortUpload = () => { req.unpipe(output); output.destroy(new Error('Preparation cancelled')); req.resume(); };
-      signal.addEventListener('abort', abortUpload, { once: true });
-      output.on('close', () => signal.removeEventListener('abort', abortUpload));
-      req.pipe(output);
-    });
+        done(received > size ? new Error('File transfer exceeded its declared size') : null, chunk);
+      } });
+      // Close the file on cancellation or disconnect while preserving the
+      // HTTP response for a user who cancelled on a separate connection.
+      const interrupted = () => meter.destroy(new Error('File transfer was interrupted'));
+      req.once('aborted', interrupted);
+      req.once('error', interrupted);
+      const transfer = pipeline(meter, fs.createWriteStream(temporaryPath, { flags: 'wx', mode: 0o600 }), { signal });
+      if (req.destroyed) interrupted();
+      else req.pipe(meter);
+      try { await transfer; }
+      finally {
+        req.unpipe(meter);
+        req.off('aborted', interrupted);
+        req.off('error', interrupted);
+      }
+    } finally { clearTimeout(idleUpload); }
 
     if (received !== size) throw new Error('File transfer was incomplete');
     await fs.promises.rename(temporaryPath, rawPath);
@@ -966,11 +968,17 @@ async function receiveAsset(req, res, url) {
     await fs.promises.unlink(temporaryPath).catch(() => {});
     await fs.promises.unlink(rawPath).catch(() => {});
     preparation.phase = signal.aborted ? 'cancelled' : 'error';
-    preparation.error = signal.aborted ? 'Preparation cancelled. You can choose another file.' : error.message || 'The file could not be prepared';
+    preparation.error = signal.aborted ? 'Preparation cancelled. You can choose another file.'
+      : error.code ? 'The file could not be prepared. Try again.' : error.message || 'The file could not be prepared';
     broadcast('state', snapshot());
-    if (!res.headersSent && !res.destroyed) json(res, signal.aborted ? 409 : kind === 'video' && /MP4|WebM|video track|audio track|browser/i.test(preparation.error) ? 415 : 500, { error: preparation.error, preparation });
+    if (!res.headersSent && !res.destroyed) {
+      if (!req.complete) res.setHeader('Connection', 'close');
+      json(res, signal.aborted ? 409 : error.status || 500, { error: preparation.error, preparation });
+    }
   } finally {
+    res.off('close', disconnected);
     releaseBudget();
+    activeUploads--;
     uploadInProgress = false;
     releaseReservation();
     preparationController = null;
@@ -1118,6 +1126,12 @@ function switchRoomMode(req, mode) {
 
 async function handle(req, res, url) {
   try {
+    if (req.method === 'GET' && req.cinewallMember) {
+      roomReads.set(res, req.cinewallMember);
+      const done = () => roomReads.delete(res);
+      res.once('finish', done);
+      res.once('close', done);
+    }
     if (req.method === 'POST' && url.pathname === '/api/rooms/mode') {
       const body = await readJson(req); switchRoomMode(req, body.mode);
       json(res, 200, roomRegistry.result(record, req.cinewallMember)); return;
@@ -1203,7 +1217,7 @@ async function handle(req, res, url) {
       return;
     }
     if (req.method === 'GET' && url.pathname === '/api/info') {
-      const hosted = process.env.CINEWALL_HOSTED === '1' || Boolean(process.env.RAILWAY_ENVIRONMENT) || !isLocalHost(String(req.headers['x-forwarded-host'] || req.headers.host || 'localhost').split(',')[0].trim());
+      const hosted = isHostedRequest(req);
       json(res, 200, { port: activePort, hosted, room, iceServers: iceServers(), addresses: hosted ? [] : networkDetails().map((item) => item.address), networks: hosted ? [] : networkDetails(), state: snapshot() });
       return;
     }
@@ -1236,9 +1250,11 @@ async function handle(req, res, url) {
       if (body.type && !/^(video|audio)\/[a-z0-9.+-]+$/i.test(body.type)) throw new Error('Choose a video or audio file, not a document');
       const extension = path.extname(String(body.name || '')).toLowerCase();
       const mkvCodecs = Array.isArray(body.codecs) ? body.codecs : [];
-      const supportedMkv = mkvCodecs.includes('V_MPEG4/ISO/AVC') && mkvCodecs.every((codec) => codec === 'V_MPEG4/ISO/AVC' || typeof codec === 'string' && /^A_AAC(?:\/MPEG[24]\/(?:MAIN|LC|LC\/SBR|SSR))?$/.test(codec));
+      // The source browser performs the decode test; each display reports its
+      // own readiness. The server validates metadata, not hardware codecs.
+      const supportedMkv = mkvCodecs.length <= 8 && mkvCodecs.some((codec) => typeof codec === 'string' && codec.startsWith('V_')) && mkvCodecs.every((codec) => typeof codec === 'string' && /^[VA]_[A-Z0-9/_-]{1,60}$/.test(codec));
       if (state.sessionMode === 'video' && (!validExtensions.video.has(extension) || body.type !== mimeForAsset('video', extension, '') || extension === '.mkv' && !supportedMkv)) {
-        json(res, 415, { error: 'This format is not supported. Convert it to MP4 with H.264 video and AAC audio first.' }); return;
+        json(res, 415, { error: 'File not supported by your browser. Try an MP4 with H.264 video and AAC audio.' }); return;
       }
       if (!/^[a-f0-9-]{36}$/.test(body.peerId || '') || !/^[a-f0-9]{64}$/.test(body.fingerprint || '') || !Number.isSafeInteger(body.size) || body.size <= 0 || body.size > MAX_ASSET_SIZE) throw new Error('Invalid local file metadata');
       checkOwner(req, true);
@@ -1362,7 +1378,7 @@ async function handle(req, res, url) {
       res.device = device;
       res.writeHead(200, {
         'Content-Type': 'text/event-stream',
-        'Cache-Control': 'no-cache, no-transform',
+        'Cache-Control': 'no-store, no-transform',
         Connection: 'keep-alive',
         'X-Accel-Buffering': 'no',
       });
@@ -1440,7 +1456,9 @@ async function handle(req, res, url) {
     }
     json(res, 405, { error: 'Method not allowed' });
   } catch (error) {
-    json(res, error.status || 400, { error: error.message || 'Bad request' });
+    if (res.destroyed) return;
+    if (res.headersSent) { res.destroy(); return; }
+    json(res, error.status || (error.code ? 500 : 400), { error: error.code ? 'The request could not be completed.' : error.message || 'Bad request' });
   }
 }
 
@@ -1461,13 +1479,14 @@ return {
     if (state.asset?.source === 'peer') { removeCurrentAsset(); state.asset = null; }
     state = { ...state, playing: false, position: state.asset ? position : 0, anchorTime: Date.now(), notBefore: 0, commandId: ++commandSequence };
     screens.clear(); saveSession(); broadcast('state', snapshot());
+    for (const [response, member] of roomReads) if (!record.members.includes(member)) response.destroy();
     for (const viewer of viewers) viewer.end(); viewers.clear();
     screenSharing.close(); micRoom.close();
   },
   pulse() { finishSeekIfReady(); checkMidRollAds(); broadcast('pulse', snapshot()); activeScreens(); screenSharing.pulse(); micRoom.pulse(); },
   lastUsed: Date.now(),
-  idle() { return !viewers.size && !uploadInProgress && screenSharing.idle() && micRoom.idle(); },
-  close() { cancelAdBreak(); preparationController?.abort(); for (const viewer of viewers) viewer.end(); viewers.clear(); screenSharing.close(); micRoom.close(); },
+  idle() { return !roomReads.size && !viewers.size && !uploadInProgress && screenSharing.idle() && micRoom.idle(); },
+  close() { cancelAdBreak(); preparationController?.abort(); for (const response of roomReads.keys()) response.destroy(); for (const viewer of viewers) viewer.end(); viewers.clear(); screenSharing.close(); micRoom.close(); },
 };
 }
 
@@ -1475,9 +1494,9 @@ function iceServers() {
   try { const servers = JSON.parse(process.env.CINEWALL_ICE_SERVERS || '[]'); if (Array.isArray(servers) && servers.length) return servers; } catch {}
   return [{ urls: 'stun:stun.l.google.com:19302' }];
 }
-function isLocalHost(host) {
-  const hostname = host.toLowerCase().replace(/:\d+$/, '');
-  return /^(localhost|127\.0\.0\.1|\[::1\])$/.test(hostname) || /^(10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.)/.test(hostname);
+function isHostedRequest(req) {
+  return process.env.CINEWALL_HOSTED === '1' || Boolean(process.env.RAILWAY_ENVIRONMENT || process.env.RENDER)
+    || !isLocalHost(req.headers.host);
 }
 const sessions = new Map();
 const tlsEnabled = Boolean(process.env.CINEWALL_TLS_CERT && process.env.CINEWALL_TLS_KEY);
@@ -1487,26 +1506,34 @@ function respondJson(res, status, data) { const body = JSON.stringify(data); res
 function respondError(req, res, status, message) {
   if (!sendPageError(req, res, status)) respondJson(res, status, { error: message });
 }
-async function bodyJson(req) { let size = 0; const chunks = []; for await (const chunk of req) { size += chunk.length; if (size > MAX_JSON_BODY) throw Object.assign(new Error('Request is too large'), { status: 413 }); chunks.push(chunk); } try { return JSON.parse(Buffer.concat(chunks).toString() || '{}'); } catch { throw new Error('Invalid JSON'); } }
 function serveStatic(req, res, pathname) {
-  const route = pathname === '/' ? '/index.html' : pathname === '/favicon.ico' ? '/favicon.svg' : pathname;
-  const firebasePage = route === '/index.html' || route === '/auth.html' || protectedPage(route);
   let decoded;
-  try { decoded = decodeURIComponent(route); }
+  try { decoded = decodeURIComponent(pathname); }
   catch { respondError(req, res, 400, 'Invalid request URL'); return; }
-  const resolved = path.resolve(PUBLIC_DIR, `.${decoded}`);
+  const segments = decoded.split('/');
+  if (segments.includes('..')) { respondError(req, res, 403, 'Forbidden'); return; }
+  // Windows trims dots and spaces in path segments and recognizes alternate
+  // data stream syntax. Only serve ordinary public path names on every host.
+  if (/[\\:\x00-\x1f]/.test(decoded) || segments.some(part => /[. ]$/.test(part))) {
+    respondError(req, res, 400, 'Invalid request URL'); return;
+  }
+  const normalized = path.posix.normalize(decoded);
+  const route = normalized === '/' ? '/index.html' : normalized === '/favicon.ico' ? '/favicon.svg' : normalized;
+  const lowerRoute = route.toLowerCase();
+  const firebasePage = lowerRoute === '/index.html' || lowerRoute === '/auth.html' || protectedPage(route);
+  const resolved = path.resolve(PUBLIC_DIR, `.${route}`);
   if (!resolved.startsWith(`${PUBLIC_DIR}${path.sep}`)) {
     respondError(req, res, 403, 'Forbidden');
     return;
   }
-  if (decoded === '/downloads/CineWall-Setup.exe') {
+  if (lowerRoute === '/downloads/cinewall-setup.exe') {
     serveAsset(req, res, resolved, 'application/octet-stream', false, {
       cacheControl: 'no-cache', disposition: 'attachment; filename="CineWall-Setup.exe"',
       onMissing: () => sendPageError(req, res, 404)
     });
     return;
   }
-  if (route.startsWith('/assets/') || route.startsWith('/fonts/')) {
+  if (lowerRoute.startsWith('/assets/') || lowerRoute.startsWith('/fonts/')) {
     serveAsset(req, res, resolved, contentTypes[path.extname(resolved).toLowerCase()] || 'application/octet-stream',
       new URL(req.url, 'http://localhost').searchParams.has('v'), { onMissing: () => sendPageError(req, res, 404) });
     return;
@@ -1530,10 +1557,9 @@ function serveStatic(req, res, pathname) {
       ...encoded.headers,
       ...(publicFile ? { 'ETag': etag } : {}),
       'Cache-Control': protectedPage(route) ? 'no-store' : 'no-cache',
-      'Referrer-Policy': 'strict-origin-when-cross-origin',
-      'Permissions-Policy': 'autoplay=(self "https://www.youtube.com" "https://www.youtube-nocookie.com" "https://open.spotify.com")',
+      'Permissions-Policy': 'autoplay=(self "https://www.youtube.com" "https://www.youtube-nocookie.com" "https://open.spotify.com"), camera=(self), microphone=(self), display-capture=(self), geolocation=()',
       'X-Content-Type-Options': 'nosniff',
-      'Content-Security-Policy': `default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self' ${route === '/hand-gesture-worker.js' ? "'wasm-unsafe-eval' " : ''}https://www.youtube.com https://s.ytimg.com${firebasePage ? ' https://www.gstatic.com https://apis.google.com https://www.google.com https://www.recaptcha.net https://recaptcha.google.com' : ''}; media-src 'self' blob:; img-src 'self' data: blob: https://i.ytimg.com https://yt3.ggpht.com https://api.qrserver.com; connect-src 'self' https://www.youtube.com${firebasePage ? ' https://identitytoolkit.googleapis.com https://securetoken.googleapis.com https://www.gstatic.com https://www.google.com https://www.recaptcha.net https://recaptcha.google.com' : ''}; frame-src 'self' blob: https://www.youtube.com https://www.youtube-nocookie.com https://open.spotify.com${firebasePage ? ` https://www.google.com https://www.recaptcha.net https://recaptcha.google.com${firebaseConfig().enabled ? ` https://${firebaseConfig().config.authDomain}` : ''}` : ''}; object-src 'self'`,
+      'Content-Security-Policy': `default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self' ${route === '/hand-gesture-worker.js' ? "'wasm-unsafe-eval' " : ''}https://www.youtube.com https://s.ytimg.com${firebasePage ? ' https://www.gstatic.com https://apis.google.com https://www.google.com https://www.recaptcha.net https://recaptcha.google.com' : ''}; media-src 'self' blob:; img-src 'self' data: blob: https://i.ytimg.com https://yt3.ggpht.com https://api.qrserver.com; connect-src 'self' https://www.youtube.com${firebasePage ? ' https://identitytoolkit.googleapis.com https://securetoken.googleapis.com https://www.gstatic.com https://www.google.com https://www.recaptcha.net https://recaptcha.google.com' : ''}; frame-src 'self' blob: https://www.youtube.com https://www.youtube-nocookie.com https://open.spotify.com${firebasePage ? ` https://www.google.com https://www.recaptcha.net https://recaptcha.google.com${firebaseConfig().enabled ? ` https://${firebaseConfig().config.authDomain}` : ''}` : ''}; object-src 'none'; frame-ancestors 'self'; base-uri 'none'; form-action 'self'`,
       ...(firebasePage ? { 'Cross-Origin-Opener-Policy': 'same-origin-allow-popups' } : {}),
     });
     res.end(req.method === 'HEAD' ? undefined : encoded.body);
@@ -1560,8 +1586,12 @@ function getSession(record) {
 }
 const requestHandler = async (req, res) => {
  try {
+  securityHeaders(req, res);
   let url;
-  try { url = new URL(req.url, 'http://localhost'); }
+  try {
+    if (!req.url.startsWith('/') || req.url.startsWith('//') || req.url.includes('\\')) throw new Error();
+    url = new URL(req.url, 'http://localhost');
+  }
   catch { respondError(req, res, 400, 'Invalid request URL'); return; }
   if (req.method === 'GET' && url.pathname === '/api/auth/config') { respondJson(res, 200, { ...firebaseConfig(), brandedVerification: Boolean(sendVerification) }); return; }
   // Public demo counter: shared across rooms, instances and server restarts.
@@ -1579,20 +1609,21 @@ const requestHandler = async (req, res) => {
   }
   if (req.method === 'GET' && url.pathname === '/api/health') { respondJson(res, 200, { ok: true, roomLinksExpire: false, roomStorage: process.env.RAILWAY_VOLUME_MOUNT_PATH ? 'persistent-volume' : 'filesystem' }); return; }
   if (await advertising.handle(req, res, url, {
-    json: respondJson, bodyJson,
+    json: respondJson, bodyJson: readJson,
     page(name) {
       const html = fs.readFileSync(path.join(__dirname, 'advt', name));
       res.writeHead(200, {
         'Content-Type': 'text/html; charset=utf-8',
         'Cache-Control': 'no-store',
         'Referrer-Policy': 'no-referrer',
+        'X-Frame-Options': 'DENY',
         'X-Content-Type-Options': 'nosniff',
         'Content-Security-Policy': "default-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'",
       });
       res.end(req.method === 'HEAD' ? undefined : html);
     },
   })) return;
-  if (await accountAuth.handle(req, res, url, bodyJson)) return;
+  if (await accountAuth.handle(req, res, url, readJson)) return;
   const room = url.searchParams.get('room') || '';
   if (room || /^\/(?:api\/|events$|share-events$|mic-events$|__cinewall_peer__\/|(?:admin|screen|share|mic|remote)\.html$)/.test(url.pathname)) res.setHeader('X-Robots-Tag', 'noindex, nofollow');
   if (room && !/^[a-f0-9-]{36}$/.test(room)) { respondError(req, res, 400, 'Invalid room link.'); return; }
@@ -1602,19 +1633,15 @@ const requestHandler = async (req, res) => {
     else { res.setHeader('Allow', 'GET, HEAD'); respondError(req, res, 405, 'Method not allowed'); }
     return;
   }
-  if (req.method === 'POST' && req.headers.origin) {
-    const allowed = String(req.headers['x-forwarded-host'] || req.headers.host || '').split(',')[0].trim();
-    if (new URL(req.headers.origin).host !== allowed) { respondJson(res, 403, { error: 'Open CineWall directly to use this room.' }); return; }
-  }
   if (req.method === 'POST' && ['/api/rooms/create', '/api/rooms/join', '/api/rooms/resume', '/api/rooms/recover'].includes(url.pathname)) {
-    const body = await bodyJson(req);
+    const body = await readJson(req);
     const data = url.pathname.endsWith('/create') ? roomRegistry.create(req, body.mode) : url.pathname.endsWith('/recover') ? roomRegistry.recover(req, body) : url.pathname.endsWith('/resume') ? roomRegistry.resume(req, body) : roomRegistry.join(req, body);
     const record = roomRegistry.lookup(data.room), session = getSession(record);
     if (url.pathname.endsWith('/recover')) session.recover(roomRegistry.identity(req));
     session.joinMember(record.members.find(member => member.ticket === data.ticket));
     respondJson(res, 200, data); return;
   }
-  const hosted = process.env.CINEWALL_HOSTED === '1' || Boolean(process.env.RAILWAY_ENVIRONMENT) || !isLocalHost(String(req.headers['x-forwarded-host'] || req.headers.host || 'localhost').split(',')[0].trim());
+  const hosted = isHostedRequest(req);
   if (!room) {
     if (hosted || process.env.CINEWALL_LEGACY_LOCAL !== '1') { respondJson(res, 400, { error: 'Create or join a room first.' }); return; }
     if (!sessions.has('')) sessions.set('', createSession(''));
@@ -1625,9 +1652,12 @@ const requestHandler = async (req, res) => {
   const session = getSession(record); session.lastUsed = Date.now();
   await session.handle(req, res, url);
  } catch (error) {
+   if (res.destroyed) return;
    if (res.headersSent) res.destroy();
-   else if (!sendPageError(req, res, error.status || 500)) {
-     respondJson(res, error.status || 400, { error: error.message || 'Request failed' });
+   else {
+     const status = error.status || (error.code ? 500 : 400);
+     const message = error.code ? 'The request could not be completed.' : error.message || 'Request failed';
+     respondError(req, res, status, message);
    }
  }
 };

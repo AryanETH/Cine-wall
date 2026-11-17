@@ -33,7 +33,7 @@ Open `/auth.html` to create an account or sign in. The form starts on signup for
 
 Official references: https://firebase.google.com/docs/web/setup ; https://firebase.google.com/docs/auth/web/google-signin ; https://firebase.google.com/docs/auth/web/password-auth ; https://firebase.google.com/docs/auth/web/phone-auth
 
-Use Node.js 20.19 or newer and run `npm ci` before starting the server. The Dockerfile installs the locked runtime dependency. Tests use an isolated entrypoint with temporary RSA keys; production has no test-token or authentication-disable flag.
+Use a supported Node.js LTS release, version 22 or newer, and run `npm ci` before starting the server. The Dockerfile installs the locked runtime dependency. Tests use an isolated entrypoint with temporary RSA keys. The production entrypoint verifies Firebase tokens against Google's signing certificates.
 
 ## Room recovery
 

@@ -8,7 +8,10 @@ module.exports = function createMicRoom({ identity, readJson, json, now = Date.n
   const laptops = new Set([1]), removed = new Set();
   const fail = (message, status = 400) => { throw Object.assign(new Error(message), { status }); };
   const emit = (peer, event, value) => {
-    try { if (peer.response && !peer.response.destroyed) peer.response.write(`event: ${event}\ndata: ${JSON.stringify(value)}\n\n`); } catch { peer.response = null; }
+    const response = peer.response;
+    if (!response || response.destroyed || response.writableEnded) return;
+    if (response.writableLength >= 256 * 1024) { response.destroy(); return; }
+    try { response.write(`event: ${event}\ndata: ${JSON.stringify(value)}\n\n`); } catch { peer.response = null; }
   };
   const snapshot = () => ({ version, laptops: [...laptops].sort(), peers: [...peers.values()].map(p => ({ peerId: p.id, role: p.role, slot: p.slot, live: p.live, status: p.status, online: Boolean(p.response && !p.response.destroyed) })) });
   function broadcast() { const state = snapshot(); for (const p of peers.values()) emit(p, 'mic-state', state); }
@@ -30,8 +33,9 @@ module.exports = function createMicRoom({ identity, readJson, json, now = Date.n
     if (req.method === 'GET' && url.pathname === '/mic-events') {
       const peer = peers.get(url.searchParams.get('peer'));
       if (!peer || peer.token !== url.searchParams.get('token')) fail('Reconnect this device.', 403);
+      if (req.cinewallMember) own(req, peer.id);
       peer.response?.end();
-      res.writeHead(200, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache, no-transform', Connection: 'keep-alive', 'X-Accel-Buffering': 'no' });
+      res.writeHead(200, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-store, no-transform', Connection: 'keep-alive', 'X-Accel-Buffering': 'no' });
       res.write(': connected\n\n'); peer.response = res; peer.lastSeen = now(); broadcast();
       req.on('close', () => { if (peer.response === res) { peer.response = null; broadcast(); } });
       return true;

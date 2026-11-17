@@ -70,7 +70,7 @@
   function codecSummary(asset) { return (asset?.codecs || []).map((codec) => codecNames[codec]).filter(Boolean).join(' + '); }
   function playbackHelp(asset) {
     const codecs = codecSummary(asset);
-    return `This browser cannot play ${codecs ? `this video (${codecs})` : 'this video'}. Use MP4 with H.264 video and AAC audio.`;
+    return `File not supported by your browser.${codecs ? ` Detected: ${codecs}.` : ''} Try an MP4 with H.264 video and AAC audio.`;
   }
   // SHA-256 fallback keeps file identity identical on HTTPS and an HTTP LAN.
   function sha256(bytes) {
@@ -203,6 +203,8 @@
       if (this.asset?.version !== asset.version) { this.clear(); this.asset = asset; }
       const generation = this.generation;
       this.playbackType = type;
+      // A retry must establish a fresh channel, not reuse the timed-out one.
+      if (retry && !this.file && this.connections.has(asset.peerId)) this.dropPeer(asset.peerId, this.connections.get(asset.peerId));
       const canUseRanges = navigator.serviceWorker && window.isSecureContext;
       if (this.file && (!ranged || !canUseRanges)) return this.localUrl(type);
       if (!this.file) {
@@ -336,6 +338,8 @@
       return this.connectionTasks.get(id);
     }
     async connect(id) {
+      const previous = this.connections.get(id);
+      if (previous && (previous.closed || previous.channel?.readyState === 'closed' || ['failed', 'closed'].includes(previous.pc.connectionState))) this.dropPeer(id, previous);
       const peer = await this.getPeer(id, true);
       const deadline = Date.now() + 15000;
       while (peer.channel?.readyState !== 'open') { if (Date.now() > deadline || peer.closed || ['failed', 'closed'].includes(peer.pc.connectionState)) { this.dropPeer(id, peer); throw new Error(peer.localOnly ? HOTSPOT_HELP : 'Direct connection to the admin source is unavailable. Keep the admin tab open and check network access between the Devices.'); } await new Promise((resolve) => setTimeout(resolve, 50)); }

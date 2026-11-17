@@ -5,3 +5,13 @@ node_modules
 tests
 *.zip
 *.pem
+*.pfx
+*.p12
+.env
+.env.*
+**/.env
+**/.env.*
+**/*firebase-adminsdk*.json
+**/*service-account*.json
+windows/**/bin
+windows/**/obj

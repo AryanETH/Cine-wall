@@ -132,11 +132,11 @@
     }
     const guest = page.pathname === '/screen.html' || page.pathname === '/room.html' || page.searchParams.has('screen') || page.searchParams.has('speaker') || page.searchParams.get('role') === 'phone';
     let saved; try { saved = JSON.parse(storage.get(`cinewall-room-${room}`) || 'null'); } catch {}
-    const missingHost = error.status === 404 && !guest && saved?.admin === true;
+    const missingHost = [403, 404].includes(error.status) && !guest && (saved?.admin === true || !room && Boolean(savedHost()));
     const target = new URL(page.pathname, page.origin);
     target.searchParams.set('new', '1');
     if (page.searchParams.has('mode')) target.searchParams.set('mode', page.searchParams.get('mode'));
-    const detail = missingHost ? { message: 'This room is no longer available. Start a new room to get fresh sharing links.', newRoom: target.pathname + target.search } : error.message;
+    const detail = missingHost ? { message: error.status === 403 ? 'Sign in with the room owner’s account or start a new room.' : 'This room is no longer available. Start a new room to get fresh sharing links.', newRoom: target.pathname + target.search } : error.message;
     window.dispatchEvent(new CustomEvent('cinewall-room-error', { detail }));
   }
   ready.catch(error => { const show = () => reportError(error); if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', show, { once: true }); else show(); });
@@ -151,7 +151,11 @@
     return url.href;
   }
   window.fetch = (input, init) => {
-    const target = scoped(input instanceof Request ? input.url : input);
+    const original = input instanceof Request ? input.url : input;
+    const url = new URL(original, location.origin);
+    // Sign-in refresh and logout must work even while a room is unavailable.
+    if (url.origin === location.origin && url.pathname.startsWith('/api/auth/')) return nativeFetch(input, init);
+    const target = scoped(original);
     const api = new URL(target).origin === location.origin && new URL(target).pathname.startsWith('/api/');
     if (!api) return nativeFetch(input instanceof Request ? new Request(target, input) : target, init);
     const send = () => {

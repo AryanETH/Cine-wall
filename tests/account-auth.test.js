@@ -1,5 +1,6 @@
 'use strict';
 const test = require('node:test'), assert = require('node:assert/strict'), http = require('node:http');
+const { EventEmitter } = require('node:events');
 const { createVerifier, createAccountAuth, protectedRequest } = require('../account-auth');
 async function signing() {
   const jose = await import('jose'), pair = await jose.generateKeyPair('RS256');
@@ -43,6 +44,7 @@ test('account sessions require signed tokens and same-origin requests, preserve 
   const phoneOnly = await f.token({ email: undefined, email_verified: undefined });
   assert.equal((await post('/api/auth/session', { idToken: phoneOnly })).status, 403);
   assert.equal((await post('/api/auth/session', { idToken: await f.token() }, { Origin: 'https://evil.invalid' })).status, 403);
+  assert.equal((await post('/api/auth/session', { idToken: await f.token() }, { Origin: 'https://other.example.test', 'X-Forwarded-Host': 'other.example.test' })).status, 403);
   assert.equal((await post('/api/auth/session', { idToken: await f.token() }, { Origin: base.replace('http:', 'https:') })).status, 403, 'the origin scheme must also match');
   const login = await post('/api/auth/session', { idToken: await f.token() }); assert.equal(login.status, 200);
   const cookie = login.headers.get('set-cookie'); assert.match(cookie, /HttpOnly; SameSite=Lax/); assert.equal(cookie.includes('verified-user'), false);
@@ -50,7 +52,11 @@ test('account sessions require signed tokens and same-origin requests, preserve 
   assert.deepEqual(await (await fetch(base + '/api/auth/session', { headers })).json(), {
     authenticated: true, account: { email: 'viewer@example.test', name: 'Test Viewer' },
   });
-  assert.equal((await fetch(base + '/api/rooms/create', { method: 'POST', headers })).status, 200);
+  assert.equal((await fetch(base + '/api/rooms/create', { method: 'POST', headers })).status, 403);
+  assert.equal((await post('/api/rooms/create', {}, { ...headers, Origin: 'null' })).status, 403);
+  assert.equal((await post('/api/rooms/create', {}, { ...headers, Origin: base.replace('http:', 'https:') })).status, 403);
+  assert.equal((await post('/api/rooms/create', {}, headers)).status, 200);
+  assert.equal((await fetch(base + '/api/rooms/create', { method: 'POST', headers: { Authorization: `Bearer ${await f.token()}` } })).status, 200);
   assert.equal((await fetch(base + '/profile.html', { headers })).status, 200);
   assert.equal((await post('/api/auth/logout', {}, { ...headers, Origin: 'https://evil.invalid' })).status, 403);
   assert.equal((await fetch(base + '/profile.html', { headers })).status, 200, 'a cross-site logout does not revoke the session');
@@ -58,4 +64,40 @@ test('account sessions require signed tokens and same-origin requests, preserve 
   const loggedOut = await post('/api/auth/logout', {}, headers); assert.equal(loggedOut.status, 200); assert.match(loggedOut.headers.get('set-cookie'), /Max-Age=0/);
   await assert.rejects(reader.read());
   assert.equal((await fetch(base + '/api/status', { headers })).status, 401, 'the old cookie cannot be replayed after logout');
+});
+
+test('renewing a verified session extends an already-open playback response', async t => {
+  t.mock.timers.enable({ apis: ['Date', 'setTimeout'], now: 100000 });
+  const auth = createAccountAuth({
+    verifyToken: async token => ({ sub: 'viewer', email: 'viewer@example.test', email_verified: true, exp: token === 'renewed' ? 104 : 102 }),
+  });
+  t.after(auth.close);
+  const base = 'https://watch.example.test';
+  function response() {
+    const res = new EventEmitter();
+    res.headers = {};
+    res.setHeader = (key, value) => { res.headers[key] = value; };
+    res.writeHead = status => { res.status = status; };
+    res.end = () => res.emit('finish');
+    res.destroy = () => { res.destroyed = true; res.emit('close'); };
+    return res;
+  }
+  function login(res, idToken, cookie) {
+    const req = { method: 'POST', headers: { host: new URL(base).host, origin: base, cookie } };
+    return auth.handle(req, res, new URL('/api/auth/session', base), async () => ({ idToken }));
+  }
+  const initial = response();
+  await login(initial, 'initial');
+  assert.equal(initial.status, 200);
+  assert.match(initial.headers['Set-Cookie'], /^__Host-cinewall_account=.*; Secure$/);
+  const cookie = initial.headers['Set-Cookie'].split(';')[0], stream = response();
+  assert.equal(await auth.handle({ method: 'GET', headers: { host: new URL(base).host, cookie } }, stream, new URL('/events', base)), false);
+  const refresh = response();
+  t.mock.timers.tick(1000);
+  await login(refresh, 'renewed', cookie);
+  assert.equal(refresh.status, 200);
+  t.mock.timers.tick(1100);
+  assert.equal(stream.destroyed, undefined);
+  t.mock.timers.tick(1900);
+  assert.equal(stream.destroyed, true);
 });

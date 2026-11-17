@@ -14,7 +14,10 @@ module.exports = function createScreenSharing({ identity, readJson, json, author
   const uuid = /^[a-f0-9-]{36}$/;
   function fail(message, status = 400) { const error = new Error(message); error.status = status; throw error; }
   function emit(peer, event, data) {
-    try { if (peer.response && !peer.response.destroyed) peer.response.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`); } catch { peer.response = null; }
+    const response = peer.response;
+    if (!response || response.destroyed || response.writableEnded) return;
+    if (response.writableLength >= 256 * 1024) { response.destroy(); return; }
+    try { response.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`); } catch { peer.response = null; }
   }
   function snapshot() {
     return { source, settings, revision, callVersion,
@@ -57,8 +60,11 @@ module.exports = function createScreenSharing({ identity, readJson, json, author
     if (req.method === 'GET' && url.pathname === '/share-events') {
       const peer = peers.get(url.searchParams.get('peer'));
       if (!peer || url.searchParams.get('token') !== peer.token) fail('Reconnect this screen.', 403);
+      // Room authorization resolved the membership for EventSource, which
+      // cannot add the private device headers used by other requests.
+      if (req.cinewallMember) ownPeer(req, peer.id);
       peer.response?.end();
-      res.writeHead(200, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache, no-transform', Connection: 'keep-alive', 'X-Accel-Buffering': 'no' });
+      res.writeHead(200, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-store, no-transform', Connection: 'keep-alive', 'X-Accel-Buffering': 'no' });
       res.write(': connected\n\n'); peer.response = res; peer.lastSeen = Date.now();
       broadcast();
       req.on('close', () => { if (peer.response === res) peer.response = null; });

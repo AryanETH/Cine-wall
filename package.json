@@ -12,7 +12,7 @@
     "setup:downloads": "powershell -NoProfile -ExecutionPolicy Bypass -File setup-download-tools.ps1"
   },
   "engines": {
-    "node": ">=20.19.0"
+    "node": ">=22"
   },
   "dependencies": {
     "jose": "^6.2.14"

@@ -522,6 +522,17 @@ function workerPage(file) {
   } };
 }
 
+test('a closed data channel is replaced immediately instead of waiting for the old connection deadline', async () => {
+  const client = peerPage(), receiver = new client.api.FilePeer();
+  let closed = 0, created = 0;
+  const stale = { pc: { connectionState: 'connected', close() { closed++; } }, channel: { readyState: 'closed' } };
+  receiver.connections.set('source', stale);
+  const fresh = { pc: { connectionState: 'connected' }, channel: { readyState: 'open' }, localOnly: false };
+  receiver.makePeer = async id => { created++; receiver.connections.set(id, fresh); return fresh; };
+  assert.equal(await receiver.connect('source'), fresh);
+  assert.equal(closed, 1); assert.equal(created, 1);
+});
+
 test('Instant feedback requires an open verified local route and reflects failed/reconnecting channels', () => {
   const client = peerPage(), receiver = new client.api.FilePeer(), notices = [];
   client.window.dispatchEvent = event => { if (event.type === 'cinewall-peer-status') notices.push(event.detail); };
@@ -566,6 +577,20 @@ test('cancelled full-file response stops additional reads instead of buffering 1
   const reader = response.body.getReader(); await reader.read(); await reader.cancel(); await turn();
   const count = file.reads.length; await turn(); assert.equal(file.reads.length, count);
   assert.ok(count <= 2); assert.ok(file.reads.every(([start, end]) => end - start <= 256 * 1024));
+});
+
+test('long movies use complete adjacent 2 MiB responses instead of a movie-long worker stream', async () => {
+  const file = virtualFile(), worker = workerPage(file), limit = 2 * 1024 * 1024;
+  for (const start of [0, limit, 5_000_000_000]) {
+    const response = await worker.fetch(`bytes=${start}-`);
+    assert.equal(response.status, 206);
+    assert.equal(response.headers.get('Content-Length'), String(limit));
+    assert.equal(response.headers.get('Content-Range'), `bytes ${start}-${start + limit - 1}/${file.size}`);
+    const bytes = new Uint8Array(await response.arrayBuffer());
+    assert.equal(bytes.length, limit);
+    assert.ok(bytes.every((byte, index) => byte === (start + index) % 251));
+  }
+  assert.equal(file.reads.length, 24, 'each response uses eight small original-file reads');
 });
 
 test('native-sniff retry omits only the MIME hint and still returns byte-exact seekable ranges', async () => {

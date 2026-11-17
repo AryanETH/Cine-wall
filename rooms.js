@@ -1,17 +1,18 @@
 'use strict';
 const fs = require('node:fs');
 const path = require('node:path');
-const { isIP } = require('node:net');
 const { randomUUID, randomBytes, createHash, timingSafeEqual } = require('node:crypto');
+const { clientAddress } = require('./request-security');
 const hash = value => createHash('sha256').update(String(value)).digest('hex');
 const fail = (message, status = 400) => { throw Object.assign(new Error(message), { status }); };
 function identity(req) {
   if (req.cinewallDevice) return req.cinewallDevice;
   const id = String(req.headers['x-cinewall-device'] || ''), key = String(req.headers['x-cinewall-key'] || '');
   if (!/^[a-f0-9-]{36}$/.test(id) || !/^[a-f0-9-]{36}$/.test(key)) fail('Reload CineWall to connect this device.', 401);
-  return { id, hash: hash(key) };
+  return { id, hash: hash(key), ...(req.cinewallAccount && { accountId: req.cinewallAccount.sub }) };
 }
-const same = (a, b) => Boolean(a && b && a.id === b.id && a.hash === b.hash);
+const sameKey = (a, b) => Boolean(a && b && a.id === b.id && a.hash === b.hash);
+const same = (a, b) => sameKey(a, b) && a.accountId === b.accountId;
 module.exports = function createRooms(root, { now = Date.now, limit = 4096 } = {}) {
   const directory = path.join(root, 'room-records');
   fs.mkdirSync(directory, { recursive: true });
@@ -19,7 +20,7 @@ module.exports = function createRooms(root, { now = Date.now, limit = 4096 } = {
   function save(record) {
     record.savedAt = now();
     const file = path.join(directory, `${record.id}.json`), temporary = `${file}.tmp`;
-    fs.writeFileSync(temporary, JSON.stringify(record)); fs.renameSync(temporary, file);
+    fs.writeFileSync(temporary, JSON.stringify(record), { mode: 0o600 }); fs.renameSync(temporary, file);
   }
   for (const file of fs.readdirSync(directory)) if (/^[a-f0-9-]{36}\.json$/.test(file)) {
     try {
@@ -32,14 +33,15 @@ module.exports = function createRooms(root, { now = Date.now, limit = 4096 } = {
   function throttle(req, action) {
     // Forwarded addresses are used only after an administrator explicitly
     // configures a trusted ingress; a caller-supplied edge marker is never trust.
-    const forwarded = process.env.CINEWALL_TRUST_PROXY === 'real-ip' ? String(req.headers['x-real-ip'] || '').trim() : process.env.CINEWALL_TRUST_PROXY === '1' ? String(req.headers['x-forwarded-for'] || '').split(',').at(-1).trim() : '';
-    const address = isIP(forwarded) ? forwarded : req.socket.remoteAddress || 'local', key = `${action}:${address.slice(0, 100)}`;
+    const address = clientAddress(req), key = `${action}:${address}`;
     const window = action === 'create' ? 60 * 60 * 1000 : 60 * 1000, maximum = action === 'create' ? 12 : 30;
     const previous = rates.get(key), entry = previous && previous.until > now() ? previous : { count: 0, until: now() + window };
     if (++entry.count > maximum) fail('Too many attempts. Please wait and try again.', 429);
+    if (rates.size >= 4096 && !previous) {
+      for (const [id, value] of rates) if (value.until <= now()) rates.delete(id);
+      if (rates.size >= 4096) fail('Please try again in a moment.', 429);
+    }
     rates.set(key, entry);
-    if (rates.size > 2048) for (const [id, value] of rates) if (value.until < now()) rates.delete(id);
-    if (rates.size > 4096) fail('Please try again in a moment.', 429);
   }
   function lookup(value) {
     const input = String(value || '').trim(), clean = input.toUpperCase().replace(/[\s-]/g, '');
@@ -49,6 +51,25 @@ module.exports = function createRooms(root, { now = Date.now, limit = 4096 } = {
   }
   function member(record, device) { return record.members.find(item => same(item.device, device)); }
   function isAdmin(record, device) { return same(record.admin, device); }
+  function memberWithDeviceKey(record, device) {
+    const item = record.members.find(entry => sameKey(entry.device, device));
+    if (!item || (item.device.accountId && item.device.accountId !== device.accountId)) return null;
+    // Migrate old rooms only after the browser presents its original key.
+    // A ticket alone cannot attach a legacy membership to a new account.
+    if (!item.device.accountId && device.accountId) {
+      const previousDevice = item.device, previousAdmin = record.admin;
+      if (isAdmin(record, previousDevice)) record.admin = device;
+      item.device = device;
+      try { save(record); }
+      catch (error) { item.device = previousDevice; record.admin = previousAdmin; throw error; }
+    }
+    return item;
+  }
+  function memberWithTicket(record, req, ticket) {
+    if (typeof ticket !== 'string' || !/^[a-f0-9]{48}$/.test(ticket)) return null;
+    const accountId = req.cinewallAccount?.sub;
+    return record.members.find(item => item.ticket === ticket && item.device.accountId === accountId);
+  }
   function route(record, item) {
     if (item.waiting) return '/room.html';
     if (isAdmin(record, item.device)) return record.mode === 'share' ? '/share.html' : record.mode === 'mic' ? '/mic.html' : `/admin.html?mode=${record.mode}`;
@@ -73,8 +94,11 @@ module.exports = function createRooms(root, { now = Date.now, limit = 4096 } = {
   function join(req, body) {
     throttle(req, 'join');
     const record = lookup(body.code || body.room), device = identity(req);
-    let item = member(record, device);
+    let item = memberWithDeviceKey(record, device);
     if (!item) {
+      if (record.members.some(member => sameKey(member.device, device))) {
+        fail('This browser joined the room using a different account.', 403);
+      }
       if (record.members.length >= 16) fail('This room is full.', 409);
       const role = record.mode === 'mic' && body.role === 'phone' ? 'phone' : 'screen';
       const maximum = record.mode === 'audio' ? 5 : record.mode === 'share' ? 10 : 3;
@@ -90,18 +114,11 @@ module.exports = function createRooms(root, { now = Date.now, limit = 4096 } = {
     record.lastUsed = now(); save(record); return result(record, item);
   }
   function authorize(req, url, record) {
-    let device;
-    if (req.headers['x-cinewall-device']) device = identity(req);
-    else {
-      const ticket = url.searchParams.get('ticket');
-      const found = ticket && record.members.find(m => m.ticket === ticket);
-      if (found) device = found.device;
-    }
-    let item = device && member(record, device);
+    const own = req.headers['x-cinewall-device'] ? memberWithDeviceKey(record, identity(req)) : null;
     const suppliedTicket = req.headers['x-cinewall-ticket'] || url.searchParams.get('ticket');
-    if (!item && suppliedTicket) { item = record.members.find(m => m.ticket === suppliedTicket); if (item) device = item.device; }
+    const item = own || memberWithTicket(record, req, suppliedTicket);
     if (!item) fail('Join this room first using its room ID.', 403);
-    req.cinewallDevice = device; req.cinewallMember = item;
+    req.cinewallDevice = item.device; req.cinewallMember = item;
     record.lastUsed = now();
     if (now() - (record.savedAt || 0) > 60000) save(record);
     return item;
@@ -130,25 +147,43 @@ module.exports = function createRooms(root, { now = Date.now, limit = 4096 } = {
     }
     record.lastUsed = now(); save(record);
   }
-  function removeMembers(record, predicate) { const removed = record.members.filter(m => !isAdmin(record, m.device) && predicate(m)); record.members = record.members.filter(m => !removed.includes(m)); save(record); return removed; }
+  function removeMembers(record, predicate) {
+    const previous = record.members;
+    const removed = previous.filter(member => !isAdmin(record, member.device) && predicate(member));
+    if (!removed.length) return removed;
+    record.members = previous.filter(member => !removed.includes(member));
+    try { save(record); }
+    catch (error) { record.members = previous; throw error; }
+    return removed;
+  }
   function resume(req, body) {
     throttle(req, 'resume'); const record = lookup(body.room);
     // The source browser's private device key can restore its own membership
     // even if a stale ticket is saved. A shared URL never grants admin access.
-    const own = req.headers['x-cinewall-device'] ? member(record, identity(req)) : null;
-    const item = own || record.members.find(m => m.ticket === body.ticket);
+    const own = req.headers['x-cinewall-device'] ? memberWithDeviceKey(record, identity(req)) : null;
+    const item = own || memberWithTicket(record, req, body.ticket);
     if (!item) fail('This saved connection is no longer valid. Reopen the shared device link.', 403);
     record.lastUsed = now(); save(record); return result(record, item);
   }
   function recover(req, body) {
-    throttle(req, 'recover'); const record = lookup(body.code), actual = Buffer.from(hash(body.recoveryKey || '')), expected = Buffer.from(record.recoveryHash);
+    throttle(req, 'recover');
+    const record = lookup(body.code), device = identity(req), old = record.admin;
+    if (old.accountId && device.accountId !== old.accountId) fail('Sign in with the room owner’s account to recover this room.', 403);
+    const actual = Buffer.from(hash(body.recoveryKey || '')), expected = Buffer.from(record.recoveryHash);
     if (actual.length !== expected.length || !timingSafeEqual(actual, expected)) fail('The recovery key is incorrect.', 403);
-    const device = identity(req), old = record.admin;
-    record.members = record.members.filter(m => !same(m.device, old) && !same(m.device, device));
+    const recoveryKey = randomBytes(12).toString('base64url');
+    const previousMembers = record.members, previousRecovery = record.recoveryHash, previousUsed = record.lastUsed;
+    record.members = record.members.filter(m => !same(m.device, old) && !sameKey(m.device, device));
     record.admin = device;
+    record.recoveryHash = hash(recoveryKey);
     const item = { device, ticket: randomBytes(24).toString('hex'), screen: ['video', 'audio'].includes(record.mode) ? 1 : 0, role: 'admin' };
-    record.members.push(item); record.lastUsed = now(); save(record);
-    return result(record, item);
+    record.members.push(item); record.lastUsed = now();
+    try { save(record); }
+    catch (error) {
+      Object.assign(record, { admin: old, members: previousMembers, recoveryHash: previousRecovery, lastUsed: previousUsed });
+      throw error;
+    }
+    return { ...result(record, item), recoveryKey };
   }
   function prune() {
     // Shared room identities are durable. Only their disposable media cache

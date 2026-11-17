@@ -37,6 +37,10 @@ test('hosted server separates sessions, signals only within a room, and stores n
   });
   assert.equal(malformed.status,400,'invalid request URLs must not crash the process');
   assert.match(malformed.body,/Invalid request URL/);
+  const landing = await fetch(base + '/', { method: 'HEAD' });
+  assert.equal(landing.headers.get('x-frame-options'), 'SAMEORIGIN');
+  assert.equal(landing.headers.get('referrer-policy'), 'strict-origin');
+  assert.match(landing.headers.get('content-security-policy'), /object-src 'none'; frame-ancestors 'self'; base-uri 'none'; form-action 'self'/);
   const browserHeaders = { Accept: 'text/html,application/xhtml+xml,*/*;q=0.8', 'Sec-Fetch-Dest': 'document' };
   for (const [route, method, status, heading] of [
     ['/this-page-does-not-exist', 'GET', 404, 'This page is missing'],
@@ -115,8 +119,12 @@ test('hosted server separates sessions, signals only within a room, and stores n
   assert.equal((await api('/api/peer-signal', roomB, { from: peerA, to: peerB, candidate: {} })).status, 403);
   const metadata = { peerId: peerA, name: '12gb-original.mp4', size: 12 * 1024 ** 3, type: 'video/mp4', fingerprint: 'a'.repeat(64), duration: 7200 };
   assert.equal((await api('/api/local-source', roomA, { ...metadata, name: 'unsupported.mkv', type: 'video/x-matroska' })).status, 415);
-  assert.equal((await api('/api/local-source', roomA, { ...metadata, name: 'unsupported.mkv', type: 'video/x-matroska', codecs: ['V_MPEGH/ISO/HEVC', 'A_EAC3'] })).status, 415);
+  assert.equal((await api('/api/local-source', roomA, { ...metadata, name: 'invalid.mkv', type: 'video/x-matroska', codecs: ['A_AAC'] })).status, 415);
+  assert.equal((await api('/api/local-source', roomA, { ...metadata, name: 'invalid.mkv', type: 'video/x-matroska', codecs: ['V_VP9', '<script>'] })).status, 415);
   assert.equal((await api('/api/status', roomA)).data.state.asset, null);
+  const hevc = await api('/api/local-source', roomA, { ...metadata, name: 'hevc.mkv', type: 'video/x-matroska', codecs: ['V_MPEGH/ISO/HEVC', 'A_EAC3'] });
+  assert.equal(hevc.status, 200);
+  assert.deepEqual(hevc.data.state.asset.codecs, ['V_MPEGH/ISO/HEVC', 'A_EAC3']);
   const mkv = await api('/api/local-source', roomA, { ...metadata, name: 'compatible.mkv', type: 'video/x-matroska', codecs: ['V_MPEG4/ISO/AVC', 'A_AAC'] });
   assert.equal(mkv.status, 200); assert.equal(mkv.data.state.asset.type, 'video/x-matroska');
   const published = await api('/api/local-source', roomA, { ...metadata, publicationId:peerB, localOnly: true, relay: true });
@@ -136,7 +144,9 @@ test('hosted server separates sessions, signals only within a room, and stores n
   assert.equal((await api('/api/command', roomA, { type: 'play', position: 0 })).status, 409);
   for (const screen of [1, 2]) await api('/api/status', roomA, { clientId: `test-${screen}`, screen, ready: true, mediaReady: true, assetVersion: published.data.state.asset.version, loadProgress: 100 });
   const play = await api('/api/command', roomA, { type: 'play', position: 0 });
-  assert.equal(play.status, 200); assert.ok(play.data.command.executeAt - play.data.command.serverTime >= 650);
+  assert.equal(play.status, 200);
+  const startDelay = play.data.command.executeAt - play.data.command.serverTime;
+  assert.ok(startDelay >= 200 && startDelay <= 250, 'one click schedules a short common start');
   const audio = await api('/api/command', roomA, { type: 'screen-audio', screen: 2, volume: .37 });
   assert.equal(audio.data.command.audioSettings['2'].volume, .37); assert.ok(audio.data.command.executeAt - audio.data.command.serverTime <= 5);
   assert.equal((await api('/api/status', roomB)).data.state.playing, false);

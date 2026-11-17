@@ -6,8 +6,8 @@
 <a class="brand" href="/">CineWall</a>
 <h1>Advertising</h1><p>Unlock the ads dashboard.</p>
 <form id="adsLogin" method="post">
-<label for="adsPassword">Password</label>
-<input id="adsPassword" type="password" name="password" autocomplete="current-password" maxlength="256" required>
+<label for="adsPassword">Six-digit PIN</label>
+<input id="adsPassword" type="password" name="password" autocomplete="current-password" inputmode="numeric" minlength="6" maxlength="6" pattern="[0-9]{6}" required>
 <button type="submit">Unlock</button>
 </form><p class="status" id="adsStatus" role="status"></p>
 </main></body></html>

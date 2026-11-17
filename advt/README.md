@@ -1,16 +1,12 @@
 # Advertising Dashboard
 
-## Quick Access
-
-**Password:** `9669`
-
 ## Start Server with Ads Enabled
 
 ```bash
 npm run start:ads
 ```
 
-Then open: http://localhost:4173/advt
+Enter a private six-digit PIN at the prompt. Open [the local ads dashboard](http://localhost:4173/advt) and use the same PIN. For hosted CineWall, set `CINEWALL_ADS_PASSWORD` in the service's private environment.
 
 ## Features
 

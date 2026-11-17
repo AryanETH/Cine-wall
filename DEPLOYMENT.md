@@ -10,7 +10,7 @@ CineWall uses a long-running Node.js process, in-memory room state, Server-Sent 
 - Keep watch.aitoyz.in attached to this service.
 - Redeploy after changing local source files, then reload dashboards and numbered players.
 
-The Docker image includes Node.js 24, FFmpeg, FFprobe and yt-dlp. It sets CINEWALL_HOSTED=1 and CINEWALL_CACHE_DIR=/tmp/cinewall-cache. Temporary cache files can be lost during redeployment. Attach persistent storage and change the cache path if uploaded files must survive it.
+The Docker image includes Node.js 24, FFmpeg, FFprobe and yt-dlp. It runs as the unprivileged `node` user (UID 1000). It sets `CINEWALL_HOSTED=1` and `CINEWALL_CACHE_DIR=/tmp/cinewall-cache`. Temporary cache files can be lost during redeployment. If you use a persistent room, ads or media volume, grant UID 1000 write access to it before deploying.
 
 ## Configuration read by the server
 
@@ -36,4 +36,4 @@ All four homepage modes open their workspace directly and create a private sessi
 
 `CINEWALL_CACHE_LIMIT_GB` sets the aggregate storage budget in GiB (default 100). Room identities no longer expire. Inactive media caches and ready downloads expire after 24 hours; failed/cancelled download files expire after five minutes. Active transfers are protected. Server-side presentation/Office preparation is disabled; use Screen sharing.
 
-If your trusted reverse proxy appends a verified client address to `X-Forwarded-For`, set `CINEWALL_TRUST_PROXY=1` so rate limits distinguish clients. For a verified ingress that overwrites `X-Real-IP`, the explicit `CINEWALL_TRUST_PROXY=real-ip` mode is available; see the trust conditions and Railway notes in [ROOMS.md](ROOMS.md). Leave proxy trust unset on directly exposed servers. The unscoped legacy LAN API is disabled by default; `CINEWALL_LEGACY_LOCAL=1` is only an explicit compatibility option and never bypasses hosted room checks.
+For hosted use, terminate HTTPS at your ingress and preserve the browser's original `Host` header. If your trusted reverse proxy appends a verified client address to `X-Forwarded-For`, set `CINEWALL_TRUST_PROXY=1` so rate limits distinguish clients. For a verified ingress that overwrites `X-Real-IP`, use `CINEWALL_TRUST_PROXY=real-ip`. See the trust conditions and Railway notes in [ROOMS.md](ROOMS.md). Leave proxy trust unset on directly exposed servers. Set `CINEWALL_LEGACY_LOCAL=1` only for an isolated LAN that needs the old no-room API.

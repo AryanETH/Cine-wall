@@ -1,7 +1,7 @@
 'use strict';
 
 (() => {
-  const help = 'This video is not supported by your browser. Try an MP4 with H.264 video and AAC audio.';
+  const help = 'File not supported by your browser. Try an MP4 with H.264 video and AAC audio.';
   const unsupported = () => new Error(help);
   const word = (bytes, offset, length = 4) => String.fromCharCode(...bytes.subarray(offset, offset + length));
   const MAX_METADATA = 8 * 1024 * 1024;
@@ -149,17 +149,14 @@
           if (!kind || kind.length !== 1) throw unsupported();
           if (![1, 2].includes(kind[0])) continue; // Subtitles are not decoder requirements.
           const codec = fields.find((field) => field.id === 0x86)?.bytes;
-          const privateData = fields.find((field) => field.id === 0x63a2)?.bytes;
-          if (!codec || codec.length > 64 || !privateData) throw unsupported();
+          if (!codec || !codec.length || codec.length > 64) throw unsupported();
           const name = word(codec, 0, codec.length);
+          if (!/^[VA]_[A-Z0-9/_-]{1,60}$/.test(name) || !name.startsWith(kind[0] === 1 ? 'V_' : 'A_')) throw unsupported();
           codecs.add(name);
-          if (kind[0] === 1) {
-            if (name !== 'V_MPEG4/ISO/AVC' || privateData.length < 7 || privateData[0] !== 1 || ![66, 77, 88, 100].includes(privateData[1])) throw unsupported();
-            videoFound = true;
-          } else {
-            // AAC Main/LC/HE (including the dual HE-AAC tracks in the user's MKV).
-            if (!/^A_AAC(?:\/MPEG[24]\/(?:MAIN|LC|LC\/SBR|SSR))?$/.test(name) || privateData.length < 2 || ![1, 2, 5, 29].includes(privateData[0] >> 3)) throw unsupported();
-          }
+          // Codec support depends on this browser/device. Metadata is for
+          // identification; probeFile must decode a frame before publication.
+          // Some codecs legitimately omit CodecPrivate.
+          if (kind[0] === 1) videoFound = true;
         }
         if (!videoFound) throw unsupported();
         return { type: 'video/x-matroska', codecs: [...codecs] };

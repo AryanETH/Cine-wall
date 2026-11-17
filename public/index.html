@@ -87,14 +87,13 @@
   <link rel="preload" href="/fonts/Anta-Regular.ttf" as="font" type="font/ttf" crossorigin>
   <link rel="preload" as="image" href="/assets/cinewall-demo-poster.jpg?v=20261029-cinema-8" fetchpriority="high">
   <link rel="stylesheet" href="styles.css?v=20261116-remote-1">
-  <link rel="stylesheet" href="home.css?v=faq-heading">
+  <link rel="stylesheet" href="home.css?v=frog-depth">
   <link rel="stylesheet" href="device-support.css?v=mobile-remote">
   <link rel="stylesheet" href="/rooms.css?v=20261027-links-3">
   <link rel="preload" as="image" href="/assets/demo-background.png">
-  <link rel="preload" as="image" href="/assets/cinewall-cta-frog.png">
-  <link rel="preload" as="image" href="/assets/cinewall-frog-colors.svg">
+  <link rel="preload" as="image" href="/assets/cinewall-frog-skins.svg">
   <link rel="preload" as="image" href="/assets/cinewall-cute-fly.webp" type="image/webp">
-  <script src="/home-frog.js?v=cute-fly" defer></script>
+  <script src="/home-frog.js?v=frog-depth" defer></script>
   <script src="/landing-preload.js?v=20261105-1" defer></script>
 </head>
 <body class="mode-body">
@@ -133,12 +132,79 @@
         <div class="home-hero-actions">
           <span class="home-frog-cta">
             <span class="home-frog" aria-hidden="true">
-              <img src="/assets/cinewall-cta-frog.png" width="384" height="304" alt="" decoding="async" draggable="false">
-              <span class="home-frog-lid"></span><span class="home-frog-lid"></span>
+              <svg class="home-frog-eyes" viewBox="0 0 384 304" focusable="false">
+                <defs>
+                  <path id="frogEyeLeft" d="M25 88 C25 58 46 30 77 30 C107 30 128 56 128 84 C128 111 109 131 80 132 C48 134 24 115 25 88Z"/>
+                  <path id="frogEyeRight" d="M358 88 C358 58 337 30 306 30 C276 30 255 56 255 84 C255 111 274 131 303 132 C335 134 359 115 358 88Z"/>
+                  <clipPath id="frogEyeLeftClip"><use href="#frogEyeLeft"/></clipPath>
+                  <clipPath id="frogEyeRightClip"><use href="#frogEyeRight"/></clipPath>
+                  <clipPath id="frogPupilLeftClip"><ellipse cx="88" cy="87" rx="38" ry="41"/></clipPath>
+                  <clipPath id="frogPupilRightClip"><ellipse cx="294" cy="87" rx="38" ry="41"/></clipPath>
+                  <image id="frogEyeTexture" href="/assets/cinewall-frog-skins.svg#dark" width="384" height="304"/>
+                  <radialGradient id="frogEyeWhite" cx=".52" cy=".44" r=".59">
+                    <stop stop-color="#fff6e4"/>
+                    <stop offset=".72" stop-color="#e7dbc3"/>
+                    <stop offset="1" stop-color="#b3a38a"/>
+                  </radialGradient>
+                  <linearGradient id="frogLidColor" x2="0" y2="1">
+                    <stop class="home-frog-lid-light"/>
+                    <stop class="home-frog-lid-shadow" offset="1"/>
+                  </linearGradient>
+                  <radialGradient id="frogThroatColor" cx=".48" cy=".42" r=".62">
+                    <stop class="home-frog-lid-light"/>
+                    <stop class="home-frog-skin-mid" offset=".68"/>
+                    <stop class="home-frog-lid-shadow" offset="1" stop-opacity="0"/>
+                  </radialGradient>
+                </defs>
+                <g clip-path="url(#frogEyeLeftClip)">
+                  <use href="#frogEyeLeft" fill="url(#frogEyeWhite)"/>
+                  <g class="home-frog-pupil" data-eye-x="88">
+                    <use href="#frogEyeTexture" clip-path="url(#frogPupilLeftClip)"/>
+                  </g>
+                  <use class="home-frog-lid" href="#frogEyeLeft"/>
+                  <use class="home-frog-pleased-lid" href="#frogEyeLeft"/>
+                </g>
+                <g clip-path="url(#frogEyeRightClip)">
+                  <use href="#frogEyeRight" fill="url(#frogEyeWhite)"/>
+                  <g class="home-frog-pupil" data-eye-x="294">
+                    <use href="#frogEyeTexture" clip-path="url(#frogPupilRightClip)"/>
+                  </g>
+                  <use class="home-frog-lid" href="#frogEyeRight"/>
+                  <use class="home-frog-pleased-lid" href="#frogEyeRight"/>
+                </g>
+                <ellipse class="home-frog-throat" cx="192" cy="191" rx="79" ry="29" fill="url(#frogThroatColor)"/>
+              </svg>
               <span class="home-frog-glasses"><i></i><i></i></span>
             </span>
             <a class="button accent" data-session-mode="video" href="/admin.html?mode=video">Try it free <span class="fi" aria-hidden="true">&#xE72A;</span></a>
-            <img class="home-frog-paws" src="/assets/cinewall-cta-frog.png" width="384" height="304" alt="" aria-hidden="true" decoding="async" draggable="false">
+            <span class="home-frog-paws home-frog-paw-left" aria-hidden="true"></span>
+            <span class="home-frog-paws home-frog-paw-right" aria-hidden="true"></span>
+            <svg class="home-frog-gesture" viewBox="0 0 384 304" aria-hidden="true" focusable="false">
+              <defs>
+                <linearGradient id="frogWaveColor" x2="0" y2="1">
+                  <stop class="home-frog-lid-light"/>
+                  <stop class="home-frog-skin-mid" offset=".42"/>
+                  <stop class="home-frog-lid-shadow" offset="1"/>
+                </linearGradient>
+                <clipPath id="frogWavePaw">
+                  <path d="M26 253 C31 231 51 215 76 215 C102 215 122 233 135 253 L144 304 H18Z"/>
+                </clipPath>
+              </defs>
+              <g class="home-frog-wave-arm">
+                <path d="M43 215 C18 213 -11 192 -26 155" fill="none" stroke="url(#frogWaveColor)" stroke-width="45" stroke-linecap="round"/>
+                <g transform="translate(-26 160) rotate(171) translate(-75 -223)" clip-path="url(#frogWavePaw)">
+                  <use class="home-frog-wave-dark" href="#frogEyeTexture"/>
+                  <image class="home-frog-wave-light" href="/assets/cinewall-frog-skins.svg#light" width="384" height="304"/>
+                </g>
+              </g>
+              <g class="home-frog-point-arm">
+                <path d="M43 215 C31 237 49 261 67 272" fill="none" stroke="url(#frogWaveColor)" stroke-width="43" stroke-linecap="round"/>
+                <g transform="translate(67 272) rotate(-27)">
+                  <path d="M-18 -25 C-28 -20 -32 -12 -32 0 V13 C-32 23 -26 30 -17 31 C-10 32 -5 26 -4 20 L-3 63 C-3 72 1 77 9 78 C17 79 23 72 22 63 L21 16 C29 15 34 10 34 2 C35 -7 28 -13 19 -12 C12 -25 -6 -29 -18 -25Z" fill="url(#frogWaveColor)" class="home-frog-point-paw"/>
+                  <path d="M-17 -15 Q-5 -23 9 -14 M5 26 L6 62" fill="none" stroke="#fff" stroke-opacity=".28" stroke-width="5.5" stroke-linecap="round"/>
+                </g>
+              </g>
+            </svg>
           </span>
           <a class="button subtle" href="#tools">More from CineWall</a>
         </div>
@@ -156,7 +222,32 @@
           <ellipse class="home-frog-tongue-base" rx="4.7" ry="2.3" fill="url(#frogTongueColor)"></ellipse>
           <path class="home-frog-tongue-glint"></path>
         </svg>
-        <span class="home-frog-fly"></span>
+        <span class="home-frog-fly">
+          <svg class="home-frog-fly-art" viewBox="0 0 128 128" focusable="false">
+            <defs>
+              <linearGradient id="flyLidColor" x2="0" y2="1">
+                <stop stop-color="#b8a4c9"/>
+                <stop offset="1" stop-color="#786686"/>
+              </linearGradient>
+              <clipPath id="flyEyeClip"><ellipse rx="10.5" ry="11.5"/></clipPath>
+              <g id="flyLidPanel">
+                <path d="M-14 -15H14V11Q0 17 -14 11Z" fill="url(#flyLidColor)"/>
+                <path d="M-6.5 -1 Q0 4 6.5 -1" fill="none" stroke="#39253e" stroke-width="1.8" stroke-linecap="round"/>
+              </g>
+            </defs>
+            <g class="home-frog-fly-sheet">
+              <image href="/assets/cinewall-cute-fly.webp" width="256" height="256"/>
+              <g transform="translate(50 56)" clip-path="url(#flyEyeClip)"><use class="home-frog-fly-lid" href="#flyLidPanel"/></g>
+              <g transform="translate(74 58)" clip-path="url(#flyEyeClip)"><use class="home-frog-fly-lid" href="#flyLidPanel"/></g>
+              <g transform="translate(176 56)" clip-path="url(#flyEyeClip)"><use class="home-frog-fly-lid" href="#flyLidPanel"/></g>
+              <g transform="translate(198 58)" clip-path="url(#flyEyeClip)"><use class="home-frog-fly-lid" href="#flyLidPanel"/></g>
+              <g transform="translate(50 182)" clip-path="url(#flyEyeClip)"><use class="home-frog-fly-lid" href="#flyLidPanel"/></g>
+              <g transform="translate(74 184)" clip-path="url(#flyEyeClip)"><use class="home-frog-fly-lid" href="#flyLidPanel"/></g>
+              <g transform="translate(176 182)" clip-path="url(#flyEyeClip)"><use class="home-frog-fly-lid" href="#flyLidPanel"/></g>
+              <g transform="translate(198 183)" clip-path="url(#flyEyeClip)"><use class="home-frog-fly-lid" href="#flyLidPanel"/></g>
+            </g>
+          </svg>
+        </span>
       </div>
       <div id="demo" class="home-preview is-wall" aria-label="CineWall video wall demo">
         <div class="home-preview-bar"><span><span class="fi" aria-hidden="true">&#xE714;</span> See CineWall in action</span></div>
@@ -256,7 +347,11 @@
       <aside class="home-mapplock-ad" aria-label="Mapplock advertisement">
         <img src="/assets/mapplock-ad-square.webp?v=play-qr" width="1024" height="1024" loading="lazy" decoding="async" alt="Mapplock. Phone Diya Tha, Privacy Nahi. Lock apps, photos, recordings and documents. Scan the QR code to open Google Play.">
         <p class="home-ad-caption"><span>AD. from Cinewall</span><a href="https://forms.gle/x32An3oiyoXfxjiT7" target="_blank" rel="noopener">advertise with us</a></p>
-        <a class="button accent" href="https://play.google.com/store/apps/details?id=com.aitoyz.mapplock" aria-label="Download Mapplock now on Google Play">Download now <span class="fi" aria-hidden="true">&#xE896;</span></a>
+        <a class="button accent" href="https://play.google.com/store/apps/details?id=com.aitoyz.mapplock" aria-label="Get MappLock on Google Play">
+          <img class="home-play-logo" src="/assets/google-play-logo.png" width="28" height="28" alt="" loading="lazy" decoding="async">
+          <span>Get it on Google Play</span>
+          <span class="fi" aria-hidden="true">&#xE896;</span>
+        </a>
       </aside>
       <div>
         <div class="home-section-heading"><h2 id="faqHeading">A few quick answers.</h2></div>

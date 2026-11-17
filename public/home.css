@@ -12,17 +12,64 @@
 .mode-hero .home-hero-copy { max-width: none; margin: 20px 0 0; color: var(--muted); font-size: 1rem; line-height: 1.5; }
 .home-hero-actions { display: flex; justify-content: center; flex-wrap: wrap; gap: 12px; margin-top: 39px; }
 .home-hero-actions a { text-decoration: none; }
-.home-frog-cta { --frog-width: 43.2px; --frog-settle: 0px; --frog-color: url('/assets/cinewall-frog-colors.svg#dark'); --frog-lid: #92dc4f; --frog-lid-shadow: #62a92e; position: relative; display: inline-flex; isolation: isolate; }
-[data-theme="light"] .home-frog-cta { --frog-color: url('/assets/cinewall-frog-colors.svg#light'); --frog-lid: #71a9ff; --frog-lid-shadow: #2e6ddb; }
+.home-frog-cta {
+  --frog-width: 43.2px; --frog-settle: 0px; --frog-pull: 0px; --frog-dip: 0px;
+  --frog-left-paw-x: 0px; --frog-right-paw-x: 0px; --frog-skin: url('/assets/cinewall-frog-skins.svg#dark');
+  --frog-skin-mid: #67e63a; --frog-lid: #92dc4f; --frog-lid-shadow: #62a92e;
+  position: relative; display: inline-flex; isolation: isolate;
+}
+[data-theme="light"] .home-frog-cta { --frog-skin: url('/assets/cinewall-frog-skins.svg#light'); --frog-skin-mid: #1668f9; --frog-lid: #71a9ff; --frog-lid-shadow: #2e6ddb; }
 .home-frog-cta > a { position: relative; z-index: 1; }
-.home-frog, .home-frog-paws {
+.home-frog-cta::before {
+  content: ''; position: absolute; z-index: 2; inset-inline-start: 3px; top: 3px;
+  width: calc(var(--frog-width) - 4px); height: 7px; border-radius: 50%;
+  background: #16191652; filter: blur(2px); pointer-events: none;
+  translate: calc(var(--frog-pull) * .7) 0;
+}
+.home-frog, .home-frog-paws, .home-frog-gesture {
   position: absolute; width: var(--frog-width); height: auto; aspect-ratio: 384 / 304; inset-inline-start: 1px; bottom: calc(100% - 8px);
   pointer-events: none; user-select: none; transform: translateY(var(--frog-settle)); transition: transform .35s cubic-bezier(.2,.8,.25,1.3);
 }
+.home-frog, .home-frog-gesture { translate: var(--frog-pull) var(--frog-dip); }
+.home-frog, .home-frog-paws { background: var(--frog-skin) center / 100% 100% no-repeat; }
 .home-frog { z-index: 0; filter: drop-shadow(0 3px 4px #0004); }
-.home-frog img { display: block; width: 100%; height: 100%; filter: var(--frog-color); }
-.home-frog-paws {
-  z-index: 2; filter: var(--frog-color); clip-path: polygon(3% 74%, 36% 74%, 36% 99%, 63% 99%, 63% 74%, 97% 74%, 97% 100%, 3% 100%);
+.home-frog::after {
+  content: ''; position: absolute; left: 37%; top: 16%; width: 26%; height: 24%;
+  border-radius: 50%; background: radial-gradient(ellipse at 45% 35%, #fff5, transparent 72%);
+  translate: calc(var(--frog-pull) * -.16) 0;
+}
+.home-frog-paws { z-index: 2; }
+.home-frog-paw-left { translate: var(--frog-left-paw-x) 0; clip-path: inset(74% 64% 0 3%); }
+.home-frog-paw-right { translate: var(--frog-right-paw-x) 0; clip-path: inset(74% 3% 0 63%); }
+.home-frog-gesture { overflow: visible; z-index: 3; filter: drop-shadow(0 2px 2px #0004); }
+.home-frog-wave-arm, .home-frog-point-arm { visibility: hidden; transform-box: view-box; transform-origin: 43px 215px; }
+.home-frog-point-paw { stroke: var(--frog-lid-shadow); stroke-width: 2.5; }
+.home-frog-skin-mid { stop-color: var(--frog-skin-mid); }
+.home-frog-wave-light, [data-theme="light"] .home-frog-wave-dark { display: none; }
+[data-theme="light"] .home-frog-wave-light { display: inline; }
+@media (prefers-reduced-motion: no-preference) {
+  .home-frog-cta:is(.is-waving, .is-pointing) .home-frog { clip-path: polygon(0 0, 100% 0, 100% 100%, 39% 100%, 39% 74%, 27% 69%, 0 69%); }
+  .home-frog-cta:is(.is-waving, .is-pointing) .home-frog-paw-left { visibility: hidden; }
+  .home-frog-cta.is-waving .home-frog-wave-arm {
+    visibility: visible;
+    animation: home-frog-wave 1.25s ease-in-out both;
+  }
+  .home-frog-cta.is-pointing .home-frog-point-arm {
+    visibility: visible;
+    animation: home-frog-point 1.12s ease-in-out both;
+  }
+  .home-frog-cta.is-perched .home-frog-throat { animation: home-frog-puff .85s ease-in-out both; }
+  .home-frog-cta.is-perched .home-frog-pleased-lid { animation: home-frog-pleased .8s ease-in-out both; }
+}
+@keyframes home-frog-wave {
+  0%, 100% { transform: rotate(-142deg) scale(.82); }
+  18%, 49%, 76% { transform: rotate(-14deg); }
+  33%, 63%, 86% { transform: rotate(14deg); }
+}
+@keyframes home-frog-point {
+  0%, 100% { transform: rotate(16deg) scale(.58); }
+  20%, 64%, 80% { transform: rotate(0); }
+  45% { transform: rotate(-4deg) scale(1.065); }
 }
 .home-frog-glasses {
   position: absolute; left: 4%; top: 13%; width: 92%; height: 31%; display: flex; justify-content: space-between; align-items: stretch;
@@ -35,15 +82,27 @@
 .home-frog-glasses i + i { background: linear-gradient(155deg, #bbffffed, #00b8e9d9 68%); }
 .home-frog-cta:has(> a:focus-visible) { --frog-settle: 2px; }
 .home-frog-cta:has(> a:focus-visible) .home-frog-glasses { opacity: 1; transform: none; }
-.home-frog-lid {
-  position: absolute; top: 9.8%; left: 6%; width: 28.5%; height: 34%; border-radius: 50%;
-  background: linear-gradient(var(--frog-lid), var(--frog-lid-shadow)); border-bottom: 1px solid #14231c;
-  transform: scaleY(0); transform-origin: top center; animation: home-frog-blink 3.6s linear infinite;
+.home-frog-eyes { position: absolute; inset: 0; width: 100%; height: 100%; }
+.home-frog-lid-light { stop-color: var(--frog-lid); }
+.home-frog-lid-shadow { stop-color: var(--frog-lid-shadow); }
+.home-frog-lid, .home-frog-pleased-lid {
+  fill: url(#frogLidColor); stroke: #14231c; stroke-width: 3;
+  transform: scaleY(0); transform-box: fill-box; transform-origin: top center;
 }
-.home-frog-lid + .home-frog-lid { left: 65.5%; }
+.home-frog-lid { animation: home-frog-blink 3s ease-in-out infinite; }
+.home-frog-throat { opacity: 0; transform: scale(.7,.38); transform-box: fill-box; transform-origin: center 35%; }
+@keyframes home-frog-puff {
+  0%, 100% { opacity: 0; transform: scale(.7,.38); }
+  38% { opacity: .64; transform: scale(1,1); }
+  57% { opacity: .5; transform: scale(.96,.86); }
+}
+@keyframes home-frog-pleased {
+  0%, 22%, 100% { transform: scaleY(0); }
+  48%, 66% { transform: scaleY(1.02); }
+}
 @keyframes home-frog-blink {
-  0%, 94%, 100% { transform: scaleY(0); }
-  96%, 97% { transform: scaleY(1.02); }
+  0%, 93%, 100% { transform: scaleY(0); }
+  95.5%, 97% { transform: scaleY(1.02); }
 }
 .frog-hunting, .frog-hunting .mode-hero, .frog-hunting .mode-hero * { cursor: none !important; }
 .home-frog-flight { position: fixed; inset: 0; z-index: 9; pointer-events: none; }
@@ -53,28 +112,37 @@
 .home-frog-fly {
   position: absolute; top: 0; left: 0; width: 37.5px; height: 37.5px;
 }
-.home-frog-fly::after {
-  content: ''; position: absolute; inset: 0;
-  background: url('/assets/cinewall-cute-fly.webp') no-repeat 0 0 / 200% 200%;
+.home-frog-fly-art {
+  position: absolute; inset: 0; width: 100%; height: 100%; overflow: hidden;
   filter: drop-shadow(0 1px 1px #11182745) drop-shadow(0 2px 2px #11182738);
+}
+.home-frog-fly-sheet {
   animation: home-frog-flap .16s step-end infinite;
+}
+.home-frog-fly-lid {
+  transform: translateY(-29px);
+  animation: home-frog-fly-blink 3.2s ease-in-out infinite;
+}
+@keyframes home-frog-fly-blink {
+  0%, 93%, 100% { transform: translateY(-29px); }
+  95.5%, 97% { transform: translateY(0); }
 }
 .home-frog-flight.is-perched .home-frog-fly::before {
   content: ''; position: absolute; top: calc(50% + 8px); left: 29%; width: 43%; height: 4px;
   border-radius: 50%; background: #1118274d; filter: blur(1.5px);
 }
-.home-frog-flight.is-perched .home-frog-fly::after { animation: none; background-position: 0 100%; }
-.home-frog-flight.is-perched .home-frog-tongue { visibility: hidden; }
+.home-frog-flight.is-perched .home-frog-fly-sheet { animation: none; transform: translateY(-128px); }
+.home-frog-flight:is(.is-aiming, .is-perched) .home-frog-tongue { visibility: hidden; }
 @keyframes home-frog-flap {
-  0%, 100% { background-position: 0 0; }
-  25% { background-position: 100% 0; }
-  50% { background-position: 0 100%; }
-  75% { background-position: 100% 100%; }
+  0%, 100% { transform: translate(0, 0); }
+  25% { transform: translateX(-128px); }
+  50% { transform: translateY(-128px); }
+  75% { transform: translate(-128px, -128px); }
 }
 @media (prefers-reduced-motion: reduce) {
-  .home-frog, .home-frog-paws, .home-frog-glasses { transition: none; }
+  .home-frog, .home-frog-paws, .home-frog-gesture, .home-frog-glasses { transition: none; }
   .home-frog-cta:has(> a:focus-visible) { --frog-settle: 0px; }
-  .home-frog-lid { animation: none; }
+  .home-frog-lid, .home-frog-fly-lid, .home-frog-fly-sheet { animation: none; }
 }
 .home-preview { position: relative; isolation: isolate; aspect-ratio: 16 / 9; max-width: 1080px; margin: 38px auto 0; overflow: hidden; border: 1px solid var(--line); border-radius: 20px; background: transparent; scroll-margin-top: 24px; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; }
 .home-preview::before { content: ''; position: absolute; z-index: 0; inset: -12px; background-image: url('/assets/demo-background.png'); background-size: cover; background-position: center; filter: blur(6px); opacity: 1; }
@@ -127,8 +195,9 @@ html:not([data-theme="light"]) .home-preview-video:not([data-theme-ready]) { vis
 .home-faq { display: grid; grid-template-columns: minmax(0, .8fr) minmax(0, 1.2fr); align-items: start; gap: 56px; }
 .home-faq .home-section-heading { margin-bottom: 20px; }
 .home-mapplock-ad { position: relative; display: grid; gap: 12px; width: min(100%, 360px); }
-.home-mapplock-ad img { display: block; width: 100%; height: auto; aspect-ratio: 1; border-radius: 16px; }
-.home-mapplock-ad .button { min-height: 44px; text-decoration: none; }
+.home-mapplock-ad > img { display: block; width: 100%; height: auto; aspect-ratio: 1; border-radius: 16px; }
+.home-mapplock-ad .button { min-height: 44px; gap: 10px; text-decoration: none; }
+.home-play-logo { display: block; width: 28px; height: 28px; flex: 0 0 28px; object-fit: contain; }
 [data-theme="dark"] .home-mapplock-ad .button { border-color: var(--line); background: var(--surface); color: var(--ink); }
 [data-theme="dark"] .home-mapplock-ad .button .fi { color: var(--accent); }
 .home-ad-caption {

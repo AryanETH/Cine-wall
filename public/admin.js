@@ -587,7 +587,7 @@ function setPreviewKind() {
     $('#sourceIcon').hidden = false;
     $('#previewEmpty').hidden = !localPreview.failed;
     if (localPreview.failed) {
-      $('#previewEmptyTitle').textContent = 'Video cannot play here';
+      $('#previewEmptyTitle').textContent = 'File not supported by your browser';
       $('#previewEmptyCopy').textContent = 'Use MP4 with H.264 video and AAC audio.';
     }
     return;
@@ -1053,7 +1053,7 @@ $('#cancelPreparation').addEventListener('click', async () => {
   finally { cancelBusy = false; render(); }
 });
 
-const VIDEO_FORMAT_HELP = window.CineWallVideoFile?.help || 'This video is not supported by your browser. Try an MP4 with H.264 video and AAC audio.';
+const VIDEO_FORMAT_HELP = window.CineWallVideoFile?.help || 'File not supported by your browser. Try an MP4 with H.264 video and AAC audio.';
 
 async function shareLocalFile(file) {
   uploadBusy = true;
@@ -1358,8 +1358,8 @@ media.addEventListener('error', async () => {
       }
     }
   }
-  if (localPreview) { releaseLocalPreview(); setPreviewKind(); return; }
-  if (!loadedMediaVersion) return;
+  if (localPreview) { releaseLocalPreview(); setPreviewKind(); }
+  if (!loadedMediaVersion && !asset) return;
   warning.textContent = window.CineWallFilePeer?.playbackHelp?.(asset) || VIDEO_FORMAT_HELP;
   warning.classList.add('show');
 });

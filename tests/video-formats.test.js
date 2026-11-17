@@ -10,7 +10,7 @@ const root = path.resolve(__dirname, '..');
 const ffmpeg = process.platform === 'win32' ? path.join(root, 'tools/ffmpeg.exe') : 'ffmpeg';
 const validation = require('../public/video-validation');
 
-test('MKV validates H.264 profiles and dual HE-AAC tracks, skips huge payloads and shares the same detected codecs', async () => {
+test('MKV inspects tracks without codec restrictions, skips huge payloads and shares detected codecs', async () => {
   const size = (value) => {
     const bytes = Buffer.alloc(8);
     bytes.writeBigUInt64BE((1n << 56n) | BigInt(value));
@@ -46,12 +46,17 @@ test('MKV validates H.264 profiles and dual HE-AAC tracks, skips huge payloads a
   const peerContext = { window: { CineWallVideoFile: validation } };
   vm.runInNewContext(fs.readFileSync(path.join(root, 'public/media-peer.js'), 'utf8'), peerContext);
   assert.deepEqual(await peerContext.window.CineWallFilePeer.inspectCodecs(file), ['V_MPEG4/ISO/AVC', 'A_AAC']);
-  for (const rejected of [
+  for (const browserDependent of [
     track(1, 'V_MPEG4/ISO/AVC', Buffer.from([1, 110, 0, 40, 255, 225, 0])),
-    track(1, 'V_MPEG4/ISO/AVC'),
+    track(1, 'V_MPEGH/ISO/HEVC', Buffer.alloc(23)),
+    track(1, 'V_VP9'),
     track(2, 'A_EAC3', Buffer.from([1, 2])),
-    track(2, 'A_AAC', Buffer.from([0xf8, 0])), // Unsupported extended AAC object type.
+    track(2, 'A_AAC', Buffer.from([0xf8, 0])),
   ]) {
+    const bytes = Buffer.concat([doc, segmentHeader, element('1654ae6b', Buffer.concat([video, aac, browserDependent]))]);
+    assert.equal(await validation.inspect(new File([bytes], 'device-dependent.mkv')), 'video/x-matroska');
+  }
+  for (const rejected of [track(1, ''), track(1, 'A_AAC'), track(2, 'V_VP9'), track(2, 'A_<script>')]) {
     const bytes = Buffer.concat([doc, segmentHeader, element('1654ae6b', Buffer.concat([video, aac, rejected]))]);
     await assert.rejects(validation.inspect(new File([bytes], 'unsupported.mkv')), /not supported/);
   }
@@ -83,8 +88,9 @@ test('compatible MKV/MP4 are accepted; unsupported tracks, renamed containers an
   await clip('youtube-av1.mp4', ['-c:v', 'libaom-av1', '-cpu-used', '8', '-c:a', 'aac'], 'av1');
   await clip('supported.M4V', ['-c:v', 'libx264', '-c:a', 'aac', '-f', 'mp4'], true);
   const mkv = await clip('video.mkv', ['-map', '0:v', '-map', '1:a', '-map', '1:a', '-c:v', 'libx264', '-c:a', 'aac'], true);
-  await clip('hevc.mkv', ['-c:v', 'libx265', '-preset', 'ultrafast', '-x265-params', 'log-level=error:pools=1:frame-threads=1', '-c:a', 'eac3'], false);
-  await clip('dolby.mkv', ['-c:v', 'libx264', '-c:a', 'eac3'], false);
+  const hevc = await clip('hevc.mkv', ['-c:v', 'libx265', '-preset', 'ultrafast', '-x265-params', 'log-level=error:pools=1:frame-threads=1', '-c:a', 'eac3'], 'hevc');
+  await clip('hevc-10bit.mkv', ['-c:v', 'libx265', '-pix_fmt', 'yuv420p10le', '-preset', 'ultrafast', '-x265-params', 'log-level=error:pools=1:frame-threads=1', '-c:a', 'aac'], 'hevc');
+  await clip('dolby.mkv', ['-c:v', 'libx264', '-c:a', 'eac3'], true);
   await clip('hevc.mp4', ['-c:v', 'libx265', '-preset', 'ultrafast', '-x265-params', 'log-level=error:pools=1:frame-threads=1', '-c:a', 'aac'], false);
   await clip('dolby.mp4', ['-c:v', 'libx264', '-c:a', 'eac3'], false);
   await clip('mp3-track.mp4', ['-c:v', 'libx264', '-c:a', 'libmp3lame'], false);
@@ -120,7 +126,7 @@ test('compatible MKV/MP4 are accepted; unsupported tracks, renamed containers an
 
   // A supported container can still fail in the current browser: verify real
   // decode failure is rejected and its temporary element/URL are released.
-  for (const [movie, name, fail, claimsSupport] of [[mp4, 'movie.mp4', false, true], [mp4, 'movie.mp4', true, true], [mkv, 'movie.mkv', false, false], [mkv, 'movie.mkv', true, true]]) {
+  for (const [movie, name, fail, claimsSupport] of [[mp4, 'movie.mp4', false, true], [mp4, 'movie.mp4', true, true], [mkv, 'movie.mkv', false, false], [mkv, 'movie.mkv', true, true], [hevc, 'hevc.mkv', false, false], [hevc, 'hevc.mkv', true, true]]) {
     const handlers = {}, released = [], module = { exports: {} };
     const probe = { style: {}, videoWidth: 320, videoHeight: 180, canPlayType: () => claimsSupport ? 'probably' : '', setAttribute() {},
       addEventListener(name, fn) { handlers[name] = fn; }, requestVideoFrameCallback(fn) { this.frame = fn; return 1; }, cancelVideoFrameCallback() {},
@@ -131,7 +137,7 @@ test('compatible MKV/MP4 are accepted; unsupported tracks, renamed containers an
       URL: { createObjectURL: () => 'blob:test', revokeObjectURL: () => released.push('url') },
     });
     const check = module.exports.validate(new File([movie], name));
-    if (fail) await assert.rejects(check, /not supported/); else await check;
+    if (fail) await assert.rejects(check, /File not supported by your browser/); else await check;
     assert.deepEqual(released, ['element', 'url']);
   }
 });

@@ -177,6 +177,100 @@ test('join requests fullscreen before awaiting media playback', async () => {
   assert.equal(actions[0], 'fullscreen'); assert.ok(actions.includes('play'));
 });
 
+test('fullscreen buttons enter and exit synchronously on one click, including presentation', async () => {
+  for (const [mode, id] of [['video', '#screenFullscreen'], ['presentation', '#screenPresentationFullscreen']]) {
+    const client = player(1, mode); await nextTurn();
+    const doc = client.context.document; let enters = 0, exits = 0;
+    doc.fullscreenElement = null;
+    doc.documentElement.requestFullscreen = () => { enters++; doc.fullscreenElement = doc.documentElement; return Promise.resolve(); };
+    doc.exitFullscreen = () => { exits++; doc.fullscreenElement = null; return Promise.resolve(); };
+    const entering = client.nodes.get(id).handlers.click();
+    assert.equal(enters, 1, 'request runs inside the click before any await'); await entering;
+    assert.equal(client.nodes.get(id).title, 'Exit fullscreen');
+    const exiting = client.nodes.get(id).handlers.click();
+    assert.equal(exits, 1); await exiting;
+    assert.equal(client.nodes.get(id).title, 'Enter fullscreen');
+  }
+});
+
+test('one Play click unlocks muted playback, updates the button and keeps audio paused until the shared start', async () => {
+  const client = player(1); await nextTurn();
+  const video = client.nodes.get('#video'); let primed = 0, resolve;
+  client.evaluate('currentState.playing = false; currentState.allReady = true; localAutoplayMuted = true');
+  video.play = () => { primed++; video.paused = false; return Promise.resolve(); };
+  client.context.fetch = async route => route === '/api/command' ? new Promise(done => { resolve = done; }) : { ok: true, json: async () => ({ state: client.state }) };
+  client.nodes.get('#screenPlay').handlers.click();
+  assert.equal(primed, 1); assert.equal(video.paused, true);
+  assert.equal(client.evaluate('localAutoplayMuted'), false);
+  assert.equal(client.evaluate('currentState.playing'), true);
+  assert.equal(client.nodes.get('#screenPlay').title, 'Pause');
+  await nextTurn();
+  resolve({ ok: true, json: async () => ({ command: { ...client.state, playing: true, type: 'play', commandId: 8, executeAt: Date.now() + 250 } }) });
+  await nextTurn();
+});
+
+test('failed controls never poison media readiness or permanently disable Play', async () => {
+  const client = player(1); await nextTurn();
+  client.context.fetch = async route => {
+    if (route === '/api/command') throw new Error('Temporary Wi-Fi interruption');
+    return { ok: true, json: async () => ({ state: { ...client.state, playing: false, allReady: true } }) };
+  };
+  await client.evaluate("command({type:'pause'})"); await nextTurn();
+  assert.equal(client.evaluate('lastError'), '');
+  assert.equal(client.evaluate('mediaIsReady()'), true);
+  assert.equal(client.nodes.get('#screenPlay').disabled, false);
+});
+
+test('stalled playback without a media error reconnects, including a shared buffering pause', async () => {
+  for (const pausedForBuffering of [false, true]) {
+    const opens = [], client = player(2, 'video', { async open(asset, options) { opens.push(options); return 'blob:recovered'; } });
+    await nextTurn();
+    const video = client.nodes.get('#video'); video.readyState = 2; video.currentTime = 42;
+    client.context.bufferingPause = pausedForBuffering;
+    client.evaluate('currentState.playing = !bufferingPause; currentState.seekResume = bufferingPause; checkPlaybackProgress(1000); checkPlaybackProgress(14000)');
+    assert.equal(client.evaluate('transferRecoveryAttempts'), 1);
+    const timer = client.timers.at(-1);
+    client.evaluate('checkPlaybackProgress(28000); scheduleTransferRecovery(currentState.asset)');
+    assert.equal(timer.cancelled, undefined, 'repeated status cannot postpone the existing retry');
+    timer.handler(); await nextTurn();
+    assert.equal(opens.length, 2); assert.ok(opens[1].retry > 0);
+    assert.equal(client.evaluate('currentState.asset.version'), client.state.asset.version);
+  }
+});
+
+test('reconnection keeps retrying after a long outage with a bounded backoff and stops when the movie is removed', async () => {
+  const client = player(2, 'video', { async open() { return 'blob:retry'; }, clear() {} }); await nextTurn();
+  for (let attempt = 0; attempt < 12; attempt++) {
+    client.evaluate('scheduleTransferRecovery(currentState.asset)');
+    const timer = client.timers.at(-1);
+    assert.ok(timer.delay <= 8000); timer.handler(); await nextTurn();
+  }
+  assert.equal(client.evaluate('transferRecoveryAttempts'), 12);
+  client.evaluate('scheduleTransferRecovery(currentState.asset)');
+  const timer = client.timers.at(-1);
+  client.evaluate('applyStateAppearance({...currentState, asset:null, playing:false})');
+  assert.equal(timer.cancelled, true);
+  assert.equal(client.evaluate('transferRecoveryScheduled'), false);
+});
+
+test('wake lock follows playback and is reacquired after returning to the visible tab', async () => {
+  const client = player(1); await nextTurn();
+  let acquired = 0, released = 0;
+  client.context.document.visibilityState = 'visible';
+  client.context.navigator = { wakeLock: { async request(type) {
+    assert.equal(type, 'screen'); acquired++;
+    return { async release() { released++; }, addEventListener() {} };
+  } } };
+  await client.evaluate('syncPlaybackWakeLock()'); assert.equal(acquired, 1);
+  await client.evaluate('syncPlaybackWakeLock()'); assert.equal(acquired, 1);
+  client.context.document.visibilityState = 'hidden';
+  await client.evaluate('syncPlaybackWakeLock()'); assert.equal(released, 1);
+  client.context.document.visibilityState = 'visible';
+  await client.evaluate('syncPlaybackWakeLock()'); assert.equal(acquired, 2);
+  client.evaluate('currentState.playing = false');
+  await client.evaluate('syncPlaybackWakeLock()'); assert.equal(released, 2);
+});
+
 test('Display 1 updates Play instantly but does not start audio before the shared server start', async () => {
   const client = player(1, 'audio'); await new Promise(setImmediate);
   const video = client.nodes.get('#video');
@@ -404,9 +498,24 @@ test('admin MKV retries ranges then native sniffing, stops after two retries and
   assert.equal(opens[2].options.type, '');
   assert.doesNotMatch(fs.readFileSync(path.join(__dirname, '../public/screen.html'), 'utf8'), /localPeerFile|Select the same local/);
   assert.match(client.evaluate('lastError'), /MP4 with H\.264 video and AAC audio/);
+  assert.equal(client.nodes.get('#waitingTitle').textContent, 'File not supported by your browser');
   assert.equal(client.evaluate('mediaIsReady()'), false);
   await client.evaluate('postStatus()');
   assert.equal(client.statuses.at(-1).mediaReady, false);
+});
+
+test('a relay decoder failure before first playback stops retrying and reports unsupported on that screen', async () => {
+  const opens = [], client = player(2, 'video', { async open(asset, options) { opens.push(options); return 'blob:relay'; } });
+  await nextTurn();
+  client.evaluate("currentState.asset.transport = 'relay'; mediaPlayedVersion = ''");
+  const video = client.nodes.get('#video');
+  for (let i = 0; i < 3; i++) { video.error = { code: 4 }; await video.handlers.error(); }
+  assert.equal(opens.length, 3);
+  assert.equal(client.evaluate('transferRecoveryAttempts'), 0);
+  assert.equal(client.nodes.get('#waitingTitle').textContent, 'File not supported by your browser');
+  assert.equal(client.evaluate('mediaIsReady()'), false);
+  await client.evaluate('postStatus()');
+  assert.match(client.statuses.at(-1).error, /File not supported by your browser/);
 });
 
 test('audio progressing without decoded video frames reports a picture failure, then clears when video decodes', async () => {
@@ -624,7 +733,7 @@ function uploadDashboard() {
   };
   const context = vm.createContext({ console: { log() {} }, Number, String, Boolean, Math, JSON, encodeURIComponent,
     $: node, window: { CineWallVideoFile: { validate: async () => {} } }, location: { protocol: 'http:' }, media: node('#mediaPreview'), timeline: node('#timeline'), warning: node('#fileWarning'), filePeer: null,
-    VIDEO_FORMAT_HELP: 'This format is not supported. Use MP4 with H.264 video and AAC audio.',
+    VIDEO_FORMAT_HELP: 'File not supported by your browser. Try an MP4 with H.264 video and AAC audio.',
     URL: { createObjectURL: () => 'blob:selected-file', revokeObjectURL: (url) => revoked.push(url) },
     setTimeout: () => 1, clearTimeout() {},
     render() { vm.runInContext('setPreviewKind()', context); },
@@ -687,7 +796,7 @@ test('dashboard MKV retries preserve the direct asset and are bounded just like 
   const context = vm.createContext({ media, window: {}, $: node, warning: node('#warning'), status: { state: { asset: { source: 'peer', version: 'original-mkv' } } },
     filePeer: { async open(asset, options) { opens.push(options); return `blob:preview-${opens.length}`; } },
     localPreview: null, uploadBusy:false, loadedMediaVersion: 'original-mkv', previewRecoveryVersion: '', previewRecoveryAttempts: 0, previewRecoveryInFlight: '',
-    VIDEO_FORMAT_HELP: 'This format is not supported. Use MP4 with H.264 video and AAC audio.',
+    VIDEO_FORMAT_HELP: 'File not supported by your browser. Try an MP4 with H.264 video and AAC audio.',
   });
   vm.runInContext(code.slice(code.indexOf("media.addEventListener('error'"), code.indexOf("window.addEventListener('pagehide'")), context);
   for (let attempt = 0; attempt < 3; attempt++) { media.error = { code: 4 }; await handlers.error(); }
@@ -696,6 +805,13 @@ test('dashboard MKV retries preserve the direct asset and are bounded just like 
   assert.equal(opens[1].type, '');
   assert.equal(context.status.state.asset.version, 'original-mkv');
   assert.match(node('#warning').textContent, /MP4 with H\.264 video and AAC audio/);
+  context.status.state.asset.source = 'upload';
+  context.localPreview = { pending: false };
+  context.releaseLocalPreview = () => { context.localPreview = null; context.loadedMediaVersion = ''; };
+  context.setPreviewKind = () => {};
+  node('#warning').textContent = '';
+  media.error = { code: 3 }; await handlers.error();
+  assert.match(node('#warning').textContent, /File not supported by your browser/, 'a failed uploaded-file preview cannot swallow the warning');
 });
 
 test('a validated video loads a silent local preview before its LAN transfer, surviving state refreshes', async () => {

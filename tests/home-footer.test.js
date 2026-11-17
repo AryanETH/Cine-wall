@@ -34,11 +34,20 @@ test('public server route shares a non-cached demo count across rooms before ses
   const handlerCode = source.match(/const requestHandler = async \(req, res\) => \{[\s\S]*?\n\};/)?.[0];
   assert.ok(handlerCode);
   let handler;
-  vm.runInNewContext(`${handlerCode}\nsetHandler(requestHandler);`, { URL, setHandler: callback => { handler = callback; }, getDemoVisitSnapshot: () => getDemoVisitSnapshot(Date.parse('2026-10-08T00:00:30Z')) });
+  vm.runInNewContext(`${handlerCode}\nsetHandler(requestHandler);`, {
+    URL,
+    securityHeaders: require('../request-security').securityHeaders,
+    setHandler: callback => { handler = callback; },
+    getDemoVisitSnapshot: () => getDemoVisitSnapshot(Date.parse('2026-10-08T00:00:30Z')),
+  });
   const responses = [];
   for (const url of ['/api/demo-visits', '/api/demo-visits?room=00000000-0000-0000-0000-000000000000']) {
     const result = {};
-    await handler({ method: 'GET', url }, { writeHead: (status, headers) => Object.assign(result, { status, headers }), end: body => { result.data = JSON.parse(body); } });
+    await handler({ method: 'GET', url, headers: { host: 'localhost' } }, {
+      setHeader() {},
+      writeHead: (status, headers) => Object.assign(result, { status, headers }),
+      end: body => { result.data = JSON.parse(body); },
+    });
     assert.equal(result.status, 200);
     assert.equal(result.headers['Cache-Control'], 'no-store');
     assert.equal(result.data.demo, true);

@@ -6,39 +6,17 @@ The advertising dashboard is password-protected and requires configuration befor
 
 ### Quick Start
 
-1. **Set the password** using one of these methods:
+1. Generate a random six-digit PIN and keep it private.
+2. Run `npm run start:ads` on Windows and enter the PIN at the hidden prompt. Open [localhost:4173/advt](http://localhost:4173/advt) and enter the same PIN.
+3. For a hosted server, save the PIN in its private `CINEWALL_ADS_PASSWORD` environment variable and redeploy. Open [watch.aitoyz.in/advt](https://watch.aitoyz.in/advt).
 
-   **Method A: Use npm script (Easiest)**
-   ```bash
-   npm run start:ads
-   ```
-   This automatically starts with password: **9669**
-
-   **Method B: PowerShell (One-time)**
-   ```powershell
-   $env:CINEWALL_ADS_PASSWORD="9669"
-   npm start
-   ```
-
-   **Method C: Use the startup script**
-   ```powershell
-   .\start-with-ads.ps1
-   ```
-
-   **Method D: System Environment Variable (Persistent)**
-   - Open System Properties → Environment Variables
-   - Add new variable: `CINEWALL_ADS_PASSWORD` with value `9669`
-   - Restart your terminal and run `npm start`
-
-2. **Access the dashboard**
-   - Navigate to: `http://localhost:4173/advt`
-   - Login with password: **9669** (or your custom password)
+Dashboard sign-in is enabled when a valid PIN is configured. Existing published campaigns can continue to play.
 
 ## Environment Variables
 
 | Variable | Required | Description |
 |----------|----------|-------------|
-| `CINEWALL_ADS_PASSWORD` | **Yes** | Password for accessing `/advt` dashboard |
+| `CINEWALL_ADS_PASSWORD` | For admin access | Private six-digit PIN for `/advt` |
 | `CINEWALL_ADS_FORM_URL` | No | Custom Google Forms URL for advertisers (defaults to provided form) |
 
 ## Features
@@ -110,7 +88,7 @@ All API endpoints require authentication (login first):
 ## Troubleshooting
 
 ### "Advertising administration is disabled on this server"
-**Cause**: `CINEWALL_ADS_PASSWORD` environment variable is not set.
+**Cause**: `CINEWALL_ADS_PASSWORD` must contain exactly six digits.
 
 **Solution**: Locally, set the password using one of the methods above. For the live site, set the private variable in the hosting service's environment and deploy. The Windows startup script only sets it for your local process.
 

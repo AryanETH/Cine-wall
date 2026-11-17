@@ -43,7 +43,7 @@ Only the source laptop needs the original file. Keep its dashboard open while sh
 
 ## Run locally
 
-Use **Node.js 20.19 or newer**. The optional YouTube downloader has [additional requirements](docs/youtube-downloads.md).
+Use a supported **Node.js LTS** release. CineWall requires Node.js 22 or newer and its Docker image uses Node.js 24. The optional YouTube downloader has [additional requirements](docs/youtube-downloads.md).
 
 ```sh
 git clone https://github.com/AryanETH/Cine-wall.git

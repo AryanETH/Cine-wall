@@ -100,7 +100,15 @@ function upload(data, name, partial = false) {
   assert.deepEqual(Buffer.from(await mkvStream.arrayBuffer()), mkvData.subarray(0, 1024));
   const storedMkv = fs.readdirSync(path.join(temporary, 'cache')).find((name) => name.endsWith('.mkv'));
   assert.deepEqual(fs.readFileSync(path.join(temporary, 'cache', storedMkv)), mkvData);
-  console.log('Verified: compatible dual-audio MKV/MP4 acceptance, unsupported codec/container rejection, transfer/cancellation guards and unchanged original bytes with range streaming.');
+  const hevcClip = path.join(temporary, 'hevc.mkv');
+  execFileSync(converter, ['-nostdin', '-y', '-v', 'error', '-f', 'lavfi', '-i', 'testsrc2=size=320x180:rate=24', '-t', '0.3', '-c:v', 'libx265', '-pix_fmt', 'yuv420p10le', '-preset', 'ultrafast', '-x265-params', 'log-level=error:pools=1:frame-threads=1', hevcClip], { windowsHide: true });
+  const hevcData = fs.readFileSync(hevcClip), hevc = await upload(hevcData, 'hevc.mkv').done;
+  assert.equal(hevc.status, 200, JSON.stringify(hevc));
+  assert.equal(hevc.data.state.asset.converted, false);
+  assert.equal(hevc.data.state.asset.type, 'video/x-matroska');
+  const hevcStream = await fetch(base + '/api/media/stream');
+  assert.deepEqual(Buffer.from(await hevcStream.arrayBuffer()), hevcData, '10-bit HEVC is preserved byte for byte');
+  console.log('Verified: H.264/HEVC MKV and MP4 acceptance, invalid container rejection, transfer/cancellation guards and unchanged original bytes with range streaming. Browser decoding remains device-dependent.');
 })().catch((error) => { console.error(error); process.exitCode = 1; }).finally(async () => {
   if (server) {
     server.kill();

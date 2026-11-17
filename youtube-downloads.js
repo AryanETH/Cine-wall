@@ -16,6 +16,7 @@ const recentInspections = new Map();
 const jobs = new Map();
 const MAX_FILE = 10 * 1024 ** 3;
 let inspecting = 0;
+let probingVideo = 0;
 fs.mkdirSync(ROOT, { recursive: true });
 fs.mkdirSync(YT_CACHE, { recursive: true });
 
@@ -26,10 +27,11 @@ function executable(name) {
 
 function run(file, args, timeout = 120000, options = {}) {
   return new Promise((resolve, reject) => {
-    const child = execFile(file, args, { windowsHide: true, timeout, maxBuffer: 24 * 1024 * 1024, signal: options.signal }, (error, stdout, stderr) => {
+    const child = execFile(file, args, { windowsHide: true, timeout, maxBuffer: options.maxBuffer ?? 24 * 1024 * 1024, signal: options.signal }, (error, stdout, stderr) => {
       if (error) {
         const failure = new Error(error.code === 'ENOENT' ? 'Download tools are missing. Run setup-download-tools.ps1 on the admin Device.' : path.basename(file).startsWith('yt-dlp') ? downloadError(stderr || error.message) : String(stderr || error.message).trim().slice(-1200));
         failure.causeText = String(stderr || error.message);
+        failure.code = error.code;
         if (error.name === 'AbortError' || options.signal?.aborted) failure.name = 'AbortError';
         reject(failure);
       }
@@ -404,18 +406,44 @@ async function copyForSpeakers(id, destination) {
 
 async function inspectBrowserVideo(input, extension, options = {}) {
   extension = String(extension).toLowerCase();
-  const info = JSON.parse(await run(executable('ffprobe'), ['-v', 'error', '-show_streams', '-show_format', '-of', 'json', input], 30000, options));
-  const video = info.streams?.find((stream) => stream.codec_type === 'video');
+  const browserHint = 'File not supported by your browser. Use MP4 with H.264 video and AAC audio for best compatibility.';
+  const unsupported = message => Object.assign(new Error(message || browserHint), { status: 415 });
+  const mkv = extension === '.mkv', webm = extension === '.webm';
+  if (!mkv && !webm && !['.mp4', '.m4v'].includes(extension)) throw unsupported();
+  if (probingVideo >= 4) throw Object.assign(new Error('Video validation is busy. Try again in a moment.'), { status: 503 });
+  const demuxer = mkv || webm ? 'matroska' : 'mov';
+  // Only these containers can reach the native parser. Reject playlist
+  // demuxers and secondary resources, including MOV external data references.
+  const localInput = ['-protocol_whitelist', 'file', '-format_whitelist', demuxer, '-f', demuxer];
+  if (demuxer === 'mov') localInput.push('-enable_drefs', '0', '-use_absolute_path', '0');
+  let info;
+  probingVideo++;
+  try {
+    info = JSON.parse(await run(executable('ffprobe'), [
+      '-v', 'error', ...localInput, '-show_streams', '-show_format', '-of', 'json', input,
+    ], 30000, { ...options, maxBuffer: 1024 * 1024 }));
+  } catch (error) {
+    if (error.name === 'AbortError') throw error;
+    if (error.code === 'ENOENT') throw Object.assign(new Error('Video validation is unavailable on this server.'), { status: 503 });
+    throw unsupported();
+  } finally {
+    probingVideo--;
+  }
+  const video = info.streams?.find((stream) => stream.codec_type === 'video' && !stream.disposition?.attached_pic);
   const audioTracks = info.streams?.filter((stream) => stream.codec_type === 'audio') || [];
   const audio = audioTracks[0];
-  const browserHint = 'This video uses unsupported tracks. Use MP4 with H.264 video and AAC audio for best compatibility.';
-  if (!video) throw new Error(`No video track found. ${browserHint}`);
-  const mkv = extension === '.mkv', webm = extension === '.webm';
+  if (!video) throw unsupported(`No video track found. ${browserHint}`);
   const formats = String(info.format?.format_name || '').split(',');
   const correctContainer = mkv || webm ? formats.includes('matroska') : formats.includes('mp4');
-  const supportedVideo = webm ? ['vp8', 'vp9'].includes(video.codec_name) : mkv ? video.codec_name === 'h264' && ['Baseline', 'Constrained Baseline', 'Main', 'Extended', 'High'].includes(video.profile) : ['h264', 'vp9', 'av1'].includes(video.codec_name);
-  const supportedAudio = audioTracks.every((track) => webm ? ['opus', 'vorbis'].includes(track.codec_name) : track.codec_name === 'aac' && (!mkv || ['Main', 'LC', 'HE-AAC', 'HE-AACv2'].includes(track.profile)));
-  if (!['.mp4', '.m4v', '.webm', '.mkv'].includes(extension) || !correctContainer || !supportedVideo || !supportedAudio || !['yuv420p', 'yuvj420p'].includes(video.pix_fmt)) throw new Error(browserHint);
+  // MKV support is device-dependent (including HEVC, 10-bit and audio tracks).
+  // The uploader probes actual playback; receivers independently report errors.
+  // Keep the original bytes and reject invalid containers/tracks here.
+  if (mkv && correctContainer && video.codec_name && video.width > 0 && video.height > 0) {
+    return { video: video.codec_name, audio: audio?.codec_name || null };
+  }
+  const supportedVideo = (webm ? ['vp8', 'vp9'] : ['h264', 'vp9', 'av1']).includes(video.codec_name);
+  const supportedAudio = audioTracks.every((track) => webm ? ['opus', 'vorbis'].includes(track.codec_name) : track.codec_name === 'aac');
+  if (mkv || !correctContainer || !supportedVideo || !supportedAudio || !['yuv420p', 'yuvj420p'].includes(video.pix_fmt)) throw unsupported();
   return { video: video.codec_name, audio: audio?.codec_name || null };
 }
 

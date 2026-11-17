@@ -11,6 +11,7 @@ const { createHash, randomBytes, randomUUID, timingSafeEqual } = require('node:c
 const atomicJson = require('./atomic-json');
 const serveAsset = require('./static-assets');
 const createAdAnalytics = require('./ad-analytics');
+const { sameOrigin, secureRequest, clientAddress } = require('./request-security');
 
 const FORMATS = {
   skippable: { max: 60, skipAfter: 5 },
@@ -27,6 +28,8 @@ const DEFAULT_ADVERTISER_FORM = 'https://forms.gle/x32An3oiyoXfxjiT7';
 const cookieName = 'cinewall_ads';
 const run = promisify(execFile);
 const fail = (status, message) => Object.assign(new Error(message), { status });
+const localMP4 = ['-protocol_whitelist', 'file', '-format_whitelist', 'mov', '-f', 'mov', '-enable_drefs', '0', '-use_absolute_path', '0'];
+const isAdsPin = value => typeof value === 'string' && value.length === 6 && /^[0-9]{6}$/.test(value);
 
 function formLink(value) {
   if (!value) return '';
@@ -41,7 +44,7 @@ async function inspectVideo(file) {
   let info;
   try {
     const { stdout } = await run(process.env.CINEWALL_FFPROBE || 'ffprobe',
-      ['-v', 'error', '-protocol_whitelist', 'file', '-format_whitelist', 'mov', '-show_format', '-show_streams', '-of', 'json', file],
+      ['-v', 'error', ...localMP4, '-show_format', '-show_streams', '-of', 'json', file],
       { timeout: 15000, maxBuffer: 512 * 1024, windowsHide: true });
     info = JSON.parse(stdout);
   } catch (error) {
@@ -66,7 +69,7 @@ async function inspectVideo(file) {
 async function trimVideo(inputPath, outputPath, startTime, duration) {
   try {
     await run(process.env.CINEWALL_FFMPEG || 'ffmpeg',
-      ['-nostdin', '-hide_banner', '-loglevel', 'error', '-y', '-protocol_whitelist', 'file', '-f', 'mov',
+      ['-nostdin', '-hide_banner', '-loglevel', 'error', '-y', ...localMP4,
        '-ss', String(startTime), '-i', inputPath, '-t', String(duration), '-map', '0:V:0', '-map', '0:a:0?',
        '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '18', '-threads', '2', '-pix_fmt', 'yuv420p',
        '-c:a', 'aac', '-b:a', '160k', '-movflags', '+faststart', outputPath],
@@ -94,7 +97,7 @@ function createAdvertising({ root, password = process.env.CINEWALL_ADS_PASSWORD,
   const sessions = new Map();
   const attempts = new Map();
   const digest = value => createHash('sha256').update(value).digest();
-  const passwordHash = password ? digest(password) : null;
+  const passwordHash = isAdsPin(password) ? digest(password) : null;
   let incoming = false;
   let configuredForm = DEFAULT_ADVERTISER_FORM;
   try { configuredForm = formLink(fallbackForm) || configuredForm; } catch {}
@@ -141,9 +144,8 @@ function createAdvertising({ root, password = process.env.CINEWALL_ADS_PASSWORD,
     atomicJson(manifest, next);
     data = next;
   };
-  const secure = req => req.socket.encrypted || !/^(localhost|127\.0\.0\.1|\[::1\])(?::\d+)?$/i.test(req.headers.host || '');
   const cookie = (req, value, seconds) => cookieName + '=' + value +
-    '; Path=/advt; HttpOnly; SameSite=Strict; Max-Age=' + seconds + (secure(req) ? '; Secure' : '');
+    '; Path=/advt; HttpOnly; SameSite=Strict; Max-Age=' + seconds + (secureRequest(req) ? '; Secure' : '');
   function key(req) {
     return /(?:^|;\s*)cinewall_ads=([A-Za-z0-9_-]{43})(?:;|$)/.exec(req.headers.cookie || '')?.[1];
   }
@@ -153,12 +155,6 @@ function createAdvertising({ root, password = process.env.CINEWALL_ADS_PASSWORD,
     sessions.delete(token);
     return false;
   }
-  function sameOrigin(req) {
-    try {
-      const origin = new URL(req.headers.origin);
-      return origin.host === req.headers.host && origin.protocol === (secure(req) ? 'https:' : 'http:');
-    } catch { return false; }
-  }
   function resetExpired(map) {
     for (const [id, entry] of map) if ((entry.until ?? entry) <= now()) map.delete(id);
   }
@@ -166,22 +162,21 @@ function createAdvertising({ root, password = process.env.CINEWALL_ADS_PASSWORD,
     if (!passwordHash) throw fail(503, 'Advertising administration is disabled on this server.');
     resetExpired(attempts);
     resetExpired(sessions);
-    // A proxy may share one socket address. Use a global ceiling too so a
-    // four-digit password cannot be brute forced by rotating source addresses.
-    const scopes = ['global', req.socket.remoteAddress || 'unknown'];
+    // Bound guesses across both a single connection address and the service.
+    const scopes = ['global', clientAddress(req)];
     const limits = [12, 5];
     if (scopes.some((id, index) => (attempts.get(id)?.count || 0) >= limits[index])) {
       res.setHeader('Retry-After', String(LOCKOUT_MS / 1000));
       throw fail(429, 'Too many attempts. Try again in 15 minutes.');
     }
-    const supplied = typeof body?.password === 'string' ? body.password : '';
-    if (!supplied || supplied.length > 256 || !timingSafeEqual(digest(supplied), passwordHash)) {
+    const supplied = body?.password;
+    if (!isAdsPin(supplied) || !timingSafeEqual(digest(supplied), passwordHash)) {
       for (const id of scopes) {
         const attempt = attempts.get(id) || { count: 0, until: now() + LOCKOUT_MS };
         attempt.count++;
         attempts.set(id, attempt);
       }
-      throw fail(401, 'Incorrect password.');
+      throw fail(401, 'Incorrect PIN.');
     }
     if (sessions.size >= 64) sessions.delete(sessions.keys().next().value);
     sessions.delete(key(req));

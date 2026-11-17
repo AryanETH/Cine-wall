@@ -35,6 +35,8 @@ let ready = false;
 let removedScreenNumber = 0;
 let defaultFullscreenAttempted = false;
 let fullscreenRequest = null;
+let playbackWakeLock = null;
+let wakeLockRequest = null;
 let serverOffset = 0;
 let clockSamples = [];
 let clockSyncInFlight = false;
@@ -74,6 +76,8 @@ let mediaRecoveryAttempts = 0;
 let mediaRecoveryInFlight = '';
 let videoFrameObservation = null;
 let mediaLoadTimer = null;
+let transferRecoveryScheduled = false;
+let playbackProgress = null;
 let controlsTimer = null;
 let lastError = '';
 let scrubbing = false;
@@ -90,6 +94,7 @@ let audioWaiting = false;
 let lastDriftSeek = -Infinity;
 let appliedSeek = null;
 let timelineCheckpointInFlight = false;
+let statusInFlight = false;
 let wallMode = 'crop';
 let disconnectTimer = null;
 let lastServerContact = Date.now();
@@ -204,6 +209,42 @@ function setLayout(count) {
 
 function updateFullscreenPrompt() {
   $('#enterPlayerFullscreen').hidden = !ready || Boolean(document.fullscreenElement) || !document.documentElement.requestFullscreen;
+  for (const id of ['#screenFullscreen', '#screenPresentationFullscreen']) {
+    const button = $(id);
+    const active = Boolean(document.fullscreenElement);
+    button.setAttribute('aria-label', active ? 'Exit fullscreen' : 'Enter fullscreen');
+    button.setAttribute('aria-pressed', String(active));
+    button.title = active ? 'Exit fullscreen' : 'Enter fullscreen';
+  }
+}
+
+function togglePlayerFullscreen() {
+  if (!document.fullscreenElement) return enterPlayerFullscreen();
+  if (fullscreenRequest) return fullscreenRequest;
+  try {
+    fullscreenRequest = Promise.resolve(document.exitFullscreen())
+      .catch(() => {}).finally(() => { fullscreenRequest = null; updateFullscreenPrompt(); });
+  } catch { updateFullscreenPrompt(); return Promise.resolve(); }
+  return fullscreenRequest;
+}
+
+async function syncPlaybackWakeLock() {
+  const wanted = () => ready && !removedScreenNumber && Boolean(currentState?.asset) &&
+    Boolean(currentState.playing || currentState.seekResume || currentState.adBreak) && document.visibilityState === 'visible';
+  if (!wanted()) {
+    const lock = playbackWakeLock; playbackWakeLock = null;
+    if (lock) void lock.release().catch(() => {});
+    return;
+  }
+  if (playbackWakeLock || wakeLockRequest || !navigator.wakeLock) return;
+  wakeLockRequest = navigator.wakeLock.request('screen');
+  try {
+    const lock = await wakeLockRequest;
+    if (!wanted()) { await lock.release(); return; }
+    playbackWakeLock = lock;
+    lock.addEventListener('release', () => { if (playbackWakeLock === lock) playbackWakeLock = null; });
+  } catch { /* Unsupported or battery policy denied it; playback still works. */ }
+  finally { wakeLockRequest = null; }
 }
 
 function enterPlayerFullscreen() {
@@ -453,6 +494,8 @@ function loadMedia(asset, force = false) {
     mediaElementVersion = '';
     mediaPlayedVersion = '';
     transferRecoveryAttempts = 0;
+    transferRecoveryScheduled = false;
+    playbackProgress = null;
     mediaRecoveryAttempts = 0;
     mediaRecoveryInFlight = '';
     videoFrameObservation = null;
@@ -464,7 +507,7 @@ function loadMedia(asset, force = false) {
     return;
   }
   if (asset.version === currentAssetVersion && !force) return;
-  if (asset.version !== currentAssetVersion) { mediaPlayedVersion = ''; endedAssetVersion = ''; transferRecoveryAttempts = 0; clearTimeout(mediaLoadTimer); mediaLoadAttempts = 0; mediaRecoveryAttempts = 0; mediaRecoveryInFlight = ''; videoFrameObservation = null; }
+  if (asset.version !== currentAssetVersion) { mediaPlayedVersion = ''; endedAssetVersion = ''; transferRecoveryAttempts = 0; transferRecoveryScheduled = false; playbackProgress = null; clearTimeout(mediaLoadTimer); mediaLoadAttempts = 0; mediaRecoveryAttempts = 0; mediaRecoveryInFlight = ''; videoFrameObservation = null; }
   currentAssetVersion = asset.version;
   mediaElementVersion = '';
   mediaLoadAttempts += 1;
@@ -610,6 +653,7 @@ function applyStateAppearance(nextState) {
   }
   for (const [number, intent] of localAudioIntents) { if (intent.assetVersion !== nextState.asset?.version) { localAudioIntents.delete(number); continue; } nextState = { ...nextState, audioSettings: { ...nextState.audioSettings, [number]: { ...nextState.audioSettings?.[number], ...intent.patch } } }; }
   currentState = nextState;
+  void syncPlaybackWakeLock();
   sessionMode = nextState.sessionMode || 'video';
   setLayout(nextState.screenCount);
   setWallMode(nextState.mode || 'crop');
@@ -786,7 +830,10 @@ async function command(payload) {
       if (payload.assetVersion && payload.assetVersion !== currentState?.asset?.version) return;
       if (localPlaybackIntent?.sequence === sequence) localPlaybackIntent = null;
       clearIntent();
-      lastError = error.message; fetchInitialState(); postStatus();
+      // A failed control request is not a decoder failure. Poisoning lastError
+      // here prevents readiness and disables Play even after Wi-Fi returns.
+      networkLabel.querySelector('span:last-child').textContent = error.message || 'Control failed · try again';
+      showControls(); fetchInitialState(); postStatus();
     }
   };
   const queueKey = payload.type === 'screen-audio' ? `audio-${payload.screen}` : 'playback';
@@ -1022,7 +1069,7 @@ function updateController() {
   const replay = videoFinished();
   const canPause = currentState?.playing || currentState?.seekResume;
   $('#screenPlay').innerHTML = `<span class="fi">${canPause ? '&#xE769;' : replay ? '&#xE72C;' : '&#xE768;'}</span>`;
-  $('#screenPlay').disabled = !currentState?.asset || (!canPause && (currentState.allReady !== true || currentState.seekPending));
+  $('#screenPlay').disabled = !currentState?.asset || (!canPause && (currentState.allReady !== true || Boolean(currentState.seekPending)));
   $('#screenPlay').title = canPause ? 'Pause' : currentState?.seekPending ? 'Syncing screens' : currentState?.allReady ? replay ? 'Replay video' : 'Play' : 'Waiting for every display';
   $('#screenPlay').setAttribute('aria-label', $('#screenPlay').title);
   $('#screenPage').textContent = currentState?.page || 1;
@@ -1039,6 +1086,17 @@ function videoFinished() {
 function togglePlayback() {
   if (!currentState?.asset || sessionMode === 'presentation') return;
   if (currentState.adBreak) { void command({ type: currentState.adBreak.startedAt === null ? 'play' : 'pause' }); return; }
+  if (!currentState.playing && !currentState.seekResume && currentState.allReady === true) {
+    // Use this same click to unlock sound. Pause immediately while waiting for
+    // the shared start, so one laptop cannot audibly run ahead of the other.
+    void audioRouter?.resume();
+    localAutoplayMuted = false;
+    applyAudioSettings();
+    if (sessionMode !== 'youtube') {
+      try { const primed = video.play(); video.pause(); primed?.catch(() => {}); } catch {}
+    }
+    playBlocked.classList.remove('show');
+  }
   const currentPosition = sessionMode === 'youtube' && youtubeReady ? youtubePlayer.getCurrentTime() : video.currentTime;
   command(currentState.playing || currentState.seekResume ? { type: 'pause' } : { type: 'play', position: videoFinished() ? 0 : currentPosition || targetPosition(currentState) });
 }
@@ -1050,16 +1108,33 @@ function scheduleTransferRecovery(asset) {
   $('#waitingCopy').textContent = lastError;
   $('#decoderHelpLink').hidden = true;
   waitingAsset.classList.add('show');
+  if (transferRecoveryScheduled) return;
+  transferRecoveryScheduled = true;
   clearTimeout(mediaLoadTimer);
-  if (transferRecoveryAttempts < 8) {
-    const delay = Math.min(8000, 1000 * 2 ** transferRecoveryAttempts++);
-    mediaLoadTimer = setTimeout(() => {
-      if (currentState?.asset?.version === asset.version) loadMedia(asset, true);
-    }, delay);
-  } else {
-    $('#waitingCopy').textContent = 'Open the admin tab, then reload this display to reconnect.';
-  }
+  const delay = Math.min(8000, 1000 * 2 ** Math.min(transferRecoveryAttempts++, 3));
+  mediaLoadTimer = setTimeout(() => {
+    transferRecoveryScheduled = false;
+    if (currentState?.asset?.version === asset.version) loadMedia(asset, true);
+  }, delay);
   postStatus();
+}
+
+function checkPlaybackProgress(now = Date.now()) {
+  const asset = currentState?.asset;
+  if (!ready || !asset || !['video', 'audio'].includes(sessionMode) || currentState.adBreak ||
+      !(currentState.playing || currentState.seekResume) || video.ended ||
+      document.visibilityState === 'hidden' || localPlaybackIntent) { playbackProgress = null; return; }
+  const position = video.currentTime || 0;
+  if (!playbackProgress || playbackProgress.version !== asset.version || Math.abs(position - playbackProgress.position) > .05) {
+    playbackProgress = { version: asset.version, position, since: now }; return;
+  }
+  // A stalled read need not dispatch a media error. Recover at the room's
+  // paused/playing position instead of leaving both laptops stuck indefinitely.
+  if (now - playbackProgress.since >= 12000 && !video.error &&
+      (video.readyState < 3 || video.seeking || audioWaiting || !Number.isFinite(video.duration))) {
+    playbackProgress.since = now;
+    scheduleTransferRecovery(asset);
+  }
 }
 
 function seekRelative(seconds) {
@@ -1153,9 +1228,9 @@ function checkVideoFrames(now = Date.now()) {
   if (now - videoFrameObservation.since < 4500 || (video.currentTime || 0) - videoFrameObservation.position < 2) return false;
   videoFrameObservation.failed = true;
   lastError = asset.codecs?.includes('V_MPEGH/ISO/HEVC')
-    ? 'The movie reached this Device and its audio is playing, but Edge decoded no HEVC video frames. This Device needs HEVC video support; the file stays on the admin Device.'
-    : 'The movie reached this Device and its audio is playing, but the browser decoded no video frames. Check this Device’s video codec support.';
-  $('#waitingTitle').textContent = 'Video cannot be displayed on this Device';
+    ? 'File not supported by your browser. The browser decoded no HEVC video frames. This Device needs HEVC video support; the file stays on the admin Device.'
+    : 'File not supported by your browser. The browser decoded no video frames. Try an MP4 with H.264 video and AAC audio.';
+  $('#waitingTitle').textContent = 'File not supported by your browser';
   $('#waitingCopy').textContent = lastError;
   $('#decoderHelpLink').hidden = !asset.codecs?.includes('V_MPEGH/ISO/HEVC');
   waitingAsset.classList.add('show');
@@ -1179,7 +1254,8 @@ function instantConnectionStatus() {
 }
 
 async function postStatus() {
-  if (!screenNumber) return;
+  if (!screenNumber || statusInFlight) return;
+  statusInFlight = true;
   const isYouTube = sessionMode === 'youtube';
   let videoDuration = 0;
   let playbackTime = 0;
@@ -1194,6 +1270,7 @@ async function postStatus() {
 
   try {
     const response = await fetch('/api/status', {
+      ...(typeof AbortSignal !== 'undefined' && AbortSignal.timeout ? { signal: AbortSignal.timeout(4000) } : {}),
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         clientId, screen: screenNumber, build: CLIENT_BUILD, ready, mediaReady: mediaIsReady(),
@@ -1226,7 +1303,7 @@ async function postStatus() {
     else if (stateChanged) applyWhenReady(data.state);
   } catch {
     markConnectionReconnecting();
-  }
+  } finally { statusInFlight = false; }
 }
 
 // An independent five-second checkpoint also repairs a missed event stream.
@@ -1253,7 +1330,7 @@ async function refreshTimeline() {
 // State is also fetched without SSE: some hotspots/proxies buffer event streams.
 async function fetchInitialState() {
   try {
-    const response = await fetch('/api/status', { cache: 'no-store' });
+    const response = await fetch('/api/status', { cache: 'no-store', ...(typeof AbortSignal !== 'undefined' && AbortSignal.timeout ? { signal: AbortSignal.timeout(4000) } : {}) });
     if (!response.ok) throw new Error('Server unavailable');
     const data = await response.json();
     if (!currentState && !clockSamples.length) serverOffset = data.state.serverTime - Date.now();
@@ -1338,6 +1415,7 @@ playBlocked.addEventListener('click', async () => {
 
 video.addEventListener('loadedmetadata', () => {
   clearTimeout(mediaLoadTimer);
+  transferRecoveryScheduled = false;
   videoFrameObservation = null;
   $('#decoderHelpLink').hidden = true;
   lastError = '';
@@ -1354,6 +1432,7 @@ video.addEventListener('playing', () => {
   endedAssetVersion = ''; endedEventId = '';
   if (sessionMode === 'audio' || video.videoWidth > 0 && video.videoHeight > 0) mediaPlayedVersion = currentAssetVersion;
   transferRecoveryAttempts = 0;
+  transferRecoveryScheduled = false;
   clearTimeout(mediaLoadTimer);
   videoFrameObservation = null;
   $('#decoderHelpLink').hidden = true;
@@ -1379,7 +1458,8 @@ for (const name of ['playing', 'pause', 'ended', 'waiting', 'stalled', 'seeking'
 window.addEventListener('cinewall-peer-status', () => postStatus());
 window.addEventListener('cinewall-peer-error', (event) => {
   if (currentState?.asset?.source !== 'peer') return;
-  lastError = event.detail; $('#decoderHelpLink').hidden = true; $('#waitingTitle').textContent = 'Connection to the admin source failed'; $('#waitingCopy').textContent = event.detail; waitingAsset.classList.add('show'); postStatus();
+  lastError = event.detail;
+  scheduleTransferRecovery(currentState.asset);
 });
 video.addEventListener('error', async () => {
   if (!currentAssetVersion) return;
@@ -1387,15 +1467,15 @@ video.addEventListener('error', async () => {
   const asset = currentState?.asset;
   // A file that already decoded is not suddenly an unsupported format.
   // Interrupted relay responses can surface as MEDIA_ERR_DECODE/SRC_NOT_SUPPORTED.
-  if (code === 2 || asset?.transport === 'hotspot' && filePeer?.lastConnectionError || asset?.transport === 'relay' && (code === 4 || asset.version === mediaPlayedVersion && code === 3)) {
+  if (code === 2 || asset?.transport === 'hotspot' && filePeer?.lastConnectionError || asset?.transport === 'relay' && asset.version === mediaPlayedVersion && [3, 4].includes(code)) {
     scheduleTransferRecovery(asset);
     return;
   }
   if (await recoverDirectMedia(asset, code)) return;
   if (!asset || currentAssetVersion !== asset.version) return;
-  const decodeHelp = window.CineWallFilePeer?.playbackHelp?.(asset) || 'This browser cannot play this video. Use MP4 with H.264 video and AAC audio.';
+  const decodeHelp = window.CineWallFilePeer?.playbackHelp?.(asset) || 'File not supported by your browser. Try an MP4 with H.264 video and AAC audio.';
   lastError = code === 3 || code === 4 ? decodeHelp : 'Video playback was interrupted.';
-  $('#waitingTitle').textContent = 'Playback needs attention';
+  $('#waitingTitle').textContent = [3, 4].includes(code) ? 'File not supported by your browser' : 'Playback needs attention';
   $('#waitingCopy').textContent = lastError;
   $('#decoderHelpLink').hidden = !(asset.codecs?.includes('V_MPEGH/ISO/HEVC') && [3, 4].includes(code));
   waitingAsset.classList.add('show');
@@ -1435,20 +1515,25 @@ window.addEventListener('online', () => {
 });
 window.addEventListener('offline', markConnectionReconnecting);
 document.addEventListener('visibilitychange', () => {
+  void syncPlaybackWakeLock();
   if (document.visibilityState !== 'visible') return;
   postStatus();
   if (currentState && ready) correctDrift(currentState);
+});
+window.addEventListener('pagehide', () => {
+  const lock = playbackWakeLock; playbackWakeLock = null;
+  if (lock) void lock.release().catch(() => {});
 });
 
 $('#screenPlay').addEventListener('click', togglePlayback);
 $('#screenBack').addEventListener('click', () => seekRelative(-10));
 $('#screenForward').addEventListener('click', () => seekRelative(10));
-$('#screenFullscreen').addEventListener('click', enterPlayerFullscreen);
+$('#screenFullscreen').addEventListener('click', togglePlayerFullscreen);
 $('#enterPlayerFullscreen').addEventListener('click', enterPlayerFullscreen);
 document.addEventListener('fullscreenchange', updateFullscreenPrompt);
 $('#screenPreviousPage').addEventListener('click', () => command({ type: 'previous-page' }));
 $('#screenNextPage').addEventListener('click', () => command({ type: 'next-page' }));
-$('#screenPresentationFullscreen').addEventListener('click', enterPlayerFullscreen);
+$('#screenPresentationFullscreen').addEventListener('click', togglePlayerFullscreen);
 $('#screenMute').addEventListener('click', () => {
   const muted = !(audioSetting().muted || localAutoplayMuted);
   if (!muted) { localAutoplayMuted = false; playBlocked.classList.remove('show'); resumeRoutedAudio(); }
@@ -1485,6 +1570,8 @@ $('#screenGesture').addEventListener('dblclick', (event) => {
 
 document.addEventListener('mousemove', showControls);
 document.addEventListener('click', showControls);
+screenControls.addEventListener('pointerdown', showControls);
+screenControls.addEventListener('focusin', showControls);
 $('#playerHandSettings')?.addEventListener('keydown', showControls);
 $('#playerHandSettings')?.addEventListener('focusin', showControls);
 document.addEventListener('keydown', (event) => {
@@ -1493,7 +1580,7 @@ document.addEventListener('keydown', (event) => {
   const focusedAction = event.target.closest?.('button, a');
   if (focusedAction && !['screenPlay', 'screenBack', 'screenForward', 'screenPreviousPage', 'screenNextPage'].includes(focusedAction.id)) return;
   if (ready && event.key.toLowerCase() === 'f') {
-    enterPlayerFullscreen();
+    event.preventDefault(); if (!event.repeat) togglePlayerFullscreen();
     return;
   }
   if (screenNumber !== 1 || !ready) return;
@@ -1510,7 +1597,7 @@ document.addEventListener('keydown', (event) => {
   showControls();
 });
 document.querySelector('.wall-viewport').addEventListener('dblclick', () => {
-  if (ready && screenNumber !== 1) enterPlayerFullscreen();
+  if (ready && screenNumber !== 1) togglePlayerFullscreen();
 });
 
 const events = new EventSource('/events');
@@ -1527,6 +1614,7 @@ events.addEventListener('pulse', (event) => correctDrift(JSON.parse(event.data))
 
 setInterval(postStatus, 2000);
 setInterval(refreshTimeline, 5000);
+setInterval(checkPlaybackProgress, 2000);
 setInterval(() => { if (!screenNumber || !currentState) fetchInitialState(); }, 3000);
 setInterval(syncClock, 30000);
 setInterval(() => {

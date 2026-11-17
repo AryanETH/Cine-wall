@@ -8,4 +8,6 @@ WORKDIR /app
 COPY package.json package-lock.json ./
 RUN npm ci --omit=dev
 COPY . .
+RUN install -d -m 0700 -o node -g node /tmp/cinewall-cache
+USER node
 CMD ["node", "server.js"]

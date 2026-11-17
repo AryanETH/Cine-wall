@@ -98,3 +98,35 @@ test('fake edge and IP headers do not bypass limits when proxy trust is disabled
   const forged = request(); forged.socket.remoteAddress = '10.0.0.2'; forged.headers['x-real-ip'] = '198.51.100.99'; forged.headers['x-railway-edge'] = 'fake-edge';
   assert.throws(() => rooms.create(forged, 'video'), { status: 429 });
 });
+
+test('room membership stays with the signed-in account when the browser changes accounts', t => {
+  const { rooms, root } = fixture(t);
+  const owner = { ...request(), cinewallAccount: { sub: 'owner' } };
+  const room = rooms.create(owner, 'video');
+  const restored = createRooms(root);
+  const record = restored.lookup(room.room);
+  const address = new URL('http://local/api/status');
+  const player = { headers: { 'x-cinewall-ticket': room.ticket }, cinewallAccount: owner.cinewallAccount };
+  assert.equal(restored.authorize(player, address, record).role, 'admin');
+  const other = { ...owner, cinewallAccount: { sub: 'another-account' } };
+  assert.throws(() => restored.resume(other, { room: room.room, ticket: room.ticket }), { status: 403 });
+  assert.throws(() => restored.authorize({ ...other, headers: player.headers }, address, record), { status: 403 });
+  assert.throws(() => restored.recover(other, { code: room.code, recoveryKey: room.recoveryKey }), { status: 403 });
+  assert.equal(restored.join({ ...request(), cinewallAccount: other.cinewallAccount }, { code: room.code }).admin, false);
+  const replacement = { ...request(), cinewallAccount: owner.cinewallAccount };
+  const recovered = restored.recover(replacement, { code: room.code, recoveryKey: room.recoveryKey });
+  assert.equal(recovered.room, room.room);
+  assert.notEqual(recovered.recoveryKey, room.recoveryKey);
+  assert.throws(() => restored.recover(owner, { code: room.code, recoveryKey: room.recoveryKey }), { status: 403 });
+});
+
+test('legacy room owners keep access by proving their device key after signing in', t => {
+  const { rooms, root } = fixture(t), origin = request();
+  const room = rooms.create(origin, 'audio');
+  const owner = { ...origin, cinewallAccount: { sub: 'owner' } };
+  const onlyTicket = { ...request(), cinewallAccount: owner.cinewallAccount };
+  assert.throws(() => rooms.resume(onlyTicket, { room: room.room, ticket: room.ticket }), { status: 403 });
+  assert.equal(rooms.resume(owner, { room: room.room }).admin, true);
+  const restarted = createRooms(root);
+  assert.equal(restarted.resume(onlyTicket, { room: room.room, ticket: room.ticket }).admin, true);
+});

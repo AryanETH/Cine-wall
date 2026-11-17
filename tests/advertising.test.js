@@ -7,10 +7,10 @@ const path = require('node:path');
 const os = require('node:os');
 const net = require('node:net');
 const vm = require('node:vm');
-const { randomUUID } = require('node:crypto');
+const { randomInt, randomUUID } = require('node:crypto');
 const { setTimeout: delay } = require('node:timers/promises');
 const { fetch: authorizedFetch, spawn, execFileSync } = require('./account-fixture.cjs');
-const { formLink } = require('../advertising');
+const { createAdvertising, formLink } = require('../advertising');
 const createAdAnalytics = require('../ad-analytics');
 
 test('advertising accepts HTTP links without credentials', () => {
@@ -18,6 +18,19 @@ test('advertising accepts HTTP links without credentials', () => {
   assert.equal(formLink('https://docs.google.com/forms/d/e/example/viewform'), 'https://docs.google.com/forms/d/e/example/viewform');
   assert.equal(formLink('https://example.com/contact'), 'https://example.com/contact');
   for (const url of ['javascript:alert(1)', 'https://user:pass@forms.gle/example']) assert.throws(() => formLink(url), { status: 400 });
+});
+
+test('ads sign-in stays disabled unless the configured PIN is exactly six digits', async () => {
+  for (const password of ['', '1234', '1234567', '12345A', '123456\n']) {
+    const advertising = createAdvertising({ root: path.join(os.tmpdir(), `cinewall-ads-disabled-${randomUUID()}`), password });
+    const url = new URL('http://localhost:4173/advt/api/login');
+    const req = { method: 'POST', headers: { host: url.host, origin: url.origin }, socket: {} };
+    const res = { setHeader(name) { assert.notEqual(name, 'Set-Cookie'); } };
+    await assert.rejects(advertising.handle(req, res, url, {
+      bodyJson: async () => ({ password }),
+      json: () => assert.fail('Disabled staff sign-in must not succeed'),
+    }), { status: 503 });
+  }
 });
 
 test('both movie timelines display scheduled breaks and clear them when the campaign is paused', () => {
@@ -158,7 +171,7 @@ test('published ads warm up and run once per break across a two-screen room', {t
   await new Promise((resolve,reject)=>{listener.once('error',reject); listener.listen(0,'127.0.0.1',resolve);});
   const port = listener.address().port;
   await new Promise(resolve=>listener.close(resolve));
-  const password = process.env.CINEWALL_ADS_PASSWORD || randomUUID();
+  const password = '0' + String(randomInt(100000)).padStart(5, '0');
   const server=spawn(process.execPath,['server.js'],{cwd:root,windowsHide:true,env:{...process.env,PORT:String(port),
     CINEWALL_HOSTED:'1',CINEWALL_CACHE_DIR:temporary,CINEWALL_ADS_STORE_DIR:temporary,CINEWALL_ADS_PASSWORD:password,
     CINEWALL_ADS_FORM_URL:''}});
@@ -183,7 +196,7 @@ test('published ads warm up and run once per break across a two-screen room', {t
   assert.equal((await plain('/advt/dashboard.html')).status,401);
   assert.equal((await plain('/dashboard.html')).status,404);
   assert.equal((await post('/advt/api/login',{password},{Origin:'https://evil.test'})).status,403);
-  assert.equal((await post('/advt/api/login',{password:'wrong'})).status,401);
+  assert.equal((await post('/advt/api/login',{password:Number(password)})).status,401);
   const login=await post('/advt/api/login',{password});
   assert.equal(login.status,200);
   assert.match(login.headers.get('set-cookie'),/Path=\/advt; HttpOnly; SameSite=Strict/);
@@ -390,7 +403,7 @@ test('published ads warm up and run once per break across a two-screen room', {t
   assert.equal((await paused.json()).enabled,false);
   assert.equal((await post('/advt/api/logout',{},staff)).status,200);
   assert.equal((await plain('/advt/api/settings',{headers:staff})).status,401);
-  for(let i=0;i<4;i++) assert.equal((await post('/advt/api/login',{password:'wrong'})).status,401);
+  for(let i=0;i<4;i++) assert.equal((await post('/advt/api/login',{password:'1'+password.slice(1)})).status,401);
   assert.equal((await post('/advt/api/login',{password})).status,429);
 });
 

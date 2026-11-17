@@ -1,13 +1,9 @@
 'use strict';
 const { randomBytes } = require('node:crypto');
-const { isIP } = require('node:net');
 const path = require('node:path');
 const firebaseConfig = require('./firebase-config');
+const { clientAddress, sameOrigin, secureRequest } = require('./request-security');
 const COOKIE = 'cinewall_account';
-function localHost(host) {
-  const hostname = String(host).replace(/:\d+$/, '').toLowerCase();
-  return ['localhost','127.0.0.1','[::1]'].includes(hostname) || Boolean(isIP(hostname) && /^(10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.)/.test(hostname));
-}
 // Static files decode URL escapes and resolve separators. Apply that same
 // normalization before authorization, including encoded dots and slashes.
 function canonicalPath(pathname) {
@@ -15,26 +11,36 @@ function canonicalPath(pathname) {
   catch { return pathname; }
 }
 const protectedPage = pathname => /^\/(?:admin|screen|share|mic|remote|room|connect|profile)\.html$/i.test(canonicalPath(pathname));
-const protectedRequest = pathname => protectedPage(pathname) || pathname.startsWith('/api/') && !['/api/health','/api/demo-visits','/api/auth/config'].includes(pathname) || ['/events','/share-events','/mic-events'].includes(pathname) || pathname.startsWith('/__cinewall_peer__/');
+function protectedRequest(pathname) {
+  const route = canonicalPath(pathname);
+  return protectedPage(pathname)
+    || route.startsWith('/api/') && !['/api/health', '/api/demo-visits', '/api/auth/config'].includes(pathname)
+    || ['/events', '/share-events', '/mic-events'].includes(route)
+    || route.startsWith('/__cinewall_peer__/');
+}
 const verifiedEmail = user => user.email_verified === true && typeof user.email === 'string' && Boolean(user.email.trim());
 function createVerifier({ projectId, fetchCertificates = fetch, keyResolver, now = Date.now } = {}) {
-  let certificates = {}, expires = 0, pending, lastFetch = 0;
+  let certificates = {}, expires = 0, pending, lastFetchAttempt = -Infinity;
   const keys = new Map();
   async function resolve(header) {
-    if (!header.kid || header.alg !== 'RS256') throw Error('Invalid signing key');
+    if (typeof header.kid !== 'string' || !/^[a-zA-Z0-9_-]{1,128}$/.test(header.kid) || header.alg !== 'RS256') throw Error('Invalid signing key');
     if (keyResolver) return keyResolver(header);
-    if (now() >= expires || !certificates[header.kid] && now() - lastFetch > 30000) {
+    const expired = now() >= expires;
+    if (expired || !Object.hasOwn(certificates, header.kid)) {
       pending ||= (async () => {
+        if (now() - lastFetchAttempt < (expired ? 5000 : 30000)) return;
+        lastFetchAttempt = now();
         const response = await fetchCertificates('https://www.googleapis.com/robot/v1/metadata/x509/securetoken@system.gserviceaccount.com', { signal: AbortSignal.timeout(8000) });
         if (!response.ok) throw Error('Sign-in verification is unavailable');
         const next = await response.json();
         if (!next || typeof next !== 'object' || Array.isArray(next)) throw Error('Invalid signing keys');
-        certificates = next; keys.clear(); lastFetch = now();
+        certificates = next; keys.clear();
         const ttl = Number(/max-age=(\d+)/.exec(response.headers.get('cache-control') || '')?.[1] || 300);
         expires = now() + Math.min(21600, Math.max(30, ttl)) * 1000;
       })().finally(() => { pending = null; });
       await pending;
     }
+    if (now() >= expires) throw Error('Sign-in verification is unavailable');
     if (!Object.hasOwn(certificates, header.kid) || typeof certificates[header.kid] !== 'string') throw Error('Unknown signing key');
     if (!keys.has(header.kid)) keys.set(header.kid, await (await import('jose')).importX509(certificates[header.kid], 'RS256'));
     return keys.get(header.kid);
@@ -53,28 +59,87 @@ function createVerifier({ projectId, fetchCertificates = fetch, keyResolver, now
 function createAccountAuth({ verifyToken = createVerifier({ projectId: firebaseConfig().config?.projectId }), sendVerification, now = Date.now, maxSessions = 10000 } = {}) {
   const sessions = new Map();
   const verificationAttempts = new Map();
+  const signInAttempts = new Map();
+  const activeByAccount = new Map();
   let verificationWindowEnd = 0, verificationCount = 0;
-  const cookieId = req => /(?:^|;\s*)cinewall_account=([A-Za-z0-9_-]{43})(?:;|$)/.exec(req.headers.cookie || '')?.[1];
+  let signInWindowEnd = 0, signInCount = 0, activeResponses = 0, pendingChecks = 0;
+  const cookieId = req => (secureRequest(req)
+    ? /(?:^|;\s*)__Host-cinewall_account=([A-Za-z0-9_-]{43})(?:;|$)/
+    : /(?:^|;\s*)cinewall_account=([A-Za-z0-9_-]{43})(?:;|$)/).exec(req.headers.cookie || '')?.[1];
   function revoke(id) { const session = sessions.get(id); if (session) { sessions.delete(id); for (const response of session.responses) response.destroy(); } }
   function current(req) { const id = cookieId(req), session = sessions.get(id); if (session && session.expires > now()) return session; if (session) revoke(id); return null; }
-  function sameOrigin(req) {
-    try {
-      const origin = new URL(req.headers.origin), host = String(req.headers['x-forwarded-host'] || req.headers.host || '').split(',')[0].trim();
-      return origin.host === host && origin.protocol === (req.socket?.encrypted || !localHost(host) ? 'https:' : 'http:');
-    } catch { return false; }
-  }
   function cookie(req, value, maxAge) {
-    const host = String(req.headers['x-forwarded-host'] || req.headers.host || '').split(',')[0].trim();
-    return `${COOKIE}=${value}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${maxAge}${req.socket?.encrypted || !localHost(host) ? '; Secure' : ''}`;
+    const secure = secureRequest(req);
+    return `${secure ? '__Host-' : ''}${COOKIE}=${value}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${maxAge}${secure ? '; Secure' : ''}`;
   }
   const json = (res, status, data) => { res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(data)); };
+  function mayAttemptSignIn(req, res) {
+    const time = now();
+    if (time >= signInWindowEnd) {
+      signInWindowEnd = time + 60000;
+      signInCount = 0;
+      signInAttempts.clear();
+    }
+    const address = clientAddress(req);
+    const count = signInAttempts.get(address) || 0;
+    if (count >= 90 || signInCount >= 600) {
+      res.setHeader('Retry-After', String(Math.max(1, Math.ceil((signInWindowEnd - time) / 1000))));
+      json(res, 429, { error: 'Too many sign-in requests. Try again shortly.' });
+      return false;
+    }
+    signInAttempts.set(address, count + 1);
+    signInCount++;
+    return true;
+  }
+  async function checkToken(token) {
+    if (pendingChecks >= 32) throw Object.assign(Error('Sign-in verification is busy.'), { status: 503 });
+    pendingChecks++;
+    try { return await verifyToken(token); }
+    finally { pendingChecks--; }
+  }
+  function trackResponse(session, res) {
+    const uid = session.user.sub;
+    const active = activeByAccount.get(uid) || 0;
+    if (active >= 64 || activeResponses >= 2048) {
+      res.setHeader('Retry-After', '2');
+      json(res, 429, { error: 'Too many active connections. Close unused CineWall tabs and try again.' });
+      return false;
+    }
+    activeByAccount.set(uid, active + 1);
+    activeResponses++;
+    session.responses.add(res);
+    let timer;
+    function checkExpiry() {
+      const remaining = session.expires - now();
+      if (remaining <= 0) res.destroy();
+      else {
+        timer = setTimeout(checkExpiry, remaining);
+        timer.unref();
+      }
+    }
+    function cleanup() {
+      res.off('close', cleanup);
+      res.off('finish', cleanup);
+      clearTimeout(timer);
+      session.responses.delete(res);
+      activeResponses--;
+      const remaining = activeByAccount.get(uid) - 1;
+      if (remaining) activeByAccount.set(uid, remaining);
+      else activeByAccount.delete(uid);
+    }
+    res.once('close', cleanup);
+    res.once('finish', cleanup);
+    checkExpiry();
+    return !res.destroyed;
+  }
   async function handle(req, res, url, bodyJson) {
     if (url.pathname === '/api/auth/verify-email') {
       if (req.method !== 'POST' || !sameOrigin(req)) { json(res, 403, { error: 'Open CineWall directly to verify your email.' }); return true; }
       if (!sendVerification) { json(res, 503, { error: 'Branded verification is unavailable.' }); return true; }
+      if (!mayAttemptSignIn(req, res)) return true;
       const token = /^Bearer ([A-Za-z0-9._-]+)$/.exec(req.headers.authorization || '')?.[1];
       let user;
-      try { if (token) user = await verifyToken(token); } catch {}
+      try { if (token) user = await checkToken(token); } catch {}
       if (!user) { json(res, 401, { error: 'Sign in to verify your email.' }); return true; }
       if (user.email_verified === true) { json(res, 200, { verified: true }); return true; }
       const email = user.email;
@@ -103,8 +168,10 @@ function createAccountAuth({ verifyToken = createVerifier({ projectId: firebaseC
         return true;
       }
       if (req.method !== 'POST' || !sameOrigin(req)) { json(res, 403, { error: 'Open CineWall directly to sign in.' }); return true; }
+      if (!mayAttemptSignIn(req, res)) return true;
       try {
-        const { idToken } = await bodyJson(req), user = await verifyToken(idToken);
+        const { idToken } = await bodyJson(req), user = await checkToken(idToken);
+        if (res.destroyed) return true;
         if (!verifiedEmail(user)) {
           revoke(cookieId(req));
           res.setHeader('Set-Cookie', cookie(req, '', 0));
@@ -115,7 +182,7 @@ function createAccountAuth({ verifyToken = createVerifier({ projectId: firebaseC
         for (const [id, session] of sessions) if (session.expires <= now()) revoke(id);
         const previousId = cookieId(req), previous = current(req);
         if (previous && previous.user.sub === user.sub) {
-          previous.expires = user.exp * 1000;
+          previous.expires = Math.max(previous.expires, user.exp * 1000);
           previous.account = account;
           res.setHeader('Set-Cookie', cookie(req, previousId, Math.max(0, Math.floor((previous.expires - now()) / 1000))));
         } else {
@@ -125,7 +192,9 @@ function createAccountAuth({ verifyToken = createVerifier({ projectId: firebaseC
           res.setHeader('Set-Cookie', cookie(req, id, Math.max(0, Math.floor(user.exp - now() / 1000))));
         }
         json(res, 200, { authenticated: true, account });
-      } catch { json(res, 401, { error: 'Your sign-in could not be verified. Please sign in again.' }); }
+      } catch (error) {
+        if (!res.destroyed) json(res, error.status || 401, { error: error.status ? error.message : 'Your sign-in could not be verified. Please sign in again.' });
+      }
       return true;
     }
     if (url.pathname === '/api/auth/logout') {
@@ -133,16 +202,26 @@ function createAccountAuth({ verifyToken = createVerifier({ projectId: firebaseC
       revoke(cookieId(req)); res.setHeader('Set-Cookie', cookie(req, '', 0)); json(res, 200, { authenticated: false }); return true;
     }
     if (!protectedRequest(url.pathname)) return false;
+    const unsafe = !['GET', 'HEAD', 'OPTIONS'].includes(req.method);
     let session = current(req);
+    // Browsers send Origin on same-origin writes. A client using an explicit
+    // bearer token need not send Origin, but an origin it supplies must match.
+    if (unsafe && (session || req.headers.origin !== undefined) && !sameOrigin(req)) {
+      json(res, 403, { error: 'Open CineWall directly to use this room.' });
+      return true;
+    }
     if (!session && /^Bearer [A-Za-z0-9._-]+$/.test(req.headers.authorization || '')) {
       try {
-        const user = await verifyToken(req.headers.authorization.slice(7));
+        const user = await checkToken(req.headers.authorization.slice(7));
+        if (res.destroyed) return true;
         if (!verifiedEmail(user)) {
           json(res, 403, { code: 'EMAIL_VERIFICATION_REQUIRED', error: 'Verify your email to continue.' });
           return true;
         }
         session = { user: { sub: user.sub }, expires: user.exp * 1000, responses: new Set() };
-      } catch {}
+      } catch (error) {
+        if (error.status === 503) { json(res, 503, { error: error.message }); return true; }
+      }
     }
     if (!session) {
       if (protectedPage(url.pathname) && ['GET','HEAD'].includes(req.method)) {
@@ -150,12 +229,9 @@ function createAccountAuth({ verifyToken = createVerifier({ projectId: firebaseC
       } else json(res, 401, { error: 'Sign in to continue.', code: 'SIGN_IN_REQUIRED' });
       return true;
     }
+    if (res.destroyed || !trackResponse(session, res)) return true;
     req.cinewallAccount = session.user;
     res.setHeader('Cache-Control', 'no-store');
-    session.responses.add(res);
-    const timer = setTimeout(() => res.destroy(), Math.max(1, session.expires - now())); timer.unref?.();
-    const cleanup = () => { clearTimeout(timer); session.responses.delete(res); };
-    res.once('close', cleanup); res.once('finish', cleanup);
     return false;
   }
   return { handle, current, close: () => { for (const id of sessions.keys()) revoke(id); } };

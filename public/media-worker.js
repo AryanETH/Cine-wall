@@ -34,12 +34,26 @@ self.addEventListener('fetch', (event) => {
         end = match[1] && match[2] ? Math.min(end, Number(match[2])) : end;
       }
       if (!Number.isSafeInteger(start) || !Number.isSafeInteger(end) || start > end || start >= info.size || (range && /-0$/.test(range) && range.startsWith('bytes=-'))) return new Response(null, { status: 416, headers: { 'Content-Range': `bytes */${info.size}` } });
+      // Complete bounded ranges instead of holding a multi-GB worker response
+      // open for the whole movie. Browsers request the next range as needed.
+      if (range) end = Math.min(end, start + 2 * 1024 * 1024 - 1);
       const headers = { 'Content-Length': String(end - start + 1), 'Accept-Ranges': 'bytes', 'Cache-Control': 'no-store' };
       // The final native retry omits only the MIME hint so the browser can sniff
       // the unchanged container. It does not turn MKV into MP4 or add a decoder.
       if (info.type) { headers['Content-Type'] = info.type; headers['X-Content-Type-Options'] = 'nosniff'; }
       if (range) headers['Content-Range'] = `bytes ${start}-${end}/${info.size}`;
       if (event.request.method === 'HEAD') return new Response(null, { status: range ? 206 : 200, headers });
+      if (range) {
+        const bytes = new Uint8Array(end - start + 1);
+        for (let offset = start; offset <= end; offset += 256 * 1024) {
+          if (event.request.signal?.aborted) throw new Error('Movie request cancelled');
+          const last = Math.min(end + 1, offset + 256 * 1024);
+          const data = await ask(client, { type: 'media-range', version, start: offset, end: last });
+          if (data.buffer?.byteLength !== last - offset) throw new Error('Incomplete movie range');
+          bytes.set(new Uint8Array(data.buffer), offset - start);
+        }
+        return new Response(bytes, { status: 206, headers });
+      }
       let position = start, cancelled = false;
       const stream = new ReadableStream({ cancel() { cancelled = true; }, async pull(controller) {
         if (cancelled) return;

@@ -172,7 +172,8 @@ test('hotspot room elects one source, blocks replacements, relays original range
   const bufferRecovered = await joined(1, assetVersion, { seekId: holdSeek, paused: true, playbackTime: holdPosition });
   assert.equal(bufferRecovered.data.state.playing, true);
   assert.equal(bufferRecovered.data.state.seekPending, false);
-  assert.ok(bufferRecovered.data.state.notBefore - bufferRecovered.data.state.serverTime >= 650, 'buffer recovery leaves time to prepare the common start');
+  const resumeDelay = bufferRecovered.data.state.notBefore - bufferRecovered.data.state.serverTime;
+  assert.ok(resumeDelay >= 200 && resumeDelay <= 250, 'buffer recovery uses the short common start');
   await joined(2, assetVersion, { instantConnection: 'connected' });
   assert.equal((await api('/api/status')).data.screens.find(screen => screen.screen === 2).instantConnection, 'connected');
   await joined(2, assetVersion, { instantConnection: '<script>not a valid state</script>' });

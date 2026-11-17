@@ -14,7 +14,7 @@ On the public website, numbered links use the page's public origin. Choosing a m
 
 ## Advertising setup
 
-Set `CINEWALL_ADS_PASSWORD` as a private variable on the web service that serves `watch.aitoyz.in`. On Render, open the service's **Environment** page, add the variable, and save and deploy. Then open `/advt`. If the login says advertising administration is disabled, the running service has no password set. The local startup script does not configure the hosted service. Set `CINEWALL_ADS_STORE_DIR` to a persistent writable volume if the room store is ephemeral. The Docker image includes FFmpeg and FFprobe.
+Set `CINEWALL_ADS_PASSWORD` to a private, random six-digit PIN on the web service that serves `watch.aitoyz.in`. On Render, open the service's **Environment** page, add the variable, and save and deploy. Then open `/advt`. An invalid PIN in the environment disables dashboard sign-in. Set `CINEWALL_ADS_STORE_DIR` to a persistent writable volume if the room store is ephemeral. The Docker image includes FFmpeg and FFprobe.
 
 Upload an H.264 MP4, use Trim to select a clip, and enable up to three slots. CineWall schedules evenly spaced breaks based on the movie length and reuses slots if needed. The ad is sliced across the selected displays, and Screen 1 carries its audio. See the [advertising guide](ADVERTISING.md) for timing, formats, and logos.
 
