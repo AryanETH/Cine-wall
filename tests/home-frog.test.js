@@ -45,7 +45,11 @@ function interaction({ wrapped = false, withDemo = false, withPointing = false }
   const glint = { setAttribute: () => {} };
   const fly = { style: {} };
   const perched = new Set();
-  const flight = { hidden: true, classList: { toggle: (name, on) => on ? perched.add(name) : perched.delete(name) }, querySelector: selector => ({
+  const flight = { hidden: true, classList: {
+    toggle: (name, on) => on ? perched.add(name) : perched.delete(name),
+    add: name => perched.add(name),
+    remove: name => perched.delete(name),
+  }, querySelector: selector => ({
     '.home-frog-tongue-color': tongue, '.home-frog-tongue-base': base, '.home-frog-tongue-glint': glint, '.home-frog-fly': fly,
   })[selector] };
   const listeners = {};
@@ -149,6 +153,22 @@ test('the larger interaction area ends before More from CineWall', () => {
   assert.equal(narrow.flight.hidden, false);
   narrow.move(150, 179);
   assert.equal(narrow.flight.hidden, true);
+});
+
+test('Flai turns with its actual side of the button and stays steady around the midpoint', () => {
+  const state = interaction();
+  state.move(135, 130);
+  assert.equal(state.perched.has('faces-right'), false);
+  state.move(190, 130, 'mouse', 20);
+  assert.equal(state.perched.has('faces-right'), false, 'turn waits for the trailing fly to cross');
+  for (let now = 40; now <= 620; now += 20) state.advance(now);
+  assert.equal(state.perched.has('faces-right'), true);
+  state.move(155, 130, 'mouse', 640);
+  for (let now = 660; now <= 1200; now += 20) state.advance(now);
+  assert.equal(state.perched.has('faces-right'), true, 'the midpoint keeps the previous pose');
+  state.move(130, 130, 'mouse', 1220);
+  for (let now = 1240; now <= 1800; now += 20) state.advance(now);
+  assert.equal(state.perched.has('faces-right'), false);
 });
 
 test('the frog crouches to aim before the tongue flicks out', () => {

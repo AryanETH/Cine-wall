@@ -14,6 +14,7 @@
   const restricted = remoteRestricted || (isPhone && (/\/(admin|screen|share)\.html$/.test(location.pathname) || location.pathname === '/connect.html' && entryMode !== 'mic'));
   window.CineWallDeviceSupport = { isPhone, restricted };
   if (isMobile) document.documentElement.classList.add('device-mobile');
+  if (isPhone) document.documentElement.classList.add('device-phone');
   if (!isPhone && !remoteRestricted) return;
   if (restricted) document.documentElement.classList.add('device-restricted');
 

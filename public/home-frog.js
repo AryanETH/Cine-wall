@@ -223,6 +223,12 @@
     const following = Math.hypot(targetX - chase.x, targetY - chase.y) > .45;
     if (!following) { chase.x = targetX; chase.y = targetY; }
     const { x, y } = chase;
+    // Follow the visible fly, including its trip back to the resting spot.
+    // A small dead zone keeps the pose steady near the button's midpoint.
+    const middle = bounds.left + bounds.width * .5;
+    if (wantsPerch && !following) flight.classList.toggle('faces-right', x > middle);
+    else if (x > middle + 4) flight.classList.add('faces-right');
+    else if (x < middle - 4) flight.classList.remove('faces-right');
     const restMouth = restLeft + frogRect.width * .5;
     const reach = (x - restMouth) / Math.max(1, rightEdge - restMouth);
     const pullStrength = Math.max(0, Math.min(1, (reach - .8) / .2));
