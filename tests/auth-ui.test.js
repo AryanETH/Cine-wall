@@ -160,6 +160,14 @@ test('Google cancellation stays on the form, and successful retry preserves the 
   assert.deepEqual(f.navigations, ['/share.html?room=demo']);
 });
 
+test('Google popup success finishes the session even when its token event arrives before the popup closes', async () => {
+  const f=await fixture(true,{customize:({sdk,auth})=>{
+    sdk.signInWithPopup=async()=>{auth.currentUser=signedInUser;return {user:signedInUser};};
+  }});
+  await f.node('#googleSignIn').handlers.click();await tick();
+  assert.deepEqual(f.navigations,['/admin.html?mode=video']);
+});
+
 test('an expired SMS code returns to the number form and SMS-only accounts must add an email', async () => {
   let attempts = 0;
   const f = await fixture(true, { customize: ({ sdk, auth }) => {

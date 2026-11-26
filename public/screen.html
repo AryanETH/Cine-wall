@@ -14,15 +14,15 @@
   <script src="icons.js?v=20261029-settings-19"></script>
   <script src="theme.js"></script>
   <script src="device-support.js?v=20261025-mobile-42"></script>
-  <script src="session.js?v=20261104-room-auth-1"></script>
-  <script src="media-peer.js?v=20261126-local-tracks"></script>
+  <script src="session.js?v=20261127-reconnect"></script>
+  <script src="media-peer.js?v=20261127-reconnect"></script>
   <link rel="stylesheet" href="styles.css?v=20261111-ad-timeline">
   <link rel="stylesheet" href="wall-ads.css?v=4">
   <link rel="stylesheet" href="hand-controls.css?v=20261029-player-5">
-  <link rel="stylesheet" href="player-features.css?v=20261126-captions-card">
+  <link rel="stylesheet" href="player-features.css?v=20261127-controls">
   <link rel="stylesheet" href="device-support.css?v=20261025-mobile-42">
   <link rel="stylesheet" href="/rooms.css?v=20261027-links-3">
-<script src="/account-guard.js?v=20261108-account-flow" defer></script></head>
+<script src="/account-guard.js?v=20261127-renew" defer></script></head>
 <body class="screen-body" data-session-mode="video">
   <div class="wall-viewport">
     <div id="wallStage" class="wall-stage mode-crop">
@@ -101,6 +101,18 @@
         </div>
       </details>
       <span id="playerFeatureStatus" class="player-feature-note" role="status"></span>
+      <details id="playerFitMenu" data-video-only>
+        <summary title="Picture fit" aria-label="Picture fit"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M5 11V8h4m10 5v3h-4"/></svg></summary>
+        <div class="player-feature-panel"><label>Picture fit<select id="playerPictureFit"><option value="crop">Crop</option><option value="stretch">Stretch</option></select></label></div>
+      </details>
+      <details id="playerVideoViewMenu" data-video-only>
+        <summary title="Video view" aria-label="Video view"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="m2 7 5-3 5 3 5-3 5 3v10l-5 3-5-3-5 3-5-3Zm10 0v10M7 4v16M17 4v16"/></svg></summary>
+        <div class="player-feature-panel"><label>Video view<select id="playerVideoView"><option value="normal">Normal</option><option value="anaglyph">3D view</option></select></label></div>
+      </details>
+      <details id="playerSoundModeMenu">
+        <summary title="Sound mode" aria-label="Sound mode"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M3 13v-2a9 9 0 0 1 18 0v2M3 12h4v9H3zm14 0h4v9h-4Z"/></svg></summary>
+        <div class="player-feature-panel"><label>Sound mode<select id="playerSoundMode"><option value="personal">Normal</option><option value="3d">3D Sound</option></select></label></div>
+      </details>
     </div>
   </header>
   <div id="playerCaptionsLayer" class="player-captions-layer" hidden><div id="playerCaptionText" tabindex="0" aria-label="Caption position"></div></div>
@@ -216,8 +228,8 @@
   <script src="wall-ads.js?v=5"></script>
   <script src="ad-timeline.js?v=1"></script>
   <script src="captions.js?v=1"></script>
-  <script src="player-features.js?v=20261126-caption-render-2"></script>
-  <script src="desktop-entry.js?v=20261025-mobile-42" data-src="screen.js?v=20261126-theme-speed"></script>
+  <script src="player-features.js?v=20261127-admin-strip"></script>
+  <script src="desktop-entry.js?v=20261025-mobile-42" data-src="screen.js?v=20261127-admin-strip"></script>
   <script src="/rooms-ui.js?v=20261104-room-auth-1"></script>
 </body>
 </html>

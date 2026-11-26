@@ -15,6 +15,7 @@ const artifacts = path.resolve('.cinema-cache');
 fs.mkdirSync(artifacts, {recursive:true});
 const mkv = process.argv.includes('--mkv');
 const long = process.argv.includes('--long');
+const remote = process.argv.includes('--remote');
 const chrome = 'C:/Program Files/Google/Chrome/Application/chrome.exe';
 
 async function waitFor(probe, name, timeout = 5000) {
@@ -32,7 +33,7 @@ async function waitFor(probe, name, timeout = 5000) {
 }
 
 const testKeys=require('node:crypto').generateKeyPairSync('rsa',{modulusLength:2048});
-let browser, site, socket;
+let browser, receiverBrowser, site, socket;
 async function verify() {
   const reserved = net.createServer();
   await new Promise(resolve => reserved.listen(0, '127.0.0.1', resolve));
@@ -47,7 +48,7 @@ async function verify() {
   await waitFor(async () => (await fetch(base + '/health', { signal: AbortSignal.timeout(500) })).ok, 'CineWall');
   const profile = path.join(testRoot, 'chrome');
   browser = spawn(chrome, ['--headless', '--disable-gpu', '--disable-background-networking', '--no-first-run',
-    '--no-default-browser-check', '--remote-debugging-port=0', '--user-data-dir=' + profile,
+    '--no-default-browser-check', '--disable-features=WebRtcHideLocalIpsWithMdns', '--remote-debugging-port=0', '--user-data-dir=' + profile,
     '--host-resolver-rules=MAP * ~NOTFOUND, EXCLUDE localhost, EXCLUDE 127.0.0.1', 'about:blank'],
     { windowsHide: true, stdio: 'ignore' });
   const debugPort = await waitFor(() => fs.readFileSync(path.join(profile, 'DevToolsActivePort'), 'utf8').split(/\r?\n/)[0], 'browser');
@@ -101,22 +102,48 @@ async function verify() {
   await send('Page.addScriptToEvaluateOnNewDocument',{source:"localStorage.setItem('cinewall-device',"+JSON.stringify(identity['X-CineWall-Device'])+");localStorage.setItem('cinewall-device-key',"+JSON.stringify(identity['X-CineWall-Key'])+");"});
   await send('Page.navigate',{url:base+'/admin.html?mode=video&room='+room.room});
   await waitFor(()=>evaluate("document.readyState==='complete' && typeof filePeer==='object' && window.CineWallSession?.membership?.admin && !document.querySelector('#adminAssetFile').disabled"),'source dashboard',15000);
+  if(remote)await evaluate("Object.defineProperty(window.CineWallSession,'hosted',{value:true})");
   const doc=await send('DOM.getDocument');
   const input=await send('DOM.querySelector',{nodeId:doc.root.nodeId,selector:'#adminAssetFile'});
   await send('DOM.setFileInputFiles',{nodeId:input.nodeId,files:[fixture]});
   await waitFor(async()=>{const result=await api('/api/status?room='+room.room);return result.state.asset?.source==='peer';},'Instant movie published',15000);
   const sourceSocket=socket;
-  const target=await send('Target.createTarget',{url:'about:blank'});
-  const pages=await (await fetch('http://127.0.0.1:'+debugPort+'/json/list')).json();
-  socket=new WebSocket(pages.find(page=>page.id===target.targetId).webSocketDebuggerUrl);
+  let pageSocket;
+  if(remote){
+    const receiverProfile=path.join(testRoot,'receiver-chrome');
+    receiverBrowser=spawn(chrome,['--headless','--disable-gpu','--disable-background-networking','--no-first-run','--no-default-browser-check','--disable-features=WebRtcHideLocalIpsWithMdns','--remote-debugging-port=0','--user-data-dir='+receiverProfile,'about:blank'],{windowsHide:true,stdio:'ignore'});
+    const receiverPort=await waitFor(()=>fs.readFileSync(path.join(receiverProfile,'DevToolsActivePort'),'utf8').split(/\r?\n/)[0],'receiver browser');
+    const pages=await(await fetch('http://127.0.0.1:'+receiverPort+'/json/list')).json();
+    pageSocket=pages.find(page=>page.type==='page').webSocketDebuggerUrl;
+  }else{
+    const target=await send('Target.createTarget',{url:'about:blank'});
+    const pages=await (await fetch('http://127.0.0.1:'+debugPort+'/json/list')).json();
+    pageSocket=pages.find(page=>page.id===target.targetId).webSocketDebuggerUrl;
+  }
+  socket=new WebSocket(pageSocket);
   await new Promise(resolve=>socket.addEventListener('open',resolve,{once:true}));
   socket.addEventListener('message',event=>{const message=JSON.parse(event.data),resolve=messages.get(message.id);if(resolve){messages.delete(message.id);resolve(message);}});
   await send('Page.enable');
   await send('Emulation.setDeviceMetricsOverride',{width:1280,height:800,deviceScaleFactor:1,mobile:false});
+  if(remote){
+    await send('Network.setCookie',{name:cookie[0],value:cookie[1],url:base,path:'/'});
+    await send('Page.addScriptToEvaluateOnNewDocument',{source:"localStorage.setItem('cinewall-device',"+JSON.stringify(identity['X-CineWall-Device'])+");localStorage.setItem('cinewall-device-key',"+JSON.stringify(identity['X-CineWall-Key'])+");"});
+  }
   await send('Page.navigate',{url:base+'/screen.html?screen=1&room='+room.room});
-  await waitFor(()=>evaluate("document.readyState==='complete' && window.CineWallSession?.membership?.admin && document.querySelector('#video').readyState>=2"),'signed-in player',15000);
+  try { await waitFor(()=>evaluate("document.readyState==='complete' && window.CineWallSession?.membership?.admin && document.querySelector('#video').readyState>=2"),'signed-in player',25000); }
+  catch(error){console.log(await evaluate("({url:location.pathname,copy:document.querySelector('#waitingCopy')?.textContent,setup:document.querySelector('#setup')?.textContent?.slice(0,120),video:document.querySelector('#video')?.error?.message,peer:typeof filePeer!=='undefined'?filePeer?.connectionStatus():null,peerError:typeof filePeer!=='undefined'?filePeer?.lastConnectionError:null})"));throw error;}
   await evaluate("document.querySelector('#readyButton').click()");
   await waitFor(()=>evaluate("!document.querySelector('#playerFeatureMenu').hidden"),'top feature strip');
+  if(remote){
+    assert.equal(await evaluate('filePeer.connectionStatus()'),'connected');
+    await evaluate("for(const [id,peer]of filePeer.connections)filePeer.dropPeer(id,peer)");
+    const received=await evaluate("filePeer.range(0,1024).then(bytes=>bytes.byteLength)");
+    assert.equal(received,1024,'real data-channel reconnect returns the requested movie range');
+  }
+  for(const [id,value,key] of [['playerPictureFit','stretch','mode'],['playerPictureFit','crop','mode'],['playerVideoView','anaglyph','videoView'],['playerVideoView','normal','videoView'],['playerSoundMode','3d','audioMode'],['playerSoundMode','personal','audioMode']]) {
+    await evaluate('(()=>{const el=document.getElementById('+JSON.stringify(id)+');el.value='+JSON.stringify(value)+';el.dispatchEvent(new Event("change",{bubbles:true}))})()');
+    await waitFor(async()=>{const result=await api('/api/status?room='+room.room);return result.state[key]===value;},'player setting '+id+' '+value);
+  }
   assert.ok(await evaluate("document.querySelector('#screenHud').contains(document.querySelector('#playerHandSettings'))"));
   await evaluate("document.querySelector('#playerAudioMenu').open=true");
   await waitFor(()=>evaluate("Array.from(document.querySelector('#playerAudioTrack').options).some(o=>o.textContent.startsWith('Hindi'))"),'language choices');
@@ -161,6 +188,7 @@ async function verify() {
   await evaluate("window.__meterContext=new AudioContext();window.__meter=__meterContext.createAnalyser();window.__audioSource=__meterContext.createMediaStreamSource(playerAlternateAudio.captureStream());__audioSource.connect(__meter);window.__silentMeterGain=__meterContext.createGain();__silentMeterGain.gain.value=0;__meter.connect(__silentMeterGain).connect(__meterContext.destination);__meterContext.resume()");
   await waitFor(async()=>{const result=await api('/api/status?room='+room.room);return result.state.allReady;},'all displays ready');
   async function clickControl(selector) {
+    await send('Page.bringToFront');
     await send('Input.dispatchMouseEvent',{type:'mouseMoved',x:530,y:400});
     const rect=await evaluate('document.querySelector('+JSON.stringify(selector)+').getBoundingClientRect().toJSON()');
     const x=rect.left+rect.width/2,y=rect.top+rect.height/2;
@@ -215,13 +243,23 @@ async function verify() {
   await waitFor(()=>evaluate('Boolean(document.fullscreenElement)'),'one-click fullscreen');
   await clickControl('#screenFullscreen');
   await waitFor(()=>evaluate('!document.fullscreenElement'),'one-click exit fullscreen');
+  await api('/api/rooms/mode?room='+room.room,{mode:'audio'});
+  const song=path.join(testRoot,'song.m4a');
+  require('node:child_process').execFileSync('ffmpeg',['-nostdin','-v','error','-i',fixture,'-map','0:1','-vn','-c:a','aac',song],{windowsHide:true});
+  await api('/api/media?room='+room.room+'&kind=audio&name=song.m4a',fs.readFileSync(song),{'Content-Type':'audio/mp4'});
+  await waitFor(()=>evaluate('document.body.dataset.sessionMode==="audio" && !playerFeatureMenu.hidden && video.readyState>=2'),'audio mode top strip',12000);
+  assert.equal(await evaluate('getComputedStyle(speakerStage).backgroundColor'),'rgb(0, 0, 0)');
+  assert.ok(await evaluate('playerCaptionsMenu.hidden && playerFitMenu.hidden && playerVideoViewMenu.hidden && !playerSoundModeMenu.hidden'));
+  await evaluate('playerSoundMode.value="3d";playerSoundMode.dispatchEvent(new Event("change",{bubbles:true}))');
+  await waitFor(async()=>{const result=await api('/api/status?room='+room.room);return result.state.audioMode==='3d';},'audio player 3D sound');
   sourceSocket.close();
-  console.log(JSON.stringify({instantSource:true,nonSilentAudioRms:signal,originalSoundRestored:true,container:mkv?'MKV / AC3':'MP4 / AAC',selectedAudioFrequency:frequency,muteAndRestore:true,exclusiveMenus:true,themedStrips:true,volumeColours:true,sectionBoundaryAndDeepSwitch:long,languageSwitch:true,embeddedCaptions:true,captionResize:true,captionDragShared:true,hideAfter4s:true,cameraOnTop:true,realTransportClicks:true,fullscreenToggle:true,audioVideoDrift:+drift.toFixed(3)}));
+  console.log(JSON.stringify({instantSource:true,remoteWebRtcAndRecovery:remote,audioBlackAnd3DSound:true,playerFitAnd3DControls:true,nonSilentAudioRms:signal,originalSoundRestored:true,container:mkv?'MKV / AC3':'MP4 / AAC',selectedAudioFrequency:frequency,muteAndRestore:true,exclusiveMenus:true,themedStrips:true,volumeColours:true,sectionBoundaryAndDeepSwitch:long,languageSwitch:true,embeddedCaptions:true,captionResize:true,captionDragShared:true,hideAfter4s:true,cameraOnTop:true,realTransportClicks:true,fullscreenToggle:true,audioVideoDrift:+drift.toFixed(3)}));
 
 }
 verify().catch(error => { console.error(error); process.exitCode = 1; }).finally(async () => {
   socket?.close();
   browser?.kill();
+  receiverBrowser?.kill();
   site?.kill();
   await delay(350);
   if (path.dirname(testRoot).toLowerCase() === path.resolve(os.tmpdir()).toLowerCase() && /^cinewall-player-check-/.test(path.basename(testRoot))) {

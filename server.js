@@ -1140,11 +1140,9 @@ async function handle(req, res, url) {
       res.once('close', done);
     }
     if (url.pathname.startsWith('/api/player/')) {
-      const localTracksOnly = state.asset?.source === 'peer' && state.asset.transport !== 'relay' && !isLocalHost(req.headers.host);
       const version = url.searchParams.get('v');
       if (version !== state.asset?.version || !version) { json(res, 409, { error: 'The selected video changed.' }); return; }
       if (req.method === 'GET' && url.pathname === '/api/player/tracks') {
-        if (localTracksOnly) { json(res, 409, { error: 'For embedded language tracks, use CineWall on localhost or choose Upload. Instant movie bytes stay on your local network.' }); return; }
         json(res, 200, await playerTracks.tracks()); return;
       }
       if (req.method === 'POST') {
@@ -1154,18 +1152,13 @@ async function handle(req, res, url) {
         }
         if (url.pathname === '/api/player/options') {
           const settings = await readJson(req);
-          if (localTracksOnly && (typeof settings.audio === 'number' || /^\d+$/.test(String(settings.captions)))) {
-            json(res, 409, { error: 'Use CineWall on localhost or choose Upload to change embedded tracks.' }); return;
-          }
           json(res, 200, await playerTracks.select({ ...settings, version })); return;
         }
       }
       if (req.method === 'GET' && url.pathname === '/api/player/captions') {
-        if (localTracksOnly && url.searchParams.get('track') !== 'uploaded') { json(res, 409, { error: 'Use localhost or Upload for embedded captions.' }); return; }
         json(res, 200, await playerTracks.captions(url.searchParams.get('track'))); return;
       }
       if (['GET', 'HEAD'].includes(req.method) && url.pathname === '/api/player/audio') {
-        if (localTracksOnly) { json(res, 409, { error: 'Use localhost or Upload for embedded audio.' }); return; }
         await playerTracks.serveAudio(req, res, url.searchParams.get('track'), url.searchParams.get('start') || 0); return;
       }
       json(res, 405, { error: 'Method not allowed.' }); return;

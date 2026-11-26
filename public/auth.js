@@ -88,6 +88,10 @@
     'auth/password-does-not-meet-requirements': 'Choose a password that meets the password requirements.',
     'auth/user-token-expired': 'Your sign-in expired. Use another account to sign in again.',
     'auth/invalid-user-token': 'Your sign-in expired. Use another account to sign in again.',
+    'auth/unauthorized-domain': 'This site is not authorized for Google sign-in. Please contact CineWall support.',
+    'auth/operation-not-allowed': 'This sign-in method is currently unavailable. Try email sign-in.',
+    'auth/cancelled-popup-request': 'Another sign-in window is already open. Finish signing in there.',
+    'auth/web-storage-unsupported': 'Allow site storage for CineWall to finish signing in.',
   };
   async function run(action) {
     if (busy || leaving) return;
@@ -269,7 +273,10 @@
     });
     $('#googleSignIn').addEventListener('click', () => run(async () => {
       message('Opening Google sign-in…');
-      await sdk.signInWithPopup(auth, new sdk.GoogleAuthProvider());
+      const result = await sdk.signInWithPopup(auth, new sdk.GoogleAuthProvider());
+      // Some browsers deliver the token event before the popup finishes,
+      // while others deliver it afterwards. Always complete our own session.
+      if (result?.user) { syncAfterAction = true; forceAfterAction = true; }
     }));
     $('#toggleSignup').addEventListener('click', () => {
       signup = !signup;

@@ -212,6 +212,7 @@
       const response = await nativeFetch(scoped('/api/rooms/current', true), { headers: identityHeaders, cache: 'no-store' });
       const data = await response.json();
       if (!response.ok) {
+        if (response.status === 401 && await window.CineWallAccount?.refresh()) return;
         if ([401, 403, 404].includes(response.status)) { ended = true; reportError(Object.assign(new Error(data.error), { status: response.status })); }
         return;
       }

@@ -59,6 +59,7 @@ const adController = window.CineWallAds?.create({
 let handControls = null;
 const playerFeatures = window.CineWallPlayerFeatures?.create({
   video, link: url => window.CineWallSession?.link(url) || url, wake: showControls,
+  command: payload => command(payload),
   onAudioBlocked: () => { playBlocked.textContent = 'Click to enable the selected audio on this laptop'; playBlocked.classList.add('show'); },
 });
 if (playerFeatures) $('#screenHud').append($('#playerHandSettings'));
@@ -283,10 +284,9 @@ function updateLabels() {
   $('#screenPresentationControls').hidden = sessionMode !== 'presentation';
   $('#screenGesture').hidden = !(['video', 'youtube'].includes(sessionMode) && screenNumber === 1 && ready && currentState?.asset);
   const canControl = screenNumber === 1 && ready && !removedScreenNumber;
-  if (playerFeatures) {
-    $('#screenHud').hidden = !ready || Boolean(removedScreenNumber) || Boolean(currentState?.adBreak);
-    $('#screenHud').setAttribute('aria-hidden', String($('#screenHud').hidden));
-  }
+  const adminPlayer = canControl && window.CineWallSession?.membership?.admin === true;
+  $('#screenHud').hidden = !adminPlayer || Boolean(currentState?.adBreak);
+  $('#screenHud').setAttribute('aria-hidden', String($('#screenHud').hidden));
   screenControls.hidden = !canControl;
   screenControls.setAttribute('aria-hidden', String(!canControl));
   screenControls.classList.toggle('available', canControl);
@@ -1032,7 +1032,7 @@ function correctDrift(playbackState, updateAppearance = true) {
   // Never chase the clock through a seek/buffer recovery. Repeated seeks here
   // discard useful decoder progress and range reads on slower guest laptops.
   if (video.seeking || video.readyState < 3 || audioWaiting || video.ended) { video.playbackRate = 1; return; }
-  if (Math.abs(drift) > 0.12 && performance.now() - lastDriftSeek > 1500) {
+  if (Math.abs(drift) > 0.75 && performance.now() - lastDriftSeek > 2500) {
     lastDriftSeek = performance.now();
     seekTo(target);
     video.playbackRate = 1;

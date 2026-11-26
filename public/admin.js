@@ -1491,3 +1491,17 @@ async function bootstrap() {
 
 
 bootstrap();
+
+// Keep the source laptop awake while it is actively serving a room. Browsers
+// release screen locks when hidden; reacquire when the dashboard is visible.
+let sourceWakeLock = null, sourceWakePending = false;
+async function keepSourceAwake() {
+  if (document.visibilityState !== 'visible' || !status.state.asset || !navigator.wakeLock || sourceWakeLock || sourceWakePending) return;
+  sourceWakePending = true;
+  try { sourceWakeLock = await navigator.wakeLock.request('screen'); sourceWakeLock.addEventListener('release', () => { sourceWakeLock = null; }); }
+  catch { /* Playback and reconnection remain available without a wake lock. */ }
+  finally { sourceWakePending = false; }
+}
+document.addEventListener('visibilitychange', keepSourceAwake);
+window.addEventListener('pointerdown', keepSourceAwake, { passive:true });
+window.addEventListener('pagehide', () => { void sourceWakeLock?.release(); });

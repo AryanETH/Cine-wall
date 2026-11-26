@@ -116,8 +116,9 @@
       });
       this.events.addEventListener('source-range', async (event) => {
         const request = JSON.parse(event.data);
-        const localTracks = request.purpose === 'tracks' && (location.hostname === 'localhost' || localAddress(location.hostname));
-        if ((this.asset?.transport !== 'relay' && !localTracks) || !this.file || request.version !== this.asset?.version || !Number.isSafeInteger(request.start) || !Number.isSafeInteger(request.end) || request.start < 0 || request.end < request.start || request.end >= this.file.size || request.end - request.start >= 512 * 1024) return;
+        // Movie playback remains on the direct link. Only authenticated track
+        // extraction requests may read bounded ranges through the server.
+        if ((this.asset?.transport !== 'relay' && request.purpose !== 'tracks') || !this.file || request.version !== this.asset?.version || !Number.isSafeInteger(request.start) || !Number.isSafeInteger(request.end) || request.start < 0 || request.end < request.start || request.end >= this.file.size || request.end - request.start >= 512 * 1024) return;
         if (this.sourceReplies.has(request.id)) return;
         this.sourceReplies.add(request.id);
         try {
@@ -271,6 +272,22 @@
       } catch (error) { this.local.postMessage({ ...reply, error: error.message }); }
     }
     async range(start, end) {
+      const generation = this.generation;
+      for (let attempt = 0; ; attempt++) {
+        try {
+          const bytes = await this.readRange(start, end);
+          if (attempt) { this.lastConnectionError = ''; this.notifyConnectionStatus(); }
+          return bytes;
+        } catch (error) {
+          if (attempt || generation !== this.generation || error.name === 'AbortError' || error.code === 'CINEWALL_SOURCE_CHANGED' || this.file || this.localSource) throw error;
+          const id = this.asset?.peerId, peer = this.connections.get(id);
+          if (peer) this.dropPeer(id, peer);
+          // Retry the exact bytes after renegotiating; never silently skip a
+          // failed movie range or force the user to reopen the shared link.
+        }
+      }
+    }
+    async readRange(start, end) {
       const asset = this.asset;
       const generation = this.generation;
       if (!asset || !Number.isSafeInteger(start) || !Number.isSafeInteger(end) || start < 0 || end > asset.size || end <= start || end - start > 256 * 1024) throw new Error('Invalid movie range');
@@ -306,7 +323,7 @@
         this.dropPeer(id, peer);
         this.report(new Error(localOnly ? HOTSPOT_HELP : 'Connection to the admin source was lost. Keep the admin tab open and check network access between the Devices.'));
       } this.notifyConnectionStatus(); };
-      const bind = (channel) => { peer.channel = channel; channel.binaryType = 'arraybuffer'; channel.bufferedAmountLowThreshold = 128 * 1024; channel.onmessage = (event) => this.onData(peer, event.data); channel.onopen = channel.onclose = () => this.notifyConnectionStatus(); };
+      const bind = (channel) => { peer.channel = channel; channel.binaryType = 'arraybuffer'; channel.bufferedAmountLowThreshold = 128 * 1024; channel.onmessage = (event) => { if (peer.channel === channel) this.onData(peer, event.data); }; channel.onopen = () => { if (peer.channel !== channel) return; this.lastConnectionError = ''; this.notifyConnectionStatus(); }; channel.onclose = () => { if (peer.channel !== channel) return; if (!peer.closed) this.dropPeer(id, peer); this.notifyConnectionStatus(); }; };
       pc.ondatachannel = (event) => bind(event.channel);
       if (offer) { bind(pc.createDataChannel('movie-ranges', { ordered: true })); await pc.setLocalDescription(await pc.createOffer()); if (generation !== this.generation) throw sourceChanged(); await this.request('/api/peer-signal', { from:this.id, to:id, assetVersion, description:localOnly ? hotspotDescription(pc.localDescription) : pc.localDescription }); }
       this.notifyConnectionStatus();
@@ -354,9 +371,11 @@
       }
       if (!this.asset && !this.file) return;
       const generation = this.generation;
+      const existing = this.connections.get(data.from);
+      if (data.description?.type === 'offer' && existing?.pc.remoteDescription) this.dropPeer(data.from, existing);
       const peer = await this.getPeer(data.from, false);
       if (generation !== this.generation || peer.closed) return;
-      peer.signalQueue = (peer.signalQueue || Promise.resolve()).then(async () => {
+      peer.signalQueue = (peer.signalQueue || Promise.resolve()).catch(() => {}).then(async () => {
       if (generation !== this.generation || peer.closed) return;
       if (data.description) {
         await peer.pc.setRemoteDescription(peer.localOnly ? hotspotDescription(data.description) : data.description);

@@ -7,7 +7,8 @@ self.addEventListener('activate', (event) => event.waitUntil((async () => {
 function ask(client, payload) {
   return new Promise((resolve, reject) => {
     const channel = new MessageChannel();
-    const timer = setTimeout(() => { channel.port1.close(); reject(new Error('Admin file source is unavailable')); }, 25000);
+    // A cold ICE connection plus one exact-range reconnect can exceed 25s.
+    const timer = setTimeout(() => { channel.port1.close(); reject(new Error('Admin file source is unavailable')); }, 75000);
     channel.port1.onmessage = (event) => { clearTimeout(timer); channel.port1.close(); event.data.error ? reject(new Error(event.data.error)) : resolve(event.data); };
     client.postMessage(payload, [channel.port2]);
   });

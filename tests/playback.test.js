@@ -94,6 +94,16 @@ function player(screen, mode = 'video', peer = null, fullscreen = async () => {}
   return { context, state, nodes, statuses, documentHandlers, timers, intervals, evaluate: (code) => vm.runInContext(code, context) };
 }
 
+test('only the admin player on display 1 shows the top strip, including after mouse movement', async () => {
+  for (const [screen,admin,visible] of [[1,true,true],[1,false,false],[2,true,false],[2,false,false]]) {
+    const client=player(screen);await nextTurn();
+    client.context.window.CineWallSession={membership:{admin}};
+    client.evaluate('updateLabels(); showControls()');
+    assert.equal(client.nodes.get('#screenHud').hidden,!visible);
+    assert.equal(client.nodes.get('#screenHud')['aria-hidden'],String(!visible));
+  }
+});
+
 test('player mute cancels pending slider unmute and restores the just-selected level', async () => {
   const client = player(1); await nextTurn(); const requests = [];
   client.context.fetch = async (route, init) => new Promise(resolve => requests.push({ body: JSON.parse(init.body), resolve }));

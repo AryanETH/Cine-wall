@@ -4,11 +4,11 @@ const fs = require('node:fs'), path = require('node:path'), vm = require('node:v
 const tick = () => new Promise(setImmediate);
 const account = { name: 'Test Viewer', email: 'viewer@example.test' };
 
-async function runGuard({ home = false, session }) {
+async function runGuard({ home = false, session, user = null, onRenew = () => ({ok:true}) }) {
   const code = fs.readFileSync(path.join(__dirname, '../public/account-guard.js'), 'utf8')
     .replace(/import\('[^']+firebase-app.js'\)/, 'Promise.resolve(mockAppSdk)')
     .replace(/import\('[^']+firebase-auth.js'\)/, 'Promise.resolve(mockAuthSdk)');
-  const nodes = new Map(), events = {}, navigations = [], auth = { currentUser: null };
+  const nodes = new Map(), events = {}, navigations = [], auth = { currentUser: user, authStateReady: async () => {} };
   function node(selector) {
     if (!nodes.has(selector)) nodes.set(selector, {
       hidden: true, handlers: {}, attrs: {}, focus() {},
@@ -29,12 +29,13 @@ async function runGuard({ home = false, session }) {
     mockAuthSdk: { getAuth: () => auth, onIdTokenChanged(_, listener) { listener(auth.currentUser); } },
     fetch: async (url, options) => {
       if (url === '/api/auth/config') return { ok: true, json: async () => ({ enabled: true }) };
+      if (url === '/api/auth/session' && options?.method === 'POST') return { ...onRenew(JSON.parse(options.body)), json:async()=>({account}) };
       if (url === '/api/auth/session' && options?.method !== 'POST') return { ok: true, json: session };
       throw Error('Unexpected request: ' + url);
     },
   };
   await vm.runInNewContext(code, context); await tick();
-  return { node, events, navigations };
+  return { node, events, navigations, context };
 }
 
 test('profile button opens the landing card and a late response cannot reopen it after cross-tab logout', async () => {
@@ -53,6 +54,15 @@ test('profile button opens the landing card and a late response cannot reopen it
   assert.equal(card.hidden, true);
   assert.equal(trigger.hidden, true);
   assert.equal(f.node('#accountLink').hidden, false);
+});
+
+test('an expired player session renews its verified Firebase token before redirecting', async () => {
+  let restored=false, forced=false;
+  const f=await runGuard({session:()=>({authenticated:restored,account}),
+    user:{emailVerified:true,getIdToken:async force=>{forced=forced||force;return 'fresh-token';}},
+    onRenew:body=>{assert.equal(body.idToken,'fresh-token');restored=true;return {ok:true};}});
+  await f.context.window.CineWallAccount.refresh();
+  assert.equal(forced,true);assert.equal(restored,true);assert.deepEqual(f.navigations,[]);
 });
 
 test('without Firebase browser storage, a valid server session still keeps a protected screen open', async () => {
