@@ -504,6 +504,24 @@ test('hotspot validates the selected route before transferring bytes and never a
   owner.clear();
 });
 
+test('embedded-track ranges use the local CineWall backend only and never send hotspot files to a hosted server', async () => {
+  const client=peerPage(), owner=new client.api.FilePeer(), file=virtualFile(1000000);
+  owner.asset=(await owner.publish(file)).asset; owner.asset.transport='hotspot';
+  let replies=0;
+  client.context.fetch=async(route,options)=>{assert.match(route,/\/api\/source\/range/);assert.equal(options.body.byteLength,20);replies++;return {ok:true,status:200};};
+  const event={data:JSON.stringify({id:'tracks',version:owner.asset.version,start:100,end:119,purpose:'tracks'})};
+  client.context.location=new URL('https://watch.aitoyz.in/');
+  await client.events[0].handlers['source-range'](event);
+  assert.equal(replies,0);
+  client.context.location=new URL('http://localhost:4173/');
+  await client.events[0].handlers['source-range'](event);
+  assert.equal(replies,1);
+  client.context.location=new URL('http://192.168.137.1:4173/');
+  await client.events[0].handlers['source-range'](event);
+  assert.equal(replies,2);
+  owner.clear();
+});
+
 function workerPage(file) {
   const handlers = {}, requests = [];
   const self = { addEventListener: (name, callback) => { handlers[name] = callback; }, clients: { async get(id) {

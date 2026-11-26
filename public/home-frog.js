@@ -226,7 +226,7 @@
     // Follow the visible fly, including its trip back to the resting spot.
     // A small dead zone keeps the pose steady near the button's midpoint.
     const middle = bounds.left + bounds.width * .5;
-    if (wantsPerch && !following) flight.classList.toggle('faces-right', x > middle);
+    if (wantsPerch && !following) flight.classList.remove('faces-right');
     else if (x > middle + 4) flight.classList.add('faces-right');
     else if (x < middle - 4) flight.classList.remove('faces-right');
     const restMouth = restLeft + frogRect.width * .5;

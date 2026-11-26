@@ -116,7 +116,8 @@
       });
       this.events.addEventListener('source-range', async (event) => {
         const request = JSON.parse(event.data);
-        if (this.asset?.transport !== 'relay' || !this.file || request.version !== this.asset?.version || !Number.isSafeInteger(request.start) || !Number.isSafeInteger(request.end) || request.start < 0 || request.end < request.start || request.end >= this.file.size || request.end - request.start >= 512 * 1024) return;
+        const localTracks = request.purpose === 'tracks' && (location.hostname === 'localhost' || localAddress(location.hostname));
+        if ((this.asset?.transport !== 'relay' && !localTracks) || !this.file || request.version !== this.asset?.version || !Number.isSafeInteger(request.start) || !Number.isSafeInteger(request.end) || request.start < 0 || request.end < request.start || request.end >= this.file.size || request.end - request.start >= 512 * 1024) return;
         if (this.sourceReplies.has(request.id)) return;
         this.sourceReplies.add(request.id);
         try {
