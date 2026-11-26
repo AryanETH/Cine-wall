@@ -57,6 +57,11 @@ const adController = window.CineWallAds?.create({
   togglePlayback,
 });
 let handControls = null;
+const playerFeatures = window.CineWallPlayerFeatures?.create({
+  video, link: url => window.CineWallSession?.link(url) || url, wake: showControls,
+  onAudioBlocked: () => { playBlocked.textContent = 'Click to enable the selected audio on this laptop'; playBlocked.classList.add('show'); },
+});
+if (playerFeatures) $('#screenHud').append($('#playerHandSettings'));
 let currentAssetVersion = '';
 let endedAssetVersion = '';
 let endedEventId = '';
@@ -208,7 +213,6 @@ function setLayout(count) {
 }
 
 function updateFullscreenPrompt() {
-  $('#enterPlayerFullscreen').hidden = !ready || Boolean(document.fullscreenElement) || !document.documentElement.requestFullscreen;
   for (const id of ['#screenFullscreen', '#screenPresentationFullscreen']) {
     const button = $(id);
     const active = Boolean(document.fullscreenElement);
@@ -265,7 +269,6 @@ function updateLabels() {
   if (ready && !defaultFullscreenAttempted) { defaultFullscreenAttempted = true; enterPlayerFullscreen(); }
   const details = modeDetails[sessionMode];
   document.body.dataset.sessionMode = sessionMode;
-  $('#screenBrandIcon').innerHTML = details.icon;
   $('#screenLabel').textContent = screenNumber ? `${sessionMode === 'audio' ? 'Speaker' : 'Display'} ${screenNumber} · ${screenRole(screenNumber)}` : `${details.noun} not ready`;
   $('#setupModeLabel').textContent = `${details.noun[0].toUpperCase()}${details.noun.slice(1)} setup`;
   $('#setupKicker').textContent = details.setup;
@@ -278,9 +281,12 @@ function updateLabels() {
   $('#waitingCopy').textContent = sessionMode === 'presentation' ? 'The document will appear here automatically.' : sessionMode === 'youtube' ? 'The YouTube video will appear here automatically.' : `The ${sessionMode} will appear here automatically.`;
   $('#screenMediaControls').hidden = sessionMode === 'presentation';
   $('#screenPresentationControls').hidden = sessionMode !== 'presentation';
-  $('#screenShortcuts').textContent = sessionMode === 'presentation' ? '← → · Change page   F · Fullscreen' : ['video', 'youtube'].includes(sessionMode) ? 'Space · Play/Pause   ← → · Seek   Double-click sides · 10s   F · Fullscreen' : 'Space · Play/Pause   ← → · Seek   F · Fullscreen';
   $('#screenGesture').hidden = !(['video', 'youtube'].includes(sessionMode) && screenNumber === 1 && ready && currentState?.asset);
   const canControl = screenNumber === 1 && ready && !removedScreenNumber;
+  if (playerFeatures) {
+    $('#screenHud').hidden = !ready || Boolean(removedScreenNumber) || Boolean(currentState?.adBreak);
+    $('#screenHud').setAttribute('aria-hidden', String($('#screenHud').hidden));
+  }
   screenControls.hidden = !canControl;
   screenControls.setAttribute('aria-hidden', String(!canControl));
   screenControls.classList.toggle('available', canControl);
@@ -337,8 +343,9 @@ function applyAudioSettings() {
     youtubePlayer.setVolume(setting.volume);
     youtubePlayer.setMuted(setting.muted);
   } else {
-    video.volume = Math.min(1, Math.max(0, Number(setting.volume) || 0));
-    video.muted = sessionMode === 'presentation' || localAutoplayMuted || Boolean(setting.muted);
+    const output = { volume: setting.volume, muted: sessionMode === 'presentation' || localAutoplayMuted || Boolean(setting.muted) };
+    if (playerFeatures) playerFeatures.applyAudio(output);
+    else { video.volume = Math.min(1, Math.max(0, Number(setting.volume) || 0)); video.muted = output.muted; }
     audioRouter?.set(currentState?.asset ? currentState.audioMode : 'personal', wallScreens, screenNumber, currentState?.asset?.version);
   }
 
@@ -347,6 +354,9 @@ function applyAudioSettings() {
   $('#screenMute').setAttribute('aria-label', actuallyMuted ? 'Unmute this Device' : 'Mute this Device');
   $('#screenMute').setAttribute('aria-pressed', String(actuallyMuted));
   const shownVolume = actuallyMuted ? 0 : setting.volume;
+  const volumeLevel = Math.min(1, Math.max(0, Number(shownVolume) || 0));
+  $('.screen-volume-row').style.setProperty('--volume-color', `rgb(${Math.round(22 + 217 * volumeLevel)} ${Math.round(137 - 69 * volumeLevel)} ${Math.round(255 - 187 * volumeLevel)})`);
+  $('.screen-volume-row').style.setProperty('--volume-percent', `${volumeLevel * 100}%`);
   adController?.audio(Number(setting.volume) || 0, actuallyMuted);
   slider.value = shownVolume; slider.dataset.muted = String(actuallyMuted);
   $('#screenVolumeValue').textContent = `${Math.round(shownVolume * 100)}%`;
@@ -853,7 +863,7 @@ async function playLocalMedia() {
     } catch (error) {
       if (error.name === 'NotAllowedError') {
         localAutoplayMuted = true;
-        video.muted = true;
+        applyAudioSettings();
         try {
           await video.play();
           playBlocked.textContent = sessionMode === 'audio' ? 'Click to enable this Device’s sound' : 'Video is playing · Click to enable this Device’s sound';
@@ -1035,18 +1045,25 @@ function correctDrift(playbackState, updateAppearance = true) {
 }
 
 function showControls() {
-  if (screenNumber !== 1 || !ready) return;
-  screenControls.classList.add('visible');
+  if (!ready) return;
+  if (screenNumber === 1) screenControls.classList.add('visible');
   $('#screenHud').classList.remove('fade');
+  screenControls.inert = false;
+  $('#screenHud').inert = false;
   clearTimeout(controlsTimer);
   controlsTimer = setTimeout(() => {
+    if (playerFeatures?.busy() || $('#handPlayerOptions')?.open) { showControls(); return; }
     screenControls.classList.remove('visible');
     $('#screenHud').classList.add('fade');
-  }, 3600);
+    screenControls.inert = true;
+    $('#screenHud').inert = true;
+  }, 4000);
 }
 
 function updateController() {
   syncPlayerHandControls();
+  playerFeatures?.sync(currentState, ready && !removedScreenNumber,
+    screenNumber === 1 && window.CineWallSession?.membership?.admin === true);
   updateAudioWaves();
   const isYouTube = sessionMode === 'youtube';
   let duration = 0;
@@ -1090,6 +1107,7 @@ function togglePlayback() {
     // Use this same click to unlock sound. Pause immediately while waiting for
     // the shared start, so one laptop cannot audibly run ahead of the other.
     void audioRouter?.resume();
+    void playerFeatures?.unlockAudio();
     localAutoplayMuted = false;
     applyAudioSettings();
     if (sessionMode !== 'youtube') {
@@ -1362,6 +1380,7 @@ readyButton.addEventListener('click', async () => {
   waitingAsset.classList.toggle('show', !currentState?.asset);
   applyAudioSettings();
   void audioRouter?.resume();
+  void playerFeatures?.unlockAudio();
   if (sessionMode === 'youtube' && youtubePlayer && youtubeReady) {
     const target = targetPosition(currentState);
     youtubePlayer.seek(target, true);
@@ -1380,7 +1399,7 @@ readyButton.addEventListener('click', async () => {
   } else if (sessionMode !== 'presentation' && Number.isFinite(video.duration)) {
     try {
       localAutoplayMuted = false;
-      video.muted = Boolean(audioSetting().muted);
+      applyAudioSettings();
       seekTo(targetPosition(currentState));
       await video.play();
       if (!currentState?.playing) video.pause();
@@ -1397,14 +1416,16 @@ playBlocked.addEventListener('click', async () => {
   enterPlayerFullscreen();
   try {
     const resumed = audioRouter?.resume();
+    const selectedSound = playerFeatures?.unlockAudio();
     if (sessionMode === 'youtube' && youtubePlayer && youtubeReady) youtubePlayer.play();
     else {
       localAutoplayMuted = false;
-      video.muted = Boolean(audioSetting().muted);
+      applyAudioSettings();
       await video.play();
       if (!currentState?.playing) video.pause();
     }
     if (resumed && !await resumed) throw new Error('3D sound is still blocked');
+    if (selectedSound && !await selectedSound) throw new Error('Selected audio is still blocked');
     playBlocked.classList.remove('show');
     lastError = '';
     postStatus();
@@ -1529,14 +1550,13 @@ $('#screenPlay').addEventListener('click', togglePlayback);
 $('#screenBack').addEventListener('click', () => seekRelative(-10));
 $('#screenForward').addEventListener('click', () => seekRelative(10));
 $('#screenFullscreen').addEventListener('click', togglePlayerFullscreen);
-$('#enterPlayerFullscreen').addEventListener('click', enterPlayerFullscreen);
 document.addEventListener('fullscreenchange', updateFullscreenPrompt);
 $('#screenPreviousPage').addEventListener('click', () => command({ type: 'previous-page' }));
 $('#screenNextPage').addEventListener('click', () => command({ type: 'next-page' }));
 $('#screenPresentationFullscreen').addEventListener('click', togglePlayerFullscreen);
 $('#screenMute').addEventListener('click', () => {
   const muted = !(audioSetting().muted || localAutoplayMuted);
-  if (!muted) { localAutoplayMuted = false; playBlocked.classList.remove('show'); resumeRoutedAudio(); }
+  if (!muted) { localAutoplayMuted = false; playBlocked.classList.remove('show'); resumeRoutedAudio(); void playerFeatures?.unlockAudio(); }
   command({ type: 'screen-audio', screen: screenNumber, muted });
 });
 $('#screenVolume').addEventListener('input', () => {
@@ -1569,9 +1589,11 @@ $('#screenGesture').addEventListener('dblclick', (event) => {
 });
 
 document.addEventListener('mousemove', showControls);
+document.addEventListener('pointerdown', showControls);
 document.addEventListener('click', showControls);
 screenControls.addEventListener('pointerdown', showControls);
 screenControls.addEventListener('focusin', showControls);
+$('#screenHud').addEventListener('focusin', showControls);
 $('#playerHandSettings')?.addEventListener('keydown', showControls);
 $('#playerHandSettings')?.addEventListener('focusin', showControls);
 document.addEventListener('keydown', (event) => {

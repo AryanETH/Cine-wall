@@ -171,6 +171,20 @@ test('Flai turns with its actual side of the button and stays steady around the 
   assert.equal(state.perched.has('faces-right'), false);
 });
 
+test('Flai faces left when resting after flying on the right', () => {
+  const state = interaction();
+  state.move(190, 130);
+  for (let now = 20; now <= 400; now += 20) state.advance(now);
+  assert.equal(state.perched.has('faces-right'), true);
+  state.rest();
+  for (let now = 540; now <= 1500; now += 20) state.advance(now);
+  assert.ok(state.perched.has('is-perched'));
+  assert.equal(state.perched.has('faces-right'), false);
+  state.move(195, 130, 'mouse', 1520);
+  for (let now = 1540; now <= 2100; now += 20) state.advance(now);
+  assert.equal(state.perched.has('faces-right'), true, 'flying on the right still faces right');
+});
+
 test('the frog crouches to aim before the tongue flicks out', () => {
   const state = interaction();
   state.move(175, 130);

@@ -152,20 +152,20 @@ test('timeline refresh does not overlap requests or reload an aligned movie', as
   assert.equal(client.evaluate('timelineCheckpointInFlight'), false);
 });
 
-test('every mode attempts fullscreen once on join, allows one-tap retry, and respects exiting fullscreen', async () => {
+test('every mode retries fullscreen through its single toolbar control and respects exiting fullscreen', async () => {
   for (const mode of ['video', 'audio', 'presentation', 'youtube']) {
     let calls = 0;
-    const client = player(2, mode, null, async (options) => { calls++; assert.equal(options.navigationUI, 'hide'); throw new Error('User gesture required'); });
+    const client = player(1, mode, null, async (options) => { calls++; assert.equal(options.navigationUI, 'hide'); throw new Error('User gesture required'); });
     await new Promise(setImmediate);
     assert.equal(calls, 1);
-    const prompt = client.nodes.get('#enterPlayerFullscreen');
-    assert.equal(prompt.hidden, false, `${mode}: blocked automatic entry exposes one-tap fallback`);
+    const control = client.nodes.get(mode === 'presentation' ? '#screenPresentationFullscreen' : '#screenFullscreen');
+    assert.equal(control.title, 'Enter fullscreen');
     client.evaluate('updateLabels(); updateLabels()'); assert.equal(calls, 1, 'no repeated fullscreen requests during sync');
     client.context.document.documentElement.requestFullscreen = async () => { calls++; client.context.document.fullscreenElement = client.context.document.documentElement; };
-    await prompt.handlers.click(); assert.equal(calls, 2); assert.equal(prompt.hidden, true);
+    await control.handlers.click(); assert.equal(calls, 2); assert.equal(control.title, 'Exit fullscreen');
     client.context.document.fullscreenElement = null;
     client.documentHandlers.fullscreenchange(); client.evaluate('updateLabels()');
-    assert.equal(prompt.hidden, false); assert.equal(calls, 2, 'Escape is respected; fullscreen does not immediately reopen');
+    assert.equal(control.title, 'Enter fullscreen'); assert.equal(calls, 2, 'Escape is respected; fullscreen does not immediately reopen');
   }
 });
 

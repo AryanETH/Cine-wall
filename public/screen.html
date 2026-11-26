@@ -15,10 +15,11 @@
   <script src="theme.js"></script>
   <script src="device-support.js?v=20261025-mobile-42"></script>
   <script src="session.js?v=20261104-room-auth-1"></script>
-  <script src="media-peer.js?v=20261117-recovery"></script>
+  <script src="media-peer.js?v=20261126-local-tracks"></script>
   <link rel="stylesheet" href="styles.css?v=20261111-ad-timeline">
   <link rel="stylesheet" href="wall-ads.css?v=4">
   <link rel="stylesheet" href="hand-controls.css?v=20261029-player-5">
+  <link rel="stylesheet" href="player-features.css?v=20261126-captions-card">
   <link rel="stylesheet" href="device-support.css?v=20261025-mobile-42">
   <link rel="stylesheet" href="/rooms.css?v=20261027-links-3">
 <script src="/account-guard.js?v=20261108-account-flow" defer></script></head>
@@ -73,14 +74,37 @@
     <span id="wallAdStatus" class="wall-ad-status" role="status"></span>
     <div class="wall-ad-progress" aria-hidden="true"><div id="wallAdProgressFill" class="wall-ad-progress-fill"></div></div>
   </section>
-  <header id="screenHud" class="screen-hud" hidden aria-hidden="true">
-    <div class="screen-brand"><span id="screenBrandIcon" class="fi">&#xE714;</span><strong>CINEWALL</strong></div>
-    <div class="screen-status-group">
-      <button class="theme-toggle screen-theme-toggle" data-theme-toggle type="button"><span class="fi" data-theme-icon>&#xE706;</span><span data-theme-label>Light</span></button>
-      <span id="screenLabel" class="screen-pill">Display not ready</span>
-      <span id="networkLabel" class="screen-pill network-pill"><span class="status-dot"></span><span>Connecting</span></span>
+  <header id="screenHud" class="screen-hud player-top-strip" hidden aria-hidden="true">
+    <div class="screen-brand"><img id="screenBrandIcon" src="/assets/removed_background (24).png" alt="CineWall" width="26" height="22"></div>
+    <span id="screenLabel" hidden></span>
+    <span id="networkLabel" hidden><span class="status-dot"></span><span>Connecting</span></span>
+    <div id="playerFeatureMenu" class="player-feature-menu" hidden>
+      <details id="playerCaptionsMenu">
+        <summary title="Captions" aria-label="Captions"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M10 10a3 3 0 1 0 0 4m9-4a3 3 0 1 0 0 4"/></svg></summary>
+        <div class="player-feature-panel">
+          <label>Track<select id="playerCaptionTrack"><option value="off">Off</option></select></label>
+          <span id="playerCaptionHint" class="player-feature-note" role="status"></span>
+          <label class="button subtle">Add SRT / VTT<input id="playerCaptionFile" type="file" accept=".srt,.vtt" hidden></label>
+          <label>Text size<input id="playerCaptionSize" type="range" min="12" max="96" value="32"></label>
+          <label>Width<input id="playerCaptionWidth" type="range" min="20" max="100" value="70"></label>
+          <label>Horizontal position<input id="playerCaptionX" type="range" min="0" max="100" value="50"></label>
+          <label>Vertical position<input id="playerCaptionY" type="range" min="0" max="100" value="84"></label>
+          <button id="playerCaptionMove" class="button subtle" type="button" aria-pressed="false">Move captions</button>
+          <span class="player-feature-note">Drag captions while Move captions is on.</span>
+        </div>
+      </details>
+      <details id="playerAudioMenu">
+        <summary title="Audio language" aria-label="Audio language"><span class="fi" aria-hidden="true">&#xE8D6;</span></summary>
+        <div class="player-feature-panel">
+          <label>Track<select id="playerAudioTrack"><option value="">Original audio</option></select></label>
+          <span id="playerTrackHint" class="player-feature-note"></span>
+        </div>
+      </details>
+      <span id="playerFeatureStatus" class="player-feature-note" role="status"></span>
     </div>
   </header>
+  <div id="playerCaptionsLayer" class="player-captions-layer" hidden><div id="playerCaptionText" tabindex="0" aria-label="Caption position"></div></div>
+  <audio id="playerAlternateAudio" preload="auto"></audio>
 
   <div id="waitingAsset" class="waiting-movie">
     <span id="waitingIcon" class="fi">&#xE8B2;</span>
@@ -117,13 +141,12 @@
         <button id="screenPresentationFullscreen" class="screen-control-button" title="Fullscreen" aria-label="Fullscreen"><span class="fi">&#xE740;</span></button>
       </div>
     </div>
-    <span id="screenShortcuts" class="screen-shortcuts">Space · Play/Pause &nbsp; ← → · Seek &nbsp; F · Fullscreen</span>
   </section>
 
   <section id="playerHandSettings" class="screen-hand-settings" aria-label="Hand gesture controls" hidden>
     <div id="handControlPanel" class="hand-panel" hidden>
       <div class="screen-hand-toggle-row">
-        <label class="hand-toggle" for="handControlToggle">Hand gestures <input id="handControlToggle" type="checkbox" role="switch"></label>
+        <label class="hand-toggle" for="handControlToggle" title="Hand gestures"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 12V5a1.5 1.5 0 0 1 3 0v6-8a1.5 1.5 0 0 1 3 0v8-6a1.5 1.5 0 0 1 3 0v7-3a1.5 1.5 0 0 1 3 0v6c0 5-3 7-7 7-3 0-4-1-6-4l-3-5a1.5 1.5 0 0 1 2.5-1.6L8 14"/></svg><input id="handControlToggle" type="checkbox" role="switch" aria-label="Hand gestures"></label>
         <details id="handPlayerOptions" class="screen-hand-options" hidden>
           <summary aria-label="Gesture camera and practice options" title="Camera and practice"><span class="fi" aria-hidden="true">&#xE713;</span></summary>
           <div class="hand-options-panel">
@@ -160,7 +183,6 @@
     <p>The admin can add this screen again.</p>
   </section>
   <div id="identify" class="identify"></div>
-  <button id="enterPlayerFullscreen" class="fullscreen-prompt" type="button" hidden><span class="fi" aria-hidden="true">&#xE740;</span>Enter fullscreen</button>
   <div id="connectionLost" class="connection-lost"><span class="fi">&#xEB55;</span><strong>Trying to reconnect</strong><small>Keep the admin tab open.</small></div>
   <button id="playBlocked" class="play-blocked"><span class="fi">&#xE768;</span>Click once to allow sound and playback</button>
 
@@ -193,7 +215,9 @@
   <script src="hand-controls.js?v=20261029-practice-6"></script>
   <script src="wall-ads.js?v=5"></script>
   <script src="ad-timeline.js?v=1"></script>
-  <script src="desktop-entry.js?v=20261025-mobile-42" data-src="screen.js?v=20261117-recovery"></script>
+  <script src="captions.js?v=1"></script>
+  <script src="player-features.js?v=20261126-caption-render-2"></script>
+  <script src="desktop-entry.js?v=20261025-mobile-42" data-src="screen.js?v=20261126-theme-speed"></script>
   <script src="/rooms-ui.js?v=20261104-room-auth-1"></script>
 </body>
 </html>

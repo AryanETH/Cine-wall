@@ -23,6 +23,7 @@ const firebaseConfig = require('./firebase-config');
 const { createAccountAuth, protectedPage } = require('./account-auth');
 const { isLocalHost, securityHeaders } = require('./request-security');
 const readJson = require('./request-json');
+const createPlayerTracks = require('./player-tracks');
 const { createVerificationSender } = require('./verification-email');
 const { createAdvertising } = require('./advertising');
 const sendVerification = createVerificationSender({ projectId: firebaseConfig().config?.projectId });
@@ -92,6 +93,12 @@ let adRun = null;
 let lastAd = null;
 let adTimer;
 let adCheckTimer;
+const playerTracks = createPlayerTracks({
+  asset: () => state.asset, file: () => assetFile,
+  changed: () => broadcast('state', snapshot()),
+  directory: CACHE_DIR,
+  peerStream: (req, res, version) => serveInstantAsset(req, res, { searchParams: new URLSearchParams({ v: version }) }, true),
+});
 
 function defaultAudioSettings(all = false) {
   return Object.fromEntries(Array.from({ length: 5 }, (_, index) => [String(index + 1), { volume: 1, muted: !all && index > 0 }]));
@@ -164,7 +171,7 @@ function snapshot() {
   syncAdSchedule();
   const active = activeAd();
   const upcoming = active ? null : adSlotAt(nextAdIndex());
-  return { ...state, ...(active ? { adBreak: publicAd() } : {}), adPreload: upcoming ? adMedia(upcoming) : null, seekPending: Boolean(pendingSeek), seekResume: Boolean(pendingSeek?.resume), ownerId: record?.admin.id || sourceOwner?.id || '', roomId: room || 'hotspot', allReady: allDisplaysReady(), preparation, serverId: SERVER_ID, serverTime: Date.now() };
+  return { ...state, playerOptions: playerTracks.sync(), ...(active ? { adBreak: publicAd() } : {}), adPreload: upcoming ? adMedia(upcoming) : null, seekPending: Boolean(pendingSeek), seekResume: Boolean(pendingSeek?.resume), ownerId: record?.admin.id || sourceOwner?.id || '', roomId: room || 'hotspot', allReady: allDisplaysReady(), preparation, serverId: SERVER_ID, serverTime: Date.now() };
 }
 
 function syncAdSchedule() {
@@ -989,7 +996,7 @@ function safeDownloadName(name) {
   return encodeURIComponent(String(name || 'shared-file').replace(/[\r\n]/g, ''));
 }
 
-async function serveInstantAsset(req, res, url) {
+async function serveInstantAsset(req, res, url, trackRead = false) {
   const asset = state.asset;
   if (!asset || asset.source !== 'peer' || url.searchParams.get('v') !== asset.version) { json(res, 409, { error: 'The selected file changed.' }); return; }
   let start = 0, end = asset.size - 1, status = 200;
@@ -1022,7 +1029,7 @@ async function serveInstantAsset(req, res, url) {
       const send = () => {
         if (state.asset?.version !== asset.version) { finish(new Error('The selected file changed.')); return; }
         const source = [...viewers].find(viewer => viewer.peerId === asset.peerId && !viewer.destroyed);
-        if (source) try { sendEvent(source, 'source-range', { id, version: asset.version, start: offset, end: chunkEnd }); } catch {}
+        if (source) try { sendEvent(source, 'source-range', { id, version: asset.version, start: offset, end: chunkEnd, ...(trackRead ? { purpose: 'tracks' } : {}) }); } catch {}
       };
       relayRequests.set(id, { version: asset.version, length: chunkEnd-offset+1, timer:setTimeout(()=>finish(new Error('Connection interrupted. Keep the admin source tab open and awake.')),30000),retryTimer:setInterval(send,2000),resolve:bytes=>finish(null,bytes),reject:error=>finish(error) });
       send();
@@ -1131,6 +1138,37 @@ async function handle(req, res, url) {
       const done = () => roomReads.delete(res);
       res.once('finish', done);
       res.once('close', done);
+    }
+    if (url.pathname.startsWith('/api/player/')) {
+      const localTracksOnly = state.asset?.source === 'peer' && state.asset.transport !== 'relay' && !isLocalHost(req.headers.host);
+      const version = url.searchParams.get('v');
+      if (version !== state.asset?.version || !version) { json(res, 409, { error: 'The selected video changed.' }); return; }
+      if (req.method === 'GET' && url.pathname === '/api/player/tracks') {
+        if (localTracksOnly) { json(res, 409, { error: 'For embedded language tracks, use CineWall on localhost or choose Upload. Instant movie bytes stay on your local network.' }); return; }
+        json(res, 200, await playerTracks.tracks()); return;
+      }
+      if (req.method === 'POST') {
+        checkOwner(req);
+        if (url.pathname === '/api/player/captions') {
+          await playerTracks.upload(req, version); json(res, 200, playerTracks.sync()); return;
+        }
+        if (url.pathname === '/api/player/options') {
+          const settings = await readJson(req);
+          if (localTracksOnly && (typeof settings.audio === 'number' || /^\d+$/.test(String(settings.captions)))) {
+            json(res, 409, { error: 'Use CineWall on localhost or choose Upload to change embedded tracks.' }); return;
+          }
+          json(res, 200, await playerTracks.select({ ...settings, version })); return;
+        }
+      }
+      if (req.method === 'GET' && url.pathname === '/api/player/captions') {
+        if (localTracksOnly && url.searchParams.get('track') !== 'uploaded') { json(res, 409, { error: 'Use localhost or Upload for embedded captions.' }); return; }
+        json(res, 200, await playerTracks.captions(url.searchParams.get('track'))); return;
+      }
+      if (['GET', 'HEAD'].includes(req.method) && url.pathname === '/api/player/audio') {
+        if (localTracksOnly) { json(res, 409, { error: 'Use localhost or Upload for embedded audio.' }); return; }
+        await playerTracks.serveAudio(req, res, url.searchParams.get('track'), url.searchParams.get('start') || 0); return;
+      }
+      json(res, 405, { error: 'Method not allowed.' }); return;
     }
     if (req.method === 'POST' && url.pathname === '/api/rooms/mode') {
       const body = await readJson(req); switchRoomMode(req, body.mode);
@@ -1486,7 +1524,7 @@ return {
   pulse() { finishSeekIfReady(); checkMidRollAds(); broadcast('pulse', snapshot()); activeScreens(); screenSharing.pulse(); micRoom.pulse(); },
   lastUsed: Date.now(),
   idle() { return !roomReads.size && !viewers.size && !uploadInProgress && screenSharing.idle() && micRoom.idle(); },
-  close() { cancelAdBreak(); preparationController?.abort(); for (const response of roomReads.keys()) response.destroy(); for (const viewer of viewers) viewer.end(); viewers.clear(); screenSharing.close(); micRoom.close(); },
+  close() { cancelAdBreak(); preparationController?.abort(); playerTracks.reset(); for (const response of roomReads.keys()) response.destroy(); for (const viewer of viewers) viewer.end(); viewers.clear(); screenSharing.close(); micRoom.close(); },
 };
 }
 
