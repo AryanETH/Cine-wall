@@ -1,5 +1,8 @@
 .screen-body { --player-chrome: #fff; --player-ink: #000; --player-line: #0003; --player-hover: #e7f1ff; --player-scheme: light; }
 .screen-body .waiting-movie { background: #000; }
+.screen-body .speaker-stage { background: #000; }
+.screen-body .speaker-orbit { box-shadow: none; }
+.screen-body[data-session-mode="audio"] .audio-gradient { display: none; }
 :root[data-theme="dark"] .screen-body { --player-chrome: #000; --player-ink: #fff; --player-line: #fff4; --player-hover: #11243d; --player-scheme: dark; }
 .screen-hud.player-top-strip {
   inset: 0 0 auto; height: 29px; box-sizing: border-box; padding: 2px 6px; gap: 8px; flex-wrap: nowrap;

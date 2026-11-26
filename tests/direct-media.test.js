@@ -407,6 +407,20 @@ test('byte-exact remote ranges are split into bounded packets and never copy the
   owner.clear(); receiver.clear();
 });
 
+test('a dropped movie range reconnects once and returns the same requested bytes', async () => {
+  const client=peerPage(), receiver=new client.api.FilePeer();
+  receiver.asset={version:'recover',peerId:'source',size:1000};
+  let reads=0,dropped=0;
+  const peer={closed:false,localOnly:true,pc:{close(){dropped++;}}};
+  receiver.connections.set('source',peer);
+  receiver.readRange=async(start,end)=>{assert.equal(start,10);assert.equal(end,20);if(++reads===1)throw Error('Display disconnected');return new Uint8Array(10).fill(7).buffer;};
+  const data=await receiver.range(10,20);
+  assert.equal(reads,2);assert.equal(dropped,1);assert.equal(new Uint8Array(data)[0],7);
+  receiver.readRange=async()=>{throw Object.assign(Error('Changed'),{name:'AbortError'});};
+  await assert.rejects(receiver.range(10,20),{name:'AbortError'});
+  receiver.clear();
+});
+
 test('insecure remote LAN displays never ask for a second copy of the admin movie', async () => {
   const client = peerPage({ secure: false }), owner = new client.api.FilePeer(), file = virtualFile(1000);
   const asset = (await owner.publish(file)).asset;
@@ -430,6 +444,16 @@ test('parallel signaling creates one peer; intentional source cleanup does not r
   assert.equal(a, b); assert.equal(made, 1);
   receiver.clear(); assert.equal(client.errors.length, 0);
   assert.equal(receiver.connectionTasks.size, 0);
+});
+
+test('closing an old channel cannot close its replacement on the same peer', async () => {
+  const client=peerPage(), owner=new client.api.FilePeer();let closes=0;
+  client.context.RTCPeerConnection=class{constructor(){this.connectionState='connected';}close(){closes++;}};
+  const peer=await owner.getPeer(room,false), old={readyState:'open'}, replacement={readyState:'open'};
+  peer.pc.ondatachannel({channel:old});peer.pc.ondatachannel({channel:replacement});
+  old.onclose();assert.equal(closes,0);assert.equal(peer.closed,false);
+  replacement.onclose();assert.equal(closes,1);assert.equal(peer.closed,true);
+  owner.clear();
 });
 
 test('hotspot publishing requires a secure browser and sends only metadata, never enabling relay', async () => {
@@ -504,7 +528,7 @@ test('hotspot validates the selected route before transferring bytes and never a
   owner.clear();
 });
 
-test('embedded-track ranges use the local CineWall backend only and never send hotspot files to a hosted server', async () => {
+test('embedded-track preparation works on hosted CineWall while ordinary hotspot movie requests remain direct', async () => {
   const client=peerPage(), owner=new client.api.FilePeer(), file=virtualFile(1000000);
   owner.asset=(await owner.publish(file)).asset; owner.asset.transport='hotspot';
   let replies=0;
@@ -512,13 +536,13 @@ test('embedded-track ranges use the local CineWall backend only and never send h
   const event={data:JSON.stringify({id:'tracks',version:owner.asset.version,start:100,end:119,purpose:'tracks'})};
   client.context.location=new URL('https://watch.aitoyz.in/');
   await client.events[0].handlers['source-range'](event);
-  assert.equal(replies,0);
+  assert.equal(replies,1);
   client.context.location=new URL('http://localhost:4173/');
   await client.events[0].handlers['source-range'](event);
-  assert.equal(replies,1);
+  assert.equal(replies,2);
   client.context.location=new URL('http://192.168.137.1:4173/');
   await client.events[0].handlers['source-range'](event);
-  assert.equal(replies,2);
+  assert.equal(replies,3);
   owner.clear();
 });
 

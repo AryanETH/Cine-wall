@@ -97,6 +97,24 @@
     try { return localStorage.getItem(accountKey) === '1'; } catch { return false; }
   }
   let watching = false, checkInFlight, accountVersion = 0, loggedOutElsewhere = false;
+  let lastRenewal = 0, renewal;
+  async function renewSession() {
+    if (renewal) return renewal;
+    renewal = (async () => {
+      const { auth } = await loadFirebase();
+      await auth.authStateReady();
+      const user = auth.currentUser;
+      if (!user || !user.emailVerified || signingOut || loggedOutElsewhere) return false;
+      const idToken = await user.getIdToken(true);
+      if (user !== auth.currentUser || signingOut || loggedOutElsewhere) return false;
+      const response = await fetch('/api/auth/session', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({idToken}) });
+      if (!response.ok) throw Error('Session refresh unavailable');
+      if (user !== auth.currentUser || signingOut || loggedOutElsewhere) return false;
+      lastRenewal = Date.now(); return true;
+    })().finally(() => { renewal = undefined; });
+    return renewal;
+  }
+  window.CineWallAccount = { refresh: () => renewSession().catch(() => false) };
   async function watchFirebase() {
     if (watching) return;
     watching = true;
@@ -127,6 +145,7 @@
           const { account } = await result.json();
           if (signingOut || version !== accountVersion || auth.currentUser !== user) return;
           rememberAccount();
+          lastRenewal = Date.now();
           if (home) showAccount(account);
         }).catch(() => {});
       });
@@ -140,8 +159,14 @@
     const version = accountVersion;
     if (checkInFlight?.version === version) return checkInFlight.promise;
     const promise = (async () => {
-      const state = await session();
+      let state = await session();
       if (signingOut || version !== accountVersion) return;
+      // Refresh before the one-hour Firebase ID token expires. Also recover a
+      // server restart/expired cookie before sending an authenticated user away.
+      if ((!state.authenticated || lastRenewal > 0 && Date.now() - lastRenewal > 25 * 60 * 1000) && (!home || state.authenticated || hasAccountHint())) {
+        if (await renewSession()) state = await session();
+      }
+      if (signingOut || loggedOutElsewhere || version !== accountVersion) return;
       if (home) {
         showAccount(state.account);
         if (state.authenticated) rememberAccount();

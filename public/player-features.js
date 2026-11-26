@@ -1,6 +1,6 @@
 'use strict';
 window.CineWallPlayerFeatures = {
-  create({ video, link, wake, onAudioBlocked = () => {} }) {
+  create({ video, link, wake, command, onAudioBlocked = () => {} }) {
     const $ = selector => document.querySelector(selector);
     const menu = $('#playerFeatureMenu'), status = $('#playerFeatureStatus');
     const alternate = $('#playerAlternateAudio'), layer = $('#playerCaptionsLayer'), text = $('#playerCaptionText');
@@ -10,6 +10,7 @@ window.CineWallPlayerFeatures = {
     let moving = false, dragging = false, requestVersion = 0, queued = Promise.resolve();
     let captionController, nativeChoice = '', captionRetryAt = 0;
     let automaticCaptions = '';
+    let captionLayout = '';
     let playRequest = false, output, blockedAudio = false, failedAudio = '', automaticAudio = '', warmedAudio = '', warmRetryAt = 0;
     const router = window.CineWallAudioLayout?.createRouter(alternate);
     function notify(message = '') { status.textContent = message; }
@@ -101,9 +102,11 @@ window.CineWallPlayerFeatures = {
       const settings = state.playerOptions || {};
       const time = video.currentTime;
       const active = settings.captions !== 'off' ? cues.filter(c => c.start <= time && c.end > time).map(c => c.text).join('\n') : '';
-      text.textContent = active || (moving && editable ? 'Move captions' : '');
+      const content = active || (moving && editable ? 'Move captions' : '');
+      if (text.textContent !== content) { text.textContent = content; captionLayout = ''; }
       layer.hidden = !text.textContent;
-      if (!layer.hidden) place();
+      const layout = [settings.size,settings.width,settings.x,settings.y,innerWidth,innerHeight].join(':');
+      if (!layer.hidden && captionLayout !== layout) { place(); captionLayout = layout; }
     }
     function selectedAudio() {
       return typeof state?.playerOptions?.audio === 'number' && state.sessionMode === 'video' && ready && !state.adBreak;
@@ -202,8 +205,14 @@ window.CineWallPlayerFeatures = {
         captionController?.abort(); notify();
         if (version && ready && next.sessionMode === 'video') void list();
       }
-      menu.hidden = !ready || next?.sessionMode !== 'video' || Boolean(next?.adBreak);
+      const isVideo = next?.sessionMode === 'video', isAudio = next?.sessionMode === 'audio';
+      menu.hidden = !ready || !editable || !(isVideo || isAudio) || Boolean(next?.adBreak);
+      for (const node of menu.querySelectorAll('[data-video-only],#playerCaptionsMenu,#playerAudioMenu')) node.hidden = !isVideo;
       for (const input of menu.querySelectorAll('input,select,button')) input.disabled = !editable || !next?.asset;
+      for (const [id, value] of [['playerPictureFit',next?.mode || 'crop'],['playerVideoView',next?.videoView || 'normal'],['playerSoundMode',next?.audioMode || 'personal']]) {
+        const control = $('#' + id);
+        if (control && document.activeElement !== control) control.value = value;
+      }
       if (!next?.asset) $('#playerCaptionHint').textContent = 'Load a video from the dashboard first.';
       const settings = state?.playerOptions || {};
       for (const [name, id] of Object.entries({ size: 'Size', width: 'Width', x: 'X', y: 'Y' })) {
@@ -288,7 +297,15 @@ window.CineWallPlayerFeatures = {
     for (const details of trackMenus) {
       function closeOtherMenus() { for (const other of trackMenus) if (other !== details) other.open = false; }
       details.querySelector('summary').addEventListener('click', () => { if (!details.open) closeOtherMenus(); });
-      details.addEventListener('toggle', () => { if (details.open) { closeOtherMenus(); void list(); wake(); } });
+      details.addEventListener('toggle', () => { if (details.open) { closeOtherMenus(); if (['playerAudioMenu','playerCaptionsMenu'].includes(details.id)) void list(); wake(); } });
+    }
+    for (const [id, type, key] of [['playerPictureFit','mode','mode'],['playerVideoView','video-view','videoView'],['playerSoundMode','audio-mode','audioMode']]) {
+      const control = $('#' + id);
+      control?.addEventListener('change', () => { void action(async () => {
+        if (!editable || !command) return;
+        const result = await command({ type, [key]: control.value });
+        if (!result) throw Error('The player setting could not be changed.');
+      }, control); });
     }
     const enable = document.createElement('button');
     enable.type = 'button'; enable.className = 'screen-control-button'; enable.innerHTML = '<span class="fi" aria-hidden="true">&#xE767;</span>';
